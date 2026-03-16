@@ -627,15 +627,41 @@ def api_tree():
     """Дерево матрицы (корень → листья), уровни определяются автоматически."""
     return jsonify(get_tree())
 
+def _leaf_breadcrumb(tree_nodes, path: list) -> str:
+    """Строка «Домен → Навык → Действие» для листа по path."""
+    if not path:
+        return ""
+    parts = []
+    nodes = tree_nodes
+    for i, idx in enumerate(path):
+        idx = int(idx)
+        if idx < 0 or idx >= len(nodes):
+            break
+        node = nodes[idx]
+        parts.append(node.get("name", ""))
+        if i + 1 < len(path) and node.get("children"):
+            nodes = node["children"]
+    return " → ".join(p for p in parts if p)
+
+
 @app.route('/api/leaves')
 def api_leaves():
-    """Список всех листьев с path, template_id и url для детальной страницы."""
+    """Список всех листьев с path, template_id, url и иерархией (домен → навык → дерево)."""
     tree = get_tree()
+    hierarchy = request.args.get("hierarchy", "").lower() in ("1", "true", "yes")
     leaves = collect_leaves(tree)
-    out = [
-        {"path": n.get("path"), "name": n.get("name"), "url": path_to_url(n["path"]), "template_id": n.get("template_id")}
-        for n in leaves
-    ]
+    out = []
+    for n in leaves:
+        p = n.get("path", [])
+        item = {
+            "path": p,
+            "name": n.get("name"),
+            "url": path_to_url(p),
+            "template_id": n.get("template_id"),
+        }
+        if hierarchy:
+            item["breadcrumb"] = _leaf_breadcrumb(tree, p)
+        out.append(item)
     return jsonify(out)
 
 @app.route('/api/meta')
@@ -1169,6 +1195,53 @@ def api_literature_add():
     }
     save_meta(meta)
     return jsonify({"id": lid, "title": title})
+
+
+@app.route('/api/literature/upload', methods=['POST'])
+def api_literature_upload():
+    """Загрузка физического файла (PDF и т.д.) в data/library с созданием записи литературы."""
+    global _meta
+    if "file" not in request.files:
+        return jsonify({"error": "файл не выбран"}), 400
+    f = request.files["file"]
+    if f.filename == "" or not f.filename:
+        return jsonify({"error": "файл не выбран"}), 400
+    title = (request.form.get("title") or "").strip() or PathLib(f.filename).stem
+    chapter = (request.form.get("chapter") or "").strip()
+    pages = (request.form.get("pages") or "").strip()
+    description = (request.form.get("description") or "").strip()
+    lib_dir = _literature_dir()
+    orig = PathLib(f.filename)
+    suffix = (orig.suffix.lower() or ".pdf")
+    if not suffix.startswith("."):
+        suffix = "." + suffix
+    stem = re.sub(r"[^\w\-]", "_", orig.stem)[:60]
+    filepath = os.path.join(lib_dir, stem + suffix)
+    n = 0
+    while os.path.exists(filepath):
+        n += 1
+        filepath = os.path.join(lib_dir, f"{stem}_{n}{suffix}")
+    try:
+        f.save(filepath)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    rel_path = os.path.relpath(filepath, BASE_DIR)
+    meta = get_meta()
+    lit = meta.setdefault("literature", {})
+    lid = slugify(title)[:40] + "_" + hashlib.md5((title + rel_path).encode()).hexdigest()[:6]
+    if lid in lit:
+        lid = lid + "_" + hashlib.md5(rel_path.encode()).hexdigest()[:4]
+    lit[lid] = {
+        "title": title,
+        "chapter": chapter,
+        "pages": pages,
+        "url": "",
+        "description": description,
+        "local_path": rel_path,
+    }
+    save_meta(meta)
+    return jsonify({"id": lid, "title": title, "local_path": rel_path})
+
 
 @app.route('/api/literature/<lit_id>/link', methods=['POST'])
 def api_literature_link(lit_id):

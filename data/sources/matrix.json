@@ -409,7 +409,7 @@
       "title": "Ральф Кимбалл — «Инструментарий хранилища данных»",
       "chapter": "Главы 1-3: Основы моделирования, схемы звезда и снежинка",
       "pages": "С. 15-120",
-      "url": "https://www.labirint.ru/books/1008963/",
+      "url": "https://www.litres.ru/author/ralf-kimball/",
       "description": "Классическое введение в проектирование хранилищ данных"
     },
     "data_engineering_book": {
@@ -420,18 +420,18 @@
       "description": "Современный взгляд на профессию Data Engineer, жизненный цикл данных"
     },
     "dbt_labs_cte": {
-      "title": "dbt Labs — Документация",
-      "chapter": "Getting started with CTEs",
+      "title": "dbt — Документация на русском",
+      "chapter": "Работа с CTE (общими табличными выражениями) в моделях",
       "pages": "Веб-документация",
-      "url": "https://docs.getdbt.com/terms/cte",
-      "description": "Практическое использование CTE в трансформациях"
+      "url": "https://docs.getdbt.tech/docs/introduction/",
+      "description": "Практическое использование CTE в трансформациях dbt"
     },
     "leetcode_sql": {
-      "title": "LeetCode — SQL 50 Study Plan",
-      "chapter": "Все задачи",
-      "pages": "Интерактивная платформа",
-      "url": "https://leetcode.com/studyplan/top-sql-50/",
-      "description": "Практика SQL-запросов разного уровня сложности"
+      "title": "SQL-EX.RU — Упражнения по SQL",
+      "chapter": "SELECT (обучающий этап), DML, рейтинговые этапы",
+      "pages": "187+ задач на обучающем этапе, 240 на рейтинговых",
+      "url": "https://sql-ex.ru/?Lang=1",
+      "description": "Практика SQL-запросов разного уровня сложности на русском"
     },
     "datavault_article": {
       "title": "Что такое Data Vault: моделирование КХД для архитектора Big Data",
@@ -441,24 +441,24 @@
       "description": "Введение в методологию Data Vault"
     },
     "datavault_youtube": {
-      "title": "How to create a Data Vault Model from scratch",
-      "chapter": "Видео",
-      "pages": "YouTube",
-      "url": "https://www.youtube.com/watch?v=KgW4YVZYpQk",
-      "description": "Пошаговое создание модели Data Vault"
+      "title": "Data Vault: опыт создания модели вручную",
+      "chapter": "Пошаговое описание Hub, Satellite, Link на PostgreSQL",
+      "pages": "Веб-статья",
+      "url": "https://habr.com/ru/articles/829338/",
+      "description": "Пошаговое создание модели Data Vault на русском"
     },
     "spark_perf": {
-      "title": "Databricks — Adaptive Query Execution (AQE)",
-      "chapter": "Документация",
-      "pages": "Веб",
-      "url": "https://docs.databricks.com/en/optimizations/aqe.html",
+      "title": "Adaptive Query Execution в Spark 3",
+      "chapter": "Как AQE обрабатывает skew join и перекосы партиций",
+      "pages": "Веб-статья",
+      "url": "https://habr.com/ru/companies/gnivc/articles/967656/",
       "description": "Устранение перекосов данных (skew join), настройка партиций"
     },
     "greeplum_dist": {
-      "title": "Документация Greenplum — Выбор ключа распределения",
-      "chapter": "Best Practices",
-      "pages": "Веб",
-      "url": "https://docs.vmware.com/en/VMware-Greenplum/index.html",
+      "title": "Что стоит за дистрибуцией Greenplum",
+      "chapter": "Hash, Random, Replicated — выбор ключа распределения",
+      "pages": "Веб-статья",
+      "url": "https://habr.com/ru/companies/beget/articles/940662/",
       "description": "Правила выбора distribution key для равномерной загрузки"
     },
     "git_pro": {
@@ -469,11 +469,11 @@
       "description": "Основы Git, работа с ветками, разрешение конфликтов"
     },
     "markdown_guide": {
-      "title": "Руководство по Markdown",
-      "chapter": "Базовый синтаксис",
+      "title": "Шпаргалка по синтаксису Markdown",
+      "chapter": "Базовый синтаксис: заголовки, списки, код, таблицы",
       "pages": "Веб",
-      "url": "https://www.markdownguide.org/basic-syntax/",
-      "description": "Оформление документации в Markdown"
+      "url": "https://www.markdownlang.com/ru/cheatsheet/",
+      "description": "Оформление документации в Markdown на русском"
     }
   },
   "action_templates": {

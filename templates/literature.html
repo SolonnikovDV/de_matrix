@@ -12,6 +12,9 @@
         <button type="button" class="btn btn-primary" id="btnAddLiterature">
             <i class="fas fa-plus"></i> Добавить литературу
         </button>
+        <button type="button" class="btn btn-success" id="btnUploadFile" style="margin-left: 8px;">
+            <i class="fas fa-file-upload"></i> Загрузить файл
+        </button>
     </div>
     
     <div class="literature-list" id="literatureList">
@@ -52,6 +55,30 @@
             <button type="button" class="btn btn-primary" id="btnSaveLink">Сохранить привязку</button>
             <button type="button" class="btn btn-secondary" id="btnCloseLink">Закрыть</button>
         </div>
+    </div>
+</div>
+
+<!-- Загрузка физического файла -->
+<div class="modal-overlay" id="modalUpload" style="display: none;">
+    <div class="modal-box">
+        <h3>Загрузить файл в каталог library</h3>
+        <p style="font-size: 0.9em; color: #666; margin-bottom: 12px;">PDF, DOC и др. сохранятся в data/library с привязкой к записи литературы.</p>
+        <form id="formUploadFile">
+            <label>Файл *</label>
+            <input type="file" name="file" accept=".pdf,.doc,.docx,.epub,.txt,.md" required>
+            <label>Название</label>
+            <input type="text" name="title" placeholder="По умолчанию — из имени файла">
+            <label>Глава / раздел</label>
+            <input type="text" name="chapter" placeholder="Глава 2: ...">
+            <label>Страницы</label>
+            <input type="text" name="pages" placeholder="С. 45-78">
+            <label>Описание</label>
+            <textarea name="description" rows="2" placeholder="Краткое описание"></textarea>
+            <div class="modal-actions" style="margin-top: 15px;">
+                <button type="submit" class="btn btn-primary"><i class="fas fa-upload"></i> Загрузить</button>
+                <button type="button" class="btn btn-secondary" id="btnCloseUpload">Отмена</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -97,6 +124,9 @@
 .lit-card a { color: #3498db; }
 .lit-card .lit-actions { margin-top: 10px; }
 .leaves-checkboxes label { display: flex; align-items: center; gap: 8px; margin: 6px 0; cursor: pointer; font-weight: normal; }
+.link-domain-group { margin-top: 12px; margin-bottom: 6px; color: #3498db; }
+.link-domain-group:first-child { margin-top: 0; }
+.link-breadcrumb { color: #95a5a6; font-size: 0.85em; }
 </style>
 
 <script>
@@ -105,6 +135,9 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('btnAddLiterature').onclick = () => { document.getElementById('modalAdd').style.display = 'flex'; };
     document.getElementById('btnCloseAdd').onclick = () => { document.getElementById('modalAdd').style.display = 'none'; };
     document.getElementById('formAddLiterature').onsubmit = submitAddLiterature;
+    document.getElementById('btnUploadFile').onclick = () => { document.getElementById('modalUpload').style.display = 'flex'; };
+    document.getElementById('btnCloseUpload').onclick = () => { document.getElementById('modalUpload').style.display = 'none'; };
+    document.getElementById('formUploadFile').onsubmit = submitUploadFile;
     document.getElementById('btnCloseLink').onclick = () => { document.getElementById('modalLink').style.display = 'none'; };
     document.getElementById('btnSaveLink').onclick = saveLink;
     document.getElementById('btnCloseDownload').onclick = () => { document.getElementById('modalDownload').style.display = 'none'; };
@@ -191,6 +224,31 @@ function escapeHtml(s) {
     return div.innerHTML;
 }
 
+async function submitUploadFile(e) {
+    e.preventDefault();
+    const form = e.target;
+    const fd = new FormData();
+    fd.append('file', form.file.files[0]);
+    fd.append('title', form.title.value.trim());
+    fd.append('chapter', form.chapter.value.trim());
+    fd.append('pages', form.pages.value.trim());
+    fd.append('description', form.description.value.trim());
+    try {
+        const res = await fetch('/api/literature/upload', { method: 'POST', body: fd });
+        const out = await res.json();
+        if (res.ok) {
+            document.getElementById('modalUpload').style.display = 'none';
+            form.reset();
+            loadLiterature();
+            alert('Загружено: ' + (out.title || '') + (out.local_path ? '\n' + out.local_path : ''));
+        } else {
+            alert(out.error || 'Ошибка');
+        }
+    } catch (err) {
+        alert('Ошибка сети');
+    }
+}
+
 async function submitAddLiterature(e) {
     e.preventDefault();
     const form = e.target;
@@ -220,13 +278,29 @@ let currentLinkLitId = null;
 async function openLinkModal(litId, title) {
     currentLinkLitId = litId;
     document.getElementById('modalLinkTitle').textContent = 'Источник: ' + title;
-    const res = await fetch('/api/leaves');
+    const res = await fetch('/api/leaves?hierarchy=1');
     const leaves = await res.json();
     const litRes = await fetch('/api/literature');
     const litList = await litRes.json();
     const current = (litList.find(l => l.id === litId) || {}).linked_templates || [];
     const linkedTemplateIds = new Set(current.map(t => t.template_id));
-    document.getElementById('leavesCheckboxes').innerHTML = leaves.map(l => {
+    const byDomain = {};
+    leaves.forEach(l => {
+        const domainName = (l.breadcrumb || '').split(' → ')[0] || 'Без домена';
+        if (!byDomain[domainName]) byDomain[domainName] = [];
+        byDomain[domainName].push(l);
+    });
+    let html = '';
+    for (const [domain, items] of Object.entries(byDomain).sort()) {
+        html += `<div class="link-domain-group"><strong>${escapeHtml(domain)}</strong></div>`;
+        items.forEach(l => {
+            const pathStr = l.path.join('/');
+            const checked = l.template_id && linkedTemplateIds.has(l.template_id) ? ' checked' : '';
+            const bc = l.breadcrumb ? ` <small class="link-breadcrumb">(${escapeHtml(l.breadcrumb)})</small>` : '';
+            html += `<label class="link-leaf"><input type="checkbox" data-path="${pathStr}"${checked}> ${escapeHtml(l.name)}${bc}</label>`;
+        });
+    }
+    document.getElementById('leavesCheckboxes').innerHTML = html || leaves.map(l => {
         const pathStr = l.path.join('/');
         const checked = l.template_id && linkedTemplateIds.has(l.template_id) ? ' checked' : '';
         return `<label><input type="checkbox" data-path="${pathStr}"${checked}> ${escapeHtml(l.name)}</label>`;
