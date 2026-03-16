@@ -857,9 +857,9 @@ function exportToExcel() {
                         stackNames(tpl),
                         toolsFromPatterns(action.text, tpl),
                         litTitles(tpl.resource_ids)
-                    ]);
-                }
-            });
+            ]);
+        }
+    });
         });
     });
     const ws = XLSX.utils.aoa_to_sheet(matrixRows);

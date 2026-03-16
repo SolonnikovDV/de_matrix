@@ -12,5 +12,9 @@ default_source: matrix.json
 # Каталог для скачанной литературы
 literature_dir: data/library
 
+# SSL при скачивании литературы. При ошибке верификации сертификата на рабочей машине:
+# ssl_verify: false  # отключить проверку (или DE_MATRIX_SSL_VERIFY=0)
+ssl_verify: false
+
 # Автоскейл: уровни и разделы по структуре источника (любая глубина дочерних).
 flexible: true

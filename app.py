@@ -1240,8 +1240,20 @@ def api_literature_download(lit_id):
     lib_dir = _literature_dir()
     try:
         import ssl
-        import certifi
-        ctx = ssl.create_default_context(cafile=certifi.where())
+        cfg = load_app_config()
+        ssl_verify = cfg.get("ssl_verify", True)
+        if os.environ.get("DE_MATRIX_SSL_VERIFY", "").lower() in ("0", "false", "no"):
+            ssl_verify = False
+        ssl_ca_bundle = cfg.get("ssl_ca_bundle") or os.environ.get("DE_MATRIX_SSL_CA_BUNDLE")
+
+        if not ssl_verify:
+            ctx = ssl._create_unverified_context()
+        elif ssl_ca_bundle and os.path.isfile(ssl_ca_bundle):
+            ctx = ssl.create_default_context(cafile=ssl_ca_bundle)
+        else:
+            # Системные сертификаты (включая корпоративные CA в корпоративных сетях)
+            ctx = ssl.create_default_context()
+
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
             content_type = resp.headers.get('Content-Type', '')

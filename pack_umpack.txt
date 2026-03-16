@@ -1,4 +1,17 @@
-python pack_to_txt.py ./app_gpa packed.zip
+# Упаковщик
 
-python unpack_from_txt.py ./ output_zip.zip
-python unpack_from_txt.py  output_zip.zip ./
+# Упаковать корень проекта в packed.zip
+python pack_to_txt.py
+
+# Указать папку и путь к архиву
+python pack_to_txt.py <исходная_папка> <путь_к_архиву>
+python pack_to_txt.py . packed.zip
+
+#Распаковщик
+
+# Распаковать packed.zip в корень проекта
+python unpack_from_txt.py packed.zip
+
+# Указать папку для распаковки
+python unpack_from_txt.py packed.zip ./
+python unpack_from_txt.py packed.zip /путь/к/папке
