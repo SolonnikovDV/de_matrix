@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block title %}Матрица навыков Data Engineer{% endblock %}
+
+{% block header_title %}Матрица компетенций Middle Data Engineer{% endblock %}
+
+{% block footer_hint %}Кликните на любой элемент для раскрытия{% endblock %}
+
+{% block content %}
+<div class="matrix" id="matrix">
+    {% for domain in domains %}
+    {% set domain_loop = loop %}
+    {% set domain_color = domain.name|domain_color %}
+    {% set domain_icon = domain.name|domain_icon(loop.index0) %}
+    <div class="domain-card" id="domain-{{ domain_loop.index0 }}" data-domain-id="{{ domain_loop.index0 }}" style="border-top: 4px solid {{ domain_color }}">
+        <div class="domain-header" style="background: {{ domain_color }}">
+            <h2>
+                <i class="fas fa-{{ domain_icon }}"></i>
+                {{ domain.name }}
+            </h2>
+            <div class="domain-actions">
+                <a href="/domain-graph/{{ domain_loop.index0 }}" class="domain-graph-link" title="Показать граф домена" onclick="event.stopPropagation();">
+                    <i class="fas fa-project-diagram"></i> Граф
+                </a>
+                <i class="fas fa-chevron-down toggle-icon"></i>
+            </div>
+        </div>
+        <div class="domain-content">
+            <div class="skills-list">
+                {% for skill in domain.skills %}
+                {% set skill_loop = loop %}
+                {% set skill_color = skill.name|skill_color(domain_color, loop.index0) %}
+                {% set skill_icon = skill.name|skill_icon(loop.index0) %}
+                <div class="skill-item" data-skill-id="{{ skill_loop.index0 }}">
+                    <div class="skill-header">
+                        <h3>
+                            <i class="fas fa-{{ skill_icon }}" style="color: {{ skill_color }}"></i>
+                            {{ skill.name }}
+                        </h3>
+                        <i class="fas fa-chevron-down toggle-icon" style="font-size: 0.9em; color: #95a5a6;"></i>
+                    </div>
+                    <div class="skill-description">{{ skill.description }}</div>
+                    <div class="skill-actions">
+                        <ul class="action-list">
+                            {% for action in skill.actions %}
+                            {% set action_loop = loop %}
+                                {% if action.subactions %}
+                                    <!-- Группа листов: раскрывается по клику -->
+                                    <li class="action-group expanded" data-has-children="true">
+                                        <div class="action-parent action-group-header">
+                                            <i class="fas fa-chevron-right toggle-icon group-toggle"></i>
+                                            <i class="fas fa-folder-open" style="color: {{ domain_color }}"></i>
+                                            <span class="group-name">{{ action.text }}</span>
+                                        </div>
+                                        <ul class="subaction-list">
+                                    {% for sub in action.subactions %}
+                                        <li class="subaction-item leaf-item" 
+                                            data-domain-id="{{ domain_loop.index0 }}"
+                                            data-skill-id="{{ skill_loop.index0 }}"
+                                            data-action-idx="{{ action_loop.index0 }}"
+                                            data-sub-idx="{{ loop.index0 }}"
+                                            data-leaf-path="{{ domain_loop.index0 }}/{{ skill_loop.index0 }}/{{ action_loop.index0 }}/{{ loop.index0 }}">
+                                            <i class="fas fa-angle-right" style="color: {{ skill_color }}"></i>
+                                            {{ sub.text }}
+                                        </li>
+                                    {% endfor %}
+                                        </ul>
+                                    </li>
+                                {% else %}
+                                    <!-- Обычное действие без поддействий (лист) -->
+                                    <li class="action-item leaf-item" 
+                                        data-domain-id="{{ domain_loop.index0 }}"
+                                        data-skill-id="{{ skill_loop.index0 }}"
+                                        data-action-idx="{{ action_loop.index0 }}"
+                                        data-leaf-path="{{ domain_loop.index0 }}/{{ skill_loop.index0 }}/{{ action_loop.index0 }}">
+                                        <i class="fas fa-check-circle" style="color: {{ domain_color }}"></i>
+                                        {{ action.text }}
+                                    </li>
+                                {% endif %}
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Сообщение об ошибке, если нет доменов -->
+{% if not domains %}
+<div style="text-align: center; padding: 50px;">
+    <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: #f39c12;"></i>
+    <h2>Данные не загружены</h2>
+    <p>Проверьте файл data/matrix_data.json</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM загружен, инициализация обработчиков...');
+    initMatrixHandlers();
+    setupKeyboardNavigation();
+    
+    if (window.location.hash) {
+        setTimeout(() => {
+            const hash = window.location.hash.substring(1);
+            const element = document.getElementById(hash);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth' });
+                const domainCard = element.closest('.domain-card');
+                if (domainCard) {
+                    domainCard.classList.add('expanded');
+                }
+            }
+        }, 500);
+    }
+});
+
+function initMatrixHandlers() {
+    const domainCards = document.querySelectorAll('.domain-card');
+    console.log('Найдено доменов:', domainCards.length);
+    
+    domainCards.forEach(card => {
+        const header = card.querySelector('.domain-header');
+        if (header) {
+            header.removeEventListener('click', handleDomainClick);
+            header.addEventListener('click', handleDomainClick);
+        }
+    });
+    
+    const skillItems = document.querySelectorAll('.skill-item');
+    console.log('Найдено навыков:', skillItems.length);
+    
+    skillItems.forEach(skill => {
+        const header = skill.querySelector('.skill-header');
+        if (header) {
+            header.removeEventListener('click', handleSkillClick);
+            header.addEventListener('click', handleSkillClick);
+        }
+    });
+    
+    // Обычные действия
+    const actionItems = document.querySelectorAll('.action-item');
+    console.log('Найдено действий:', actionItems.length);
+    
+    actionItems.forEach(action => {
+        action.removeEventListener('click', handleActionClick);
+        action.addEventListener('click', handleActionClick);
+        action.style.cursor = 'pointer';
+    });
+    
+    // Поддействия
+    const subactionItems = document.querySelectorAll('.subaction-item');
+    console.log('Найдено поддействий:', subactionItems.length);
+    subactionItems.forEach(sub => {
+        sub.removeEventListener('click', handleSubactionClick);
+        sub.addEventListener('click', handleSubactionClick);
+        sub.style.cursor = 'pointer';
+    });
+    
+    // Группы листов: раскрытие по клику
+    document.querySelectorAll('.action-group-header').forEach(header => {
+        header.removeEventListener('click', handleGroupToggle);
+        header.addEventListener('click', handleGroupToggle);
+    });
+    
+    document.querySelectorAll('.domain-graph-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+    });
+    
+    if (domainCards.length > 0 && !window.location.hash) {
+        setTimeout(() => {
+            domainCards[0].classList.add('expanded');
+        }, 500);
+    }
+}
+
+function handleDomainClick(e) {
+    if (e.target.closest('.domain-graph-link')) return;
+    e.stopPropagation();
+    const card = e.currentTarget.closest('.domain-card');
+    if (card) {
+        card.classList.toggle('expanded');
+        if (!card.classList.contains('expanded')) {
+            const skillItems = card.querySelectorAll('.skill-item');
+            skillItems.forEach(skill => skill.classList.remove('expanded'));
+        }
+    }
+}
+
+function handleSkillClick(e) {
+    e.stopPropagation();
+    const skill = e.currentTarget.closest('.skill-item');
+    if (skill) {
+        skill.classList.toggle('expanded');
+    }
+}
+
+function handleActionClick(e) {
+    e.stopPropagation();
+    const action = e.currentTarget;
+    const leafPath = action.dataset.leafPath;
+    if (leafPath) {
+        window.location.href = `/leaf/${leafPath}`;
+        return;
+    }
+    const domainId = action.dataset.domainId;
+    const skillId = action.dataset.skillId;
+    const actionIdx = action.dataset.actionIdx;
+    if (domainId !== undefined && skillId !== undefined && actionIdx !== undefined) {
+        window.location.href = `/action/${domainId}/${skillId}/${actionIdx}`;
+    }
+}
+
+function handleGroupToggle(e) {
+    e.stopPropagation();
+    const group = e.currentTarget.closest('.action-group');
+    if (group) group.classList.toggle('expanded');
+}
+
+function handleSubactionClick(e) {
+    e.stopPropagation();
+    const sub = e.currentTarget;
+    const leafPath = sub.dataset.leafPath;
+    if (leafPath) {
+        window.location.href = `/leaf/${leafPath}`;
+        return;
+    }
+    const domainId = sub.dataset.domainId;
+    const skillId = sub.dataset.skillId;
+    const actionIdx = sub.dataset.actionIdx;
+    const subIdx = sub.dataset.subIdx;
+    if (domainId !== undefined && skillId !== undefined && actionIdx !== undefined && subIdx !== undefined) {
+        window.location.href = `/subaction/${domainId}/${skillId}/${actionIdx}/${subIdx}`;
+    }
+}
+
+function setupKeyboardNavigation() {
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            document.querySelectorAll('.domain-card.expanded').forEach(d => d.classList.remove('expanded'));
+            document.querySelectorAll('.skill-item.expanded').forEach(s => s.classList.remove('expanded'));
+        }
+    });
+}
+
+function slugify(text) {
+    if (!text) return '';
+    return text.toString().toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/[^\w\-]+/g, '')
+        .replace(/\-\-+/g, '-')
+        .replace(/^-+/, '')
+        .replace(/-+$/, '');
+}
+</script>
+{% endblock %}

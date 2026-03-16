@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+
+{% block title %}{{ action.text }} | Матрица навыков{% endblock %}
+
+{% block header_title %}{{ action.text }}{% endblock %}
+
+{% block footer_hint %}Нажмите ESC для возврата к матрице{% endblock %}
+
+{% block content %}
+<div class="action-detail-container">
+    <nav class="breadcrumb">
+        <a href="/matrix"><i class="fas fa-th-large"></i> Матрица</a>
+        <i class="fas fa-chevron-right separator"></i>
+        <a href="/#{{ domain.name|slugify }}">{{ domain.name }}</a>
+        <i class="fas fa-chevron-right separator"></i>
+        <a href="/#{{ skill.name|slugify }}">{{ skill.name }}</a>
+        {% if sub_idx is defined and parent_action_text is defined %}
+            <i class="fas fa-chevron-right separator"></i>
+            {% if leaf_path is defined %}
+                <a href="/leaf/{{ di }}/{{ si }}/{{ ai }}">{{ parent_action_text }}</a>
+            {% else %}
+                <a href="/action/{{ di }}/{{ si }}/{{ ai }}">{{ parent_action_text }}</a>
+            {% endif %}
+        {% endif %}
+        <i class="fas fa-chevron-right separator"></i>
+        <span>{{ action.text }}</span>
+    </nav>
+
+    <div class="action-card">
+        <div class="action-header" style="border-left-color: {{ domain_color }}">
+            <div class="action-title">
+                <i class="fas fa-{{ skill_icon }}" style="color: {{ domain_color }}"></i>
+                <h1>{{ action.text }}</h1>
+            </div>
+            <div class="action-meta">
+                <span class="badge" style="background: {{ domain_color }}">{{ domain.name }}</span>
+                <span class="badge skill-badge" style="background: {{ skill_color }}">{{ skill.name }}</span>
+            </div>
+        </div>
+        
+        <div class="action-content" id="action-content">
+            <div class="loading-spinner">
+                <i class="fas fa-spinner fa-spin fa-2x"></i>
+                <p>Загрузка информации...</p>
+            </div>
+        </div>
+        
+        <div class="action-footer">
+            <button class="btn btn-primary" onclick="window.history.back()">
+                <i class="fas fa-arrow-left"></i> Назад
+            </button>
+            <button class="btn btn-success" onclick="window.print()">
+                <i class="fas fa-print"></i> Печать
+            </button>
+            <button class="btn btn-info" onclick="copyToClipboard()">
+                <i class="fas fa-copy"></i> Копировать ссылку
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadActionDetails();
+});
+
+function loadActionDetails() {
+    {% if leaf_path is defined %}
+        const url = `/api/leaf/{{ leaf_path }}`;
+    {% elif sub_idx is defined %}
+        const url = `/api/subaction/{{ di }}/{{ si }}/{{ ai }}/{{ sub_idx }}`;
+    {% else %}
+        const url = `/api/action/{{ di }}/{{ si }}/{{ ai }}`;
+    {% endif %}
+    
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            const content = document.getElementById('action-content');
+            let html = '';
+            
+            if (data.is_parent) {
+                html += `
+                    <section class="action-section">
+                        <h2><i class="fas fa-info-circle"></i> Описание</h2>
+                        <div class="section-content">${data.description}</div>
+                    </section>
+                    <section class="action-section">
+                        <h2><i class="fas fa-list"></i> Доступные компетенции</h2>
+                        <div class="section-content">
+                            <ul class="subactions-list">
+                `;
+                data.subactions.forEach(sub => {
+                    html += `<li><a href="${sub.url}" class="subaction-link"><i class="fas fa-angle-right"></i> ${sub.text}</a></li>`;
+                });
+                html += `</ul></div></section>`;
+            } else {
+                if (data.description) {
+                    html += `
+                        <section class="action-section">
+                            <h2><i class="fas fa-info-circle"></i> Описание</h2>
+                            <div class="section-content">${data.description}</div>
+                        </section>
+                    `;
+                }
+                
+                if (data.examples && data.examples.length) {
+                    html += `
+                        <section class="action-section">
+                            <h2><i class="fas fa-code"></i> Примеры</h2>
+                            <div class="section-content">
+                    `;
+                    data.examples.forEach(ex => {
+                        if (typeof ex === 'object' && ex.html) {
+                            html += ex.html;
+                        } else if (typeof ex === 'string') {
+                            html += `<pre><code>${ex}</code></pre>`;
+                        }
+                    });
+                    html += `</div></section>`;
+                }
+                
+                if (data.tools && data.tools.length) {
+                    html += `
+                        <section class="action-section">
+                            <h2><i class="fas fa-tools"></i> Инструменты</h2>
+                            <div class="section-content tools-list">
+                    `;
+                    data.tools.forEach(tool => {
+                        html += `<span class="tool-cloud">${tool}</span>`;
+                    });
+                    html += `</div></section>`;
+                }
+                
+                if (data.stack_labels && data.stack_labels.length) {
+                    html += `
+                        <section class="action-section">
+                            <h2><i class="fas fa-layer-group"></i> Технологии</h2>
+                            <div class="section-content preview-stack-cloud">
+                    `;
+                    data.stack_labels.forEach(stack => {
+                        html += `<span class="stack-cloud" style="background: ${stack.color};">${stack.name}</span>`;
+                    });
+                    html += `</div></section>`;
+                }
+                
+                if (data.literature && data.literature.length) {
+                    html += `
+                        <section class="action-section">
+                            <h2><i class="fas fa-book"></i> Рекомендуемая литература</h2>
+                            <div class="section-content">
+                                <ul class="literature-list">
+                    `;
+                    data.literature.forEach(item => {
+                        html += `
+                            <li class="literature-item">
+                                <a href="${item.url}" target="_blank" rel="noopener noreferrer" class="literature-link">
+                                    <strong>${item.title}</strong>
+                                </a>
+                                ${item.chapter ? `<br><span class="literature-chapter">${item.chapter}</span>` : ''}
+                                ${item.pages ? `<span class="literature-pages">, ${item.pages}</span>` : ''}
+                                ${item.description ? `<p class="literature-description">${item.description}</p>` : ''}
+                            </li>
+                        `;
+                    });
+                    html += `</ul></div></section>`;
+                }
+                
+                if (data.related_skills && data.related_skills.length) {
+                    html += `
+                        <section class="action-section">
+                            <h2><i class="fas fa-link"></i> Связанные навыки</h2>
+                            <div class="section-content">
+                                <ul class="related-list">
+                    `;
+                    data.related_skills.forEach(rel => {
+                        html += `<li><a href="${rel.url}" class="related-link"><strong>${rel.skill_name}:</strong> ${rel.action}</a></li>`;
+                    });
+                    html += `</ul></div></section>`;
+                }
+            }
+            
+            content.innerHTML = html || '<p class="empty-message">Нет дополнительной информации</p>';
+            animateSections();
+        })
+        .catch(error => {
+            console.error('Error loading action details:', error);
+            document.getElementById('action-content').innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> Ошибка загрузки данных</div>`;
+        });
+}
+
+function animateSections() {
+    const sections = document.querySelectorAll('.action-section');
+    sections.forEach((section, index) => {
+        section.style.opacity = '0';
+        section.style.transform = 'translateY(20px)';
+        section.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        setTimeout(() => {
+            section.style.opacity = '1';
+            section.style.transform = 'translateY(0)';
+        }, 100 * index);
+    });
+}
+
+function copyToClipboard() {
+    const url = window.location.href;
+    navigator.clipboard.writeText(url).then(() => {
+        const notification = document.createElement('div');
+        notification.className = 'copy-notification';
+        notification.innerHTML = '<i class="fas fa-check-circle"></i> Ссылка скопирована';
+        document.body.appendChild(notification);
+        setTimeout(() => notification.remove(), 2000);
+    }).catch(() => alert('Не удалось скопировать ссылку'));
+}
+
+// Клавиша ESC для возврата
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        window.location.href = '/';
+    }
+});
+</script>
+{% endblock %}

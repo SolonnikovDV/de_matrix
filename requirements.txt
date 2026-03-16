@@ -1,0 +1,11 @@
+Flask
+Jinja2
+Werkzeug
+certifi
+itsdangerous
+click
+blinker
+MarkupSafe
+PyYAML
+pandas
+openpyxl

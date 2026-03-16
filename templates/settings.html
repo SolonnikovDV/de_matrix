@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}Настройки{% endblock %}
+
+{% block header_title %}Настройки и бэкапы{% endblock %}
+
+{% block footer_hint %}Бэкапы создаются при перезагрузке данных и переключении источника{% endblock %}
+
+{% block extra_css %}
+<style>
+    .settings-container {
+        padding: 20px;
+        max-width: 800px;
+        margin: 0 auto;
+    }
+    .settings-section {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        padding: 24px;
+        margin-bottom: 24px;
+        border: 1px solid #eef2f6;
+    }
+    .settings-section h2 {
+        color: #2c3e50;
+        margin-bottom: 16px;
+        font-size: 1.25em;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .settings-section h2 i {
+        color: #3498db;
+    }
+    .backup-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    .backup-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border: 1px solid #eef2f6;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        background: #fafbfc;
+    }
+    .backup-item:hover {
+        background: #f0f4f9;
+    }
+    .backup-info {
+        flex: 1;
+    }
+    .backup-id {
+        font-weight: 600;
+        color: #2c3e50;
+    }
+    .backup-meta {
+        font-size: 12px;
+        color: #7f8c8d;
+        margin-top: 4px;
+    }
+    .restore-btn {
+        padding: 8px 16px;
+        background: #3498db;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: all 0.2s;
+    }
+    .restore-btn:hover {
+        background: #2980b9;
+        transform: translateY(-1px);
+    }
+    .restore-btn:disabled {
+        background: #bdc3c7;
+        cursor: not-allowed;
+        transform: none;
+    }
+    .backup-empty {
+        color: #7f8c8d;
+        padding: 20px;
+        text-align: center;
+    }
+    .reload-hint {
+        font-size: 13px;
+        color: #7f8c8d;
+        margin-top: 12px;
+        padding: 10px;
+        background: #f8f9fa;
+        border-radius: 6px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+    <div class="settings-section">
+        <h2><i class="fas fa-database"></i> Восстановление из бэкапа</h2>
+        <p class="reload-hint">
+            Бэкап создаётся при каждой перезагрузке данных (<code>/api/reload</code>) и при переключении источника.
+            В бэкап входят: config (metadata.yaml, metadata.json, settings.yaml) и текущий файл-источник.
+        </p>
+        <ul class="backup-list" id="backupList">
+            <li class="backup-empty" id="backupEmpty">Загрузка списка бэкапов...</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', loadBackups);
+
+async function loadBackups() {
+    try {
+        const r = await fetch('/api/backups');
+        const data = await r.json();
+        const list = document.getElementById('backupList');
+        const empty = document.getElementById('backupEmpty');
+        if (!data.ok || !data.backups || data.backups.length === 0) {
+            empty.textContent = 'Нет доступных бэкапов';
+            empty.style.display = 'block';
+            return;
+        }
+        empty.remove();
+        data.backups.forEach(b => {
+            const li = document.createElement('li');
+            li.className = 'backup-item';
+            const schemaInfo = b.schema_version != null ? ` • схема v${b.schema_version}` : '';
+            li.innerHTML = `
+                <div class="backup-info">
+                    <span class="backup-id">${escapeHtml(b.id)}</span>
+                    <div class="backup-meta">${b.source_file ? 'Источник: ' + escapeHtml(b.source_file) : ''} ${b.created ? ' • ' + escapeHtml(b.created) : ''}${schemaInfo}</div>
+                </div>
+                <button class="restore-btn" data-backup-id="${escapeHtml(b.id)}" title="Восстановить конфиг и источник">
+                    <i class="fas fa-undo-alt"></i> Восстановить
+                </button>
+            `;
+            li.querySelector('.restore-btn').addEventListener('click', function() { restoreBackup(b.id, this); });
+            list.appendChild(li);
+        });
+    } catch (e) {
+        document.getElementById('backupEmpty').textContent = 'Ошибка загрузки: ' + e.message;
+    }
+}
+
+function escapeHtml(s) {
+    if (!s) return '';
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+}
+
+async function restoreBackup(backupId, btn) {
+    if (!confirm('Восстановить данные из бэкапа? Текущие config и источник будут перезаписаны.')) return;
+    if (btn) btn.disabled = true;
+    let force = false;
+    try {
+        let r = await fetch('/api/restore', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ backup_id: backupId, force: false })
+        });
+        let data = await r.json();
+        if (r.status === 409 && data.force_required && data.warning) {
+            if (!confirm(data.warning + '\n\nВосстановить принудительно?')) {
+                if (btn) btn.disabled = false;
+                return;
+            }
+            force = true;
+            r = await fetch('/api/restore', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ backup_id: backupId, force: true })
+            });
+            data = await r.json();
+        }
+        if (data.ok) {
+            alert('Данные восстановлены. Страница будет перезагружена.');
+            window.location.reload();
+        } else {
+            alert('Ошибка: ' + (data.error || 'Unknown'));
+        }
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+</script>
+{% endblock %}

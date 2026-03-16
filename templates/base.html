@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Матрица компетенций Data Engineer{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/style.css">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <button class="sidebar-toggle" id="sidebarToggle" aria-label="Меню доменов">
+        <i class="fas fa-bars"></i>
+    </button>
+    <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <span class="sidebar-title"><i class="fas fa-brain"></i> Матрица DE</span>
+            <button class="sidebar-close" id="sidebarClose" aria-label="Закрыть"><i class="fas fa-times"></i></button>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="sidebar-section">
+                <div class="sidebar-section-label">Навигация</div>
+                <a href="/" class="sidebar-nav-item {% if request.path == '/' %}active{% endif %}">
+                    <i class="fas fa-home"></i>
+                    <span>Главная</span>
+                </a>
+                <a href="/matrix" class="sidebar-nav-item {% if request.path == '/matrix' or request.path.startswith('/domain/') %}active{% endif %}">
+                    <i class="fas fa-th-large"></i>
+                    <span>Матрица</span>
+                </a>
+                <a href="/graph" class="sidebar-nav-item {% if request.path == '/graph' or request.path.startswith('/domain-graph/') %}active{% endif %}">
+                    <i class="fas fa-project-diagram"></i>
+                    <span>Граф</span>
+                </a>
+                <a href="/export" class="sidebar-nav-item {% if request.path == '/export' %}active{% endif %}">
+                    <i class="fas fa-table"></i>
+                    <span>Экспорт</span>
+                </a>
+                <a href="/literature" class="sidebar-nav-item {% if request.path == '/literature' %}active{% endif %}">
+                    <i class="fas fa-book"></i>
+                    <span>Литература</span>
+                </a>
+                <a href="/import" class="sidebar-nav-item {% if request.path == '/import' %}active{% endif %}">
+                    <i class="fas fa-upload"></i>
+                    <span>Импорт</span>
+                </a>
+                <a href="/settings" class="sidebar-nav-item {% if request.path == '/settings' %}active{% endif %}">
+                    <i class="fas fa-cog"></i>
+                    <span>Настройки</span>
+                </a>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-section-label">Домены</div>
+            {% for d in sidebar_domains %}
+            <div class="sidebar-domain-group {% if current_domain_index is defined and current_domain_index == d.index %}expanded{% endif %}" data-domain-id="{{ d.index }}">
+                <a href="/domain/{{ d.index }}" class="sidebar-domain {% if current_domain_index is defined and current_domain_index == d.index and current_skill_index is not defined %}active{% endif %}" style="--domain-color: {{ d.color }}">
+                    <i class="fas fa-chevron-right sidebar-expand-icon"></i>
+                    <i class="fas fa-{{ d.icon }}"></i>
+                    <span class="sidebar-label">{{ d.name }}</span>
+                    <span class="sidebar-count" title="Навыков: {{ d.skills_count }}">{{ d.skills_count }}</span>
+                </a>
+                <div class="sidebar-skills">
+                    {% for s in d.skills %}
+                    <a href="/domain/{{ d.index }}/skill/{{ s.index }}" class="sidebar-skill {% if current_domain_index is defined and current_skill_index is defined and current_domain_index == d.index and current_skill_index == s.index %}active{% endif %}" style="--skill-color: {{ s.color }}" title="Действий: {{ s.actions_count }}">
+                        <i class="fas fa-{{ s.icon }}"></i>
+                        <span class="sidebar-label">{{ s.name }}</span>
+                        <span class="sidebar-count">{{ s.actions_count }}</span>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+            {% if not sidebar_domains %}
+            <p class="sidebar-empty">Нет доменов</p>
+            {% endif %}
+            </div>
+        </nav>
+    </aside>
+    <div class="main-wrapper">
+    <div class="container">
+        <header class="header">
+            <h1>
+                <i class="fas fa-brain"></i>
+                {% block header_title %}Матрица компетенций Middle Data Engineer{% endblock %}
+            </h1>
+            <div class="subtitle">
+                PostgreSQL • Greenplum • Spark • PySpark • CTL
+            </div>
+        </header>
+        
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+        
+        <footer class="footer">
+            <i class="fas fa-copyright"></i> Матрица навыков для оценки Middle Data Engineer • 
+            <i class="fas fa-mouse-pointer"></i> {% block footer_hint %}Кликните на любой элемент для раскрытия{% endblock %}
+        </footer>
+    </div>
+    </div>
+    
+    <script src="/static/js/matrix.js"></script>
+    <script>
+    (function() {
+        var sidebar = document.getElementById('sidebar');
+        var toggle = document.getElementById('sidebarToggle');
+        var closeBtn = document.getElementById('sidebarClose');
+        var backdrop = document.getElementById('sidebarBackdrop');
+        function openSidebar() {
+            if (sidebar) sidebar.classList.add('open');
+            if (backdrop) backdrop.classList.add('visible');
+            if (backdrop) backdrop.setAttribute('aria-hidden', 'false');
+        }
+        function closeSidebar() {
+            if (sidebar) sidebar.classList.remove('open');
+            if (backdrop) backdrop.classList.remove('visible');
+            if (backdrop) backdrop.setAttribute('aria-hidden', 'true');
+        }
+        if (toggle) toggle.addEventListener('click', openSidebar);
+        if (closeBtn) closeBtn.addEventListener('click', closeSidebar);
+        if (backdrop) backdrop.addEventListener('click', closeSidebar);
+        document.querySelectorAll('.sidebar-domain').forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                if (e.target.closest('.sidebar-expand-icon')) {
+                    e.preventDefault();
+                    var group = link.closest('.sidebar-domain-group');
+                    if (group) group.classList.toggle('expanded');
+                } else if (window.matchMedia('(max-width: 900px)').matches) closeSidebar();
+            });
+        });
+        document.querySelectorAll('.sidebar-skill').forEach(function(link) {
+            link.addEventListener('click', function() {
+                if (window.matchMedia('(max-width: 900px)').matches) closeSidebar();
+            });
+        });
+        document.querySelectorAll('.sidebar-nav-item').forEach(function(link) {
+            link.addEventListener('click', function() {
+                if (window.matchMedia('(max-width: 900px)').matches) closeSidebar();
+            });
+        });
+    })();
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

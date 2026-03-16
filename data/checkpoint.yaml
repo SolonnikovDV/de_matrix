@@ -1,0 +1,2046 @@
+source_file: matrix.json
+source_hash: f1f80031559e3c33eee937dd30a8aad42274af808cf3ae6fa0107d2a4cd8f96f
+updated: '2026-03-15T21:13:16.603439+00:00'
+tree:
+- id: d0
+  name: Хранение и управление данными
+  path:
+  - 0
+  children:
+  - id: d0s0
+    name: Моделирование данных
+    description: Проектирование логических и физических моделей данных
+    path:
+    - 0
+    - 0
+    children:
+    - id: d0s0a0
+      name: Проектирование моделей под OLTP/OLAP с учётом Greenplum (распределение,
+        партиции)
+      path:
+      - 0
+      - 0
+      - 0
+      template_id: data_modeling
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d0s0a1
+      name: Разработка витрин
+      path:
+      - 0
+      - 0
+      - 1
+      template_id: data_mart_development
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d0s0a2
+      name: Применение SCD в Greenplum
+      path:
+      - 0
+      - 0
+      - 2
+      template_id: scd_implementation
+      children: []
+      level: 2
+      is_leaf: true
+    level: 1
+  - id: d0s1
+    name: Оптимизация запросов
+    description: Анализ и улучшение производительности запросов
+    path:
+    - 0
+    - 1
+    children:
+    - id: d0s1a0
+      name: Анализ планов (EXPLAIN) в PostgreSQL / Greenplum
+      path:
+      - 0
+      - 1
+      - 0
+      template_id: query_optimization
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d0s1a1
+      name: Создание и поддержка индексов/дистрибьюции
+      path:
+      - 0
+      - 1
+      - 1
+      template_id: index_distribution
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d0s1a2
+      name: Переписывание запросов для минимизации перемещения/повторного чтения данных
+        в Greenplum
+      path:
+      - 0
+      - 1
+      - 2
+      template_id: query_rewriting_greenplum
+      children: []
+      level: 2
+      is_leaf: true
+    level: 1
+  - id: d0s2
+    name: Организация данных в слоях
+    description: Структурирование данных по уровням обработки
+    path:
+    - 0
+    - 2
+    children:
+    - id: d0s2a0
+      name: Построение слоёв raw / stage / core / mart
+      path:
+      - 0
+      - 2
+      - 0
+      template_id: data_layering
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d0s2a1
+      name: Партиционирование таблиц
+      path:
+      - 0
+      - 2
+      - 1
+      template_id: partitioning
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d0s2a2
+      name: Ротация и архивация/дроп партиций
+      path:
+      - 0
+      - 2
+      - 2
+      template_id: partition_maintenance
+      children: []
+      level: 2
+      is_leaf: true
+    level: 1
+  level: 0
+- id: d1
+  name: Разработка ETL/ELT
+  path:
+  - 1
+  children:
+  - id: d1s0
+    name: Алгоритмы и структуры данных
+    description: Базовые структуры данных и алгоритмы обработки данных
+    path:
+    - 1
+    - 0
+    children:
+    - id: d1s0a0
+      name: Основные структуры данных (массивы, списки, JSON-подобные структуры, множества,
+        словари)
+      path:
+      - 1
+      - 0
+      - 0
+      template_id: basic_data_structures
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d1s0a1
+      name: Алгоритмы ETL/ELT (batch/streaming, инкремент/merge/full reload, SCD)
+      path:
+      - 1
+      - 0
+      - 1
+      template_id: etl_algorithms
+      children: []
+      level: 2
+      is_leaf: true
+    level: 1
+  - id: d1s1
+    name: Pipeline design и оптимизация
+    description: Проектирование и оптимизация пайплайнов обработки данных
+    path:
+    - 1
+    - 1
+    children:
+    - id: d1s1a0
+      name: Анализ производительности запросов
+      path:
+      - 1
+      - 1
+      - 0
+      template_id: query_performance_analysis
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d1s1a1
+      name: Анализ плана запроса (EXPLAIN, профилирование)
+      path:
+      - 1
+      - 1
+      - 1
+      template_id: query_plan_analysis
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d1s1a2
+      name: Партиционирование таблиц
+      path:
+      - 1
+      - 1
+      - 2
+      template_id: partitioning
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d1s1a3
+      name: Декомпозиция пайплайнов и идемпотентность
+      path:
+      - 1
+      - 1
+      - 3
+      template_id: pipeline_decomposition
+      children: []
+      level: 2
+      is_leaf: true
+    level: 1
+  - id: d1s2
+    name: Инструменты работы с данными
+    description: Практическое владение инструментами разработки ETL/ELT
+    path:
+    - 1
+    - 2
+    children:
+    - id: d1s2a0
+      name: SQL (перекосы данных, оконные функции, named windows)
+      path:
+      - 1
+      - 2
+      - 0
+      template_id: sql_advanced
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d1s2a1
+      name: 'Spark (Python/Scala): оптимизация, устранение skew, конфигурация'
+      path:
+      - 1
+      - 2
+      - 1
+      template_id: spark_development
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d1s2a2
+      name: 'dbt (Data Build Tool): проектирование, теги, DAG-мышление'
+      path:
+      - 1
+      - 2
+      - 2
+      template_id: dbt_development
+      children: []
+      level: 2
+      is_leaf: true
+    level: 1
+  - id: d1s3
+    name: Тестирование и качество кода
+    description: Обеспечение качества кода и данных
+    path:
+    - 1
+    - 3
+    children:
+    - id: d1s3a0
+      name: Юнит-тестирование
+      path:
+      - 1
+      - 3
+      - 0
+      template_id: unit_testing_parent
+      children:
+      - id: d1s3a0_0
+        name: Писать юнит-тесты
+        path:
+        - 1
+        - 3
+        - 0
+        - 0
+        template_id: unit_test_writing
+        children: []
+        level: 3
+        is_leaf: true
+      - id: d1s3a0_1
+        name: Использовать технологии тестирования
+        path:
+        - 1
+        - 3
+        - 0
+        - 1
+        template_id: unit_test_technologies
+        children: []
+        level: 3
+        is_leaf: true
+      - id: d1s3a0_2
+        name: Тестировать граничные случаи
+        path:
+        - 1
+        - 3
+        - 0
+        - 2
+        template_id: unit_test_edge_cases
+        children: []
+        level: 3
+        is_leaf: true
+      - id: d1s3a0_3
+        name: Изолировать тесты
+        path:
+        - 1
+        - 3
+        - 0
+        - 3
+        template_id: unit_test_isolation
+        children: []
+        level: 3
+        is_leaf: true
+      - id: d1s3a0_4
+        name: Интегрировать юнит-тесты
+        path:
+        - 1
+        - 3
+        - 0
+        - 4
+        template_id: unit_test_integration
+        children: []
+        level: 3
+        is_leaf: true
+      level: 2
+      is_leaf: false
+    - id: d1s3a1
+      name: Качество кода
+      path:
+      - 1
+      - 3
+      - 1
+      template_id: code_quality_parent
+      children:
+      - id: d1s3a1_0
+        name: Использовать линтеры и форматтеры
+        path:
+        - 1
+        - 3
+        - 1
+        - 0
+        template_id: code_quality_linters
+        children: []
+        level: 3
+        is_leaf: true
+      - id: d1s3a1_1
+        name: Следовать принципам кодирования (SOLID, DRY, KISS)
+        path:
+        - 1
+        - 3
+        - 1
+        - 1
+        template_id: code_quality_principles
+        children: []
+        level: 3
+        is_leaf: true
+      - id: d1s3a1_2
+        name: Документировать код
+        path:
+        - 1
+        - 3
+        - 1
+        - 2
+        template_id: code_quality_documentation
+        children: []
+        level: 3
+        is_leaf: true
+      - id: d1s3a1_3
+        name: Проводить код-ревью
+        path:
+        - 1
+        - 3
+        - 1
+        - 3
+        template_id: code_review_mentoring
+        children: []
+        level: 3
+        is_leaf: true
+      - id: d1s3a1_4
+        name: Планировать рефакторинг
+        path:
+        - 1
+        - 3
+        - 1
+        - 4
+        template_id: code_quality_refactoring
+        children: []
+        level: 3
+        is_leaf: true
+      level: 2
+      is_leaf: false
+    level: 1
+  level: 0
+- id: d2
+  name: DataOps (Инфраструктура и надёжность)
+  path:
+  - 2
+  children:
+  - id: d2s0
+    name: CI/CD для пайплайнов
+    description: Автоматизация доставки изменений
+    path:
+    - 2
+    - 0
+    children:
+    - id: d2s0a0
+      name: Автоматизация деплоя
+      path:
+      - 2
+      - 0
+      - 0
+      template_id: ci_cd
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d2s0a1
+      name: Применение миграций данных (liquibase)
+      path:
+      - 2
+      - 0
+      - 1
+      template_id: liquibase
+      children: []
+      level: 2
+      is_leaf: true
+    level: 1
+  - id: d2s1
+    name: Мониторинг и логирование
+    description: Отслеживание состояния систем
+    path:
+    - 2
+    - 1
+    children:
+    - id: d2s1a0
+      name: Сбор метрик выполнения (Spark UI, CTL)
+      path:
+      - 2
+      - 1
+      - 0
+      template_id: metrics_collection
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d2s1a1
+      name: Настройка алертов (время, падения, застревания, schema drift)
+      path:
+      - 2
+      - 1
+      - 1
+      template_id: alerting
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d2s1a2
+      name: Понятное логирование для быстрого поиска ошибок
+      path:
+      - 2
+      - 1
+      - 2
+      template_id: logging
+      children: []
+      level: 2
+      is_leaf: true
+    level: 1
+  level: 0
+- id: d3
+  name: Качество данных и управление
+  path:
+  - 3
+  children:
+  - id: d3s0
+    name: Обеспечение качества данных
+    description: Контроль целостности и корректности данных
+    path:
+    - 3
+    - 0
+    children:
+    - id: d3s0a0
+      name: Проверки после загрузки (уникальность, NOT NULL, целостность)
+      path:
+      - 3
+      - 0
+      - 0
+      template_id: data_quality
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d3s0a1
+      name: Специализированные проверки метрик витрин (Great Expectations, DQX)
+      path:
+      - 3
+      - 0
+      - 1
+      template_id: data_quality_metrics
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d3s0a2
+      name: Остановка пайплайна или алерт при нарушении метрик DQ
+      path:
+      - 3
+      - 0
+      - 2
+      template_id: data_quality
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d3s0a3
+      name: Реализация Quarantine Pattern при schema drift
+      path:
+      - 3
+      - 0
+      - 3
+      template_id: quarantine_pattern
+      children: []
+      level: 2
+      is_leaf: true
+    level: 1
+  - id: d3s1
+    name: Восстановление происхождения (Lineage)
+    description: Отслеживание потока данных
+    path:
+    - 3
+    - 1
+    children:
+    - id: d3s1a0
+      name: Документирование полного цикла данных s2t
+      path:
+      - 3
+      - 1
+      - 0
+      template_id: lineage_s2t
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d3s1a1
+      name: Анализ влияния изменений
+      path:
+      - 3
+      - 1
+      - 1
+      template_id: impact_analysis
+      children: []
+      level: 2
+      is_leaf: true
+    level: 1
+  - id: d3s2
+    name: Документирование
+    description: Ведение технической документации
+    path:
+    - 3
+    - 2
+    children:
+    - id: d3s2a0
+      name: Ведение словаря бизнес смысла атрибутов
+      path:
+      - 3
+      - 2
+      - 0
+      template_id: business_dictionary
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d3s2a1
+      name: Описание сложных трансформаций и бизнес‑правил (функциональные решения)
+      path:
+      - 3
+      - 2
+      - 1
+      template_id: functional_solutions
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d3s2a2
+      name: Описание архитектуры решений
+      path:
+      - 3
+      - 2
+      - 2
+      template_id: architecture_description
+      children: []
+      level: 2
+      is_leaf: true
+    level: 1
+  level: 0
+- id: d4
+  name: Профессиональные и коммуникативные навыки
+  path:
+  - 4
+  children:
+  - id: d4s0
+    name: Коммуникация с аналитиками
+    description: Взаимодействие с потребителями данных
+    path:
+    - 4
+    - 0
+    children:
+    - id: d4s0a0
+      name: Перевод потребностей бизнеса в технические требования
+      path:
+      - 4
+      - 0
+      - 0
+      template_id: communication
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d4s0a1
+      name: Помощь аналитикам в написании эффективных запросов
+      path:
+      - 4
+      - 0
+      - 1
+      template_id: analyst_support
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d4s0a2
+      name: Согласование изменений с владельцами систем (источники, бизнес, BI)
+      path:
+      - 4
+      - 0
+      - 2
+      template_id: stakeholder_agreement
+      children: []
+      level: 2
+      is_leaf: true
+    level: 1
+  - id: d4s1
+    name: Управление задачами
+    description: Организация собственной работы
+    path:
+    - 4
+    - 1
+    children:
+    - id: d4s1a0
+      name: Декомпозиция задач (анализ → проектирование → разработка → тестирование
+        → деплой)
+      path:
+      - 4
+      - 1
+      - 0
+      template_id: task_decomposition
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d4s1a1
+      name: Реалистичная оценка сроков с учётом рисков
+      path:
+      - 4
+      - 1
+      - 1
+      template_id: task_estimation
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d4s1a2
+      name: Ведение задачи от постановки до прода
+      path:
+      - 4
+      - 1
+      - 2
+      template_id: task_lifecycle
+      children: []
+      level: 2
+      is_leaf: true
+    level: 1
+  - id: d4s2
+    name: Наставничество
+    description: Передача знаний коллегам
+    path:
+    - 4
+    - 2
+    children:
+    - id: d4s2a0
+      name: Помощь джунам с настройками окружения разработки
+      path:
+      - 4
+      - 2
+      - 0
+      template_id: junior_mentoring_environment
+      children: []
+      level: 2
+      is_leaf: true
+    - id: d4s2a1
+      name: Объяснение лучших практик на код‑ревью
+      path:
+      - 4
+      - 2
+      - 1
+      template_id: code_review_mentoring
+      children: []
+      level: 2
+      is_leaf: true
+    level: 1
+  level: 0
+matrix:
+  domains:
+  - name: Хранение и управление данными
+    skills:
+    - name: Моделирование данных
+      description: Проектирование логических и физических моделей данных
+      actions:
+      - text: Проектирование моделей под OLTP/OLAP с учётом Greenplum (распределение,
+          партиции)
+        template_id: data_modeling
+      - text: Разработка витрин
+        template_id: data_mart_development
+      - text: Применение SCD в Greenplum
+        template_id: scd_implementation
+    - name: Оптимизация запросов
+      description: Анализ и улучшение производительности запросов
+      actions:
+      - text: Анализ планов (EXPLAIN) в PostgreSQL / Greenplum
+        template_id: query_optimization
+      - text: Создание и поддержка индексов/дистрибьюции
+        template_id: index_distribution
+      - text: Переписывание запросов для минимизации перемещения/повторного чтения
+          данных в Greenplum
+        template_id: query_rewriting_greenplum
+    - name: Организация данных в слоях
+      description: Структурирование данных по уровням обработки
+      actions:
+      - text: Построение слоёв raw / stage / core / mart
+        template_id: data_layering
+      - text: Партиционирование таблиц
+        template_id: partitioning
+      - text: Ротация и архивация/дроп партиций
+        template_id: partition_maintenance
+  - name: Разработка ETL/ELT
+    skills:
+    - name: Алгоритмы и структуры данных
+      description: Базовые структуры данных и алгоритмы обработки данных
+      actions:
+      - text: Основные структуры данных (массивы, списки, JSON-подобные структуры,
+          множества, словари)
+        template_id: basic_data_structures
+      - text: Алгоритмы ETL/ELT (batch/streaming, инкремент/merge/full reload, SCD)
+        template_id: etl_algorithms
+    - name: Pipeline design и оптимизация
+      description: Проектирование и оптимизация пайплайнов обработки данных
+      actions:
+      - text: Анализ производительности запросов
+        template_id: query_performance_analysis
+      - text: Анализ плана запроса (EXPLAIN, профилирование)
+        template_id: query_plan_analysis
+      - text: Партиционирование таблиц
+        template_id: partitioning
+      - text: Декомпозиция пайплайнов и идемпотентность
+        template_id: pipeline_decomposition
+    - name: Инструменты работы с данными
+      description: Практическое владение инструментами разработки ETL/ELT
+      actions:
+      - text: SQL (перекосы данных, оконные функции, named windows)
+        template_id: sql_advanced
+      - text: 'Spark (Python/Scala): оптимизация, устранение skew, конфигурация'
+        template_id: spark_development
+      - text: 'dbt (Data Build Tool): проектирование, теги, DAG-мышление'
+        template_id: dbt_development
+    - name: Тестирование и качество кода
+      description: Обеспечение качества кода и данных
+      actions:
+      - text: Юнит-тестирование
+        template_id: unit_testing_parent
+        subactions:
+        - text: Писать юнит-тесты
+          template_id: unit_test_writing
+        - text: Использовать технологии тестирования
+          template_id: unit_test_technologies
+        - text: Тестировать граничные случаи
+          template_id: unit_test_edge_cases
+        - text: Изолировать тесты
+          template_id: unit_test_isolation
+        - text: Интегрировать юнит-тесты
+          template_id: unit_test_integration
+      - text: Качество кода
+        template_id: code_quality_parent
+        subactions:
+        - text: Использовать линтеры и форматтеры
+          template_id: code_quality_linters
+        - text: Следовать принципам кодирования (SOLID, DRY, KISS)
+          template_id: code_quality_principles
+        - text: Документировать код
+          template_id: code_quality_documentation
+        - text: Проводить код-ревью
+          template_id: code_review_mentoring
+        - text: Планировать рефакторинг
+          template_id: code_quality_refactoring
+  - name: DataOps (Инфраструктура и надёжность)
+    skills:
+    - name: CI/CD для пайплайнов
+      description: Автоматизация доставки изменений
+      actions:
+      - text: Автоматизация деплоя
+        template_id: ci_cd
+      - text: Применение миграций данных (liquibase)
+        template_id: liquibase
+    - name: Мониторинг и логирование
+      description: Отслеживание состояния систем
+      actions:
+      - text: Сбор метрик выполнения (Spark UI, CTL)
+        template_id: metrics_collection
+      - text: Настройка алертов (время, падения, застревания, schema drift)
+        template_id: alerting
+      - text: Понятное логирование для быстрого поиска ошибок
+        template_id: logging
+  - name: Качество данных и управление
+    skills:
+    - name: Обеспечение качества данных
+      description: Контроль целостности и корректности данных
+      actions:
+      - text: Проверки после загрузки (уникальность, NOT NULL, целостность)
+        template_id: data_quality
+      - text: Специализированные проверки метрик витрин (Great Expectations, DQX)
+        template_id: data_quality_metrics
+      - text: Остановка пайплайна или алерт при нарушении метрик DQ
+        template_id: data_quality
+      - text: Реализация Quarantine Pattern при schema drift
+        template_id: quarantine_pattern
+    - name: Восстановление происхождения (Lineage)
+      description: Отслеживание потока данных
+      actions:
+      - text: Документирование полного цикла данных s2t
+        template_id: lineage_s2t
+      - text: Анализ влияния изменений
+        template_id: impact_analysis
+    - name: Документирование
+      description: Ведение технической документации
+      actions:
+      - text: Ведение словаря бизнес смысла атрибутов
+        template_id: business_dictionary
+      - text: Описание сложных трансформаций и бизнес‑правил (функциональные решения)
+        template_id: functional_solutions
+      - text: Описание архитектуры решений
+        template_id: architecture_description
+  - name: Профессиональные и коммуникативные навыки
+    skills:
+    - name: Коммуникация с аналитиками
+      description: Взаимодействие с потребителями данных
+      actions:
+      - text: Перевод потребностей бизнеса в технические требования
+        template_id: communication
+      - text: Помощь аналитикам в написании эффективных запросов
+        template_id: analyst_support
+      - text: Согласование изменений с владельцами систем (источники, бизнес, BI)
+        template_id: stakeholder_agreement
+    - name: Управление задачами
+      description: Организация собственной работы
+      actions:
+      - text: Декомпозиция задач (анализ → проектирование → разработка → тестирование
+          → деплой)
+        template_id: task_decomposition
+      - text: Реалистичная оценка сроков с учётом рисков
+        template_id: task_estimation
+      - text: Ведение задачи от постановки до прода
+        template_id: task_lifecycle
+    - name: Наставничество
+      description: Передача знаний коллегам
+      actions:
+      - text: Помощь джунам с настройками окружения разработки
+        template_id: junior_mentoring_environment
+      - text: Объяснение лучших практик на код‑ревью
+        template_id: code_review_mentoring
+meta:
+  action_examples:
+  - id: explain_analyze
+    title: Анализ плана запроса
+    code: "-- Пример анализа запроса в PostgreSQL\nEXPLAIN (ANALYZE, BUFFERS, VERBOSE)\
+      \ \nSELECT date_trunc('month', sale_date) as month, category, COUNT(*) as sales_count,\
+      \ SUM(amount) as total_amount\nFROM sales s\nJOIN products p ON s.product_id\
+      \ = p.id\nWHERE sale_date >= '2024-01-01'\nGROUP BY 1, 2;"
+    language: sql
+  - id: create_index
+    title: Создание индексов
+    code: '-- Создание индекса в PostgreSQL/Greenplum
+
+      CREATE INDEX idx_sales_date ON sales (sale_date);
+
+      CREATE INDEX idx_sales_date_category ON sales (sale_date, category);
+
+      CREATE INDEX idx_sales_status ON sales USING bitmap (status);'
+    language: sql
+  - id: scd_example
+    title: SCD Type 2 реализация
+    code: '-- Пример SCD Type 2
+
+      BEGIN;
+
+      LOCK TABLE dim_customer IN EXCLUSIVE MODE;
+
+      UPDATE dim_customer SET end_date = current_date, is_current = false
+
+      WHERE customer_id IN (SELECT id FROM source_updates) AND is_current = true;
+
+      INSERT INTO dim_customer SELECT *, current_date, ''9999-12-31'', true FROM source_updates;
+
+      COMMIT;'
+    language: sql
+  - id: spark_broadcast
+    title: Broadcast join в PySpark
+    code: 'from pyspark.sql.functions import broadcast
+
+      result = large_df.join(broadcast(small_df), ''key'')'
+    language: python
+  - id: cte_optimization
+    title: Оптимизация с CTE
+    code: "WITH filtered AS (\n  SELECT * FROM order_item WHERE created_at >= '2024-01-01'\n\
+      )\nSELECT ..."
+    language: sql
+  - id: unit_test_chispa
+    title: Юнит-тест PySpark с chispa
+    code: "from chispa import assert_df_equality\n\ndef test_transformation(spark):\n\
+      \    input_df = spark.createDataFrame([(1, 'a')], ['id', 'value'])\n    expected_df\
+      \ = spark.createDataFrame([(1, 'A')], ['id', 'value_upper'])\n    result_df\
+      \ = transform_function(input_df)\n    assert_df_equality(result_df, expected_df)"
+    language: python
+  literature:
+    kleppmann_ch2:
+      title: Мартин Клеппман — «Высоконагруженные приложения»
+      chapter: 'Глава 2: Модели данных и языки запросов'
+      pages: С. 45-78
+      url: https://www.litres.ru/book/martin-kleppman-1733/vysokonagruzhennye-prilozheniya-programmirovanie-mass-39100996/
+      description: Фундаментальное понимание реляционных, документных и графовых моделей
+        данных
+      local_path: data/library/kleppmann_ch2.pdf
+    kleppmann_ch3:
+      title: Мартин Клеппман — «Высоконагруженные приложения»
+      chapter: 'Глава 3: Хранение и поиск данных'
+      pages: С. 79-124
+      url: https://www.litres.ru/book/martin-kleppman-1733/vysokonagruzhennye-prilozheniya-programmirovanie-mass-39100996/
+      description: Принципы работы индексов, хранения данных на диске
+      local_path: data/library/kleppmann_ch3.pdf
+    postgres_pro_book:
+      title: Е.П. Моргунов — PostgreSQL. Основы языка SQL
+      chapter: 'Глава 1: Введение в базы данных и SQL'
+      pages: С. 7-35
+      url: https://postgrespro.ru/education/books/sqlprimer
+      description: Базовые концепции SQL, создание таблиц, простые запросы
+    postgres_pro_dev1:
+      title: Курс Postgres Pro — DEV1. Основы администрирования PostgreSQL
+      chapter: 'Разделы: Введение, SQL, Управление доступом'
+      pages: Видеолекции + конспекты
+      url: https://postgrespro.ru/education/courses/DEV1
+      description: Углубленное изучение SQL, транзакций, индексов
+    postgres_pro_qpt:
+      title: Курс Postgres Pro — QPT. Оптимизация запросов
+      chapter: Все разделы
+      pages: Видеолекции
+      url: https://postgrespro.ru/education/courses/QPT
+      description: Анализ планов запросов, настройка производительности
+    kimball_ch1_3:
+      title: Ральф Кимбалл — «Инструментарий хранилища данных»
+      chapter: 'Главы 1-3: Основы моделирования, схемы звезда и снежинка'
+      pages: С. 15-120
+      url: https://www.labirint.ru/books/1008963/
+      description: Классическое введение в проектирование хранилищ данных
+    data_engineering_book:
+      title: Райс, Хаусен, Махапатра — «Основы инженерии данных»
+      chapter: 'Глава 1: Понятие инженерии данных, Глава 2: Жизненный цикл инженерии
+        данных'
+      pages: С. 29-101
+      url: https://bhv.ru/product/osnovy-inzhenerii-dannyh/
+      description: Современный взгляд на профессию Data Engineer, жизненный цикл данных
+    dbt_labs_cte:
+      title: dbt Labs — Документация
+      chapter: Getting started with CTEs
+      pages: Веб-документация
+      url: https://docs.getdbt.com/terms/cte
+      description: Практическое использование CTE в трансформациях
+    leetcode_sql:
+      title: LeetCode — SQL 50 Study Plan
+      chapter: Все задачи
+      pages: Интерактивная платформа
+      url: https://leetcode.com/studyplan/top-sql-50/
+      description: Практика SQL-запросов разного уровня сложности
+    datavault_article:
+      title: 'Что такое Data Vault: моделирование КХД для архитектора Big Data'
+      chapter: Обзорная статья
+      pages: Веб-статья
+      url: https://habr.com/ru/companies/mws/articles/488172/
+      description: Введение в методологию Data Vault
+    datavault_youtube:
+      title: How to create a Data Vault Model from scratch
+      chapter: Видео
+      pages: YouTube
+      url: https://www.youtube.com/watch?v=KgW4YVZYpQk
+      description: Пошаговое создание модели Data Vault
+    spark_perf:
+      title: Databricks — Adaptive Query Execution (AQE)
+      chapter: Документация
+      pages: Веб
+      url: https://docs.databricks.com/en/optimizations/aqe.html
+      description: Устранение перекосов данных (skew join), настройка партиций
+    greeplum_dist:
+      title: Документация Greenplum — Выбор ключа распределения
+      chapter: Best Practices
+      pages: Веб
+      url: https://docs.vmware.com/en/VMware-Greenplum/index.html
+      description: Правила выбора distribution key для равномерной загрузки
+    git_pro:
+      title: Scott Chacon, Ben Straub — Pro Git
+      chapter: 'Глава 1: Введение в контроль версий, Глава 3: Ветвление в Git'
+      pages: С. 11-56, 77-118
+      url: https://git-scm.com/book/ru/v2
+      description: Основы Git, работа с ветками, разрешение конфликтов
+    markdown_guide:
+      title: Руководство по Markdown
+      chapter: Базовый синтаксис
+      pages: Веб
+      url: https://www.markdownguide.org/basic-syntax/
+      description: Оформление документации в Markdown
+  action_templates:
+    data_modeling:
+      name: Моделирование данных
+      minimal_requirements:
+      - 🔹 Использовать понятные имена таблиц и полей, отражающие бизнес-сущности
+      - 🔹 Документировать бизнес-смысл каждого поля в словаре данных
+      - 🔹 Для аналитических нагрузок применять звездообразную схему (star schema)
+        или снежинку
+      - 🔹 При использовании Greenplum выбирать distribution key по полям, участвующим
+        в JOIN и GROUP BY
+      - 🔹 Проектировать партиционирование для больших таблиц по часто используемым
+        фильтрам (обычно дата)
+      antipatterns:
+      - ❌ Отсутствие первичных ключей в таблицах
+      - ❌ Неправильный выбор distribution key, приводящий к перекосу данных
+      - ❌ Игнорирование партиционирования для исторических данных
+      - ❌ Избыточная нормализация в аналитических схемах
+      - ❌ Отсутствие документации по бизнес-логике полей
+      stack_refs:
+      - postgresql
+      - greenplum
+      tools_refs:
+      - sql_tools
+      examples_refs: []
+      resource_ids:
+      - kleppmann_ch2
+      - kimball_ch1_3
+      - postgres_pro_book
+      - datavault_article
+      - datavault_youtube
+    data_mart_development:
+      name: Разработка витрин данных
+      minimal_requirements:
+      - '🔹 Определить тип витрины: зависимая, независимая или гибридная'
+      - 🔹 Проектировать витрины под конкретные бизнес-процессы отдела
+      - 🔹 Использовать звездообразную схему (star schema) с таблицами фактов и измерений
+      - 🔹 Денормализовать данные для ускорения запросов BI-инструментов
+      antipatterns:
+      - ❌ Создание витрины без четких требований от бизнес-пользователей
+      - ❌ Копирование всей витрины целиком при каждом обновлении вместо инкрементальной
+        загрузки
+      - ❌ Игнорирование вопросов безопасности и разграничения доступа
+      stack_refs: []
+      tools_refs:
+      - sql_tools
+      examples_refs: []
+      resource_ids:
+      - kimball_ch1_3
+    scd_implementation:
+      name: Применение SCD в Greenplum
+      minimal_requirements:
+      - 🔹 Для SCD Type 2 использовать поля start_date, end_date (NULL для текущей
+        записи) и флаг is_current
+      - 🔹 В Greenplum выбирать distribution key по бизнес-ключу для равномерного распределения
+      - 🔹 Применять партиционирование по start_date для ускорения исторических запросов
+      - '🔹 Создавать частичные индексы для быстрого доступа к текущим записям: CREATE
+        INDEX idx_current ON table(user_id) WHERE is_current = true'
+      antipatterns:
+      - ❌ Отсутствие блокировок при параллельных обновлениях
+      - ❌ Неправильный выбор distribution key, вызывающий перекос данных
+      - ❌ Игнорирование индексов на полях, участвующих в JOIN и WHERE
+      stack_refs:
+      - greenplum
+      tools_refs:
+      - sql_tools
+      examples_refs:
+      - scd_example
+      resource_ids:
+      - kimball_ch1_3
+    query_optimization:
+      name: Оптимизация запросов
+      minimal_requirements:
+      - 🔹 Всегда анализировать план запроса через EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
+      - 🔹 В Greenplum использовать optimizer hints для принудительного выбора плана
+        при необходимости
+      - '🔹 Загружать модуль pg_hint_plan для работы с хинтами: LOAD ''pg_hint_plan'''
+      antipatterns:
+      - ❌ Оптимизация без анализа реального плана
+      - ❌ Игнорирование перекоса данных при распределении
+      stack_refs:
+      - postgresql
+      - greenplum
+      tools_refs:
+      - sql_tools
+      examples_refs:
+      - explain_analyze
+      resource_ids:
+      - postgres_pro_qpt
+      - postgres_pro_dev1
+    index_distribution:
+      name: Создание и поддержка индексов/дистрибьюции
+      minimal_requirements:
+      - 🔹 Создавать индексы на полях, участвующих в WHERE, JOIN и ORDER BY, с учётом
+        селективности
+      - 🔹 В Greenplum выбирать distribution key так, чтобы минимизировать перемещение
+        данных между сегментами
+      - 🔹 Использовать составные индексы для запросов с несколькими условиями, соблюдая
+        порядок столбцов
+      antipatterns:
+      - ❌ Создание индексов без анализа реальных запросов
+      - ❌ Неправильный выбор distribution key, приводящий к перекосу данных
+      stack_refs:
+      - postgresql
+      - greenplum
+      tools_refs:
+      - sql_tools
+      examples_refs:
+      - create_index
+      resource_ids:
+      - postgres_pro_dev1
+      - kleppmann_ch3
+    query_rewriting_greenplum:
+      name: Переписывание запросов для Greenplum
+      minimal_requirements:
+      - 🔹 Анализировать планы через EXPLAIN – искать Redistribute Motion и Broadcast
+        Motion
+      - 🔹 Если видите Redistribute Motion на больших таблицах, проверять distribution
+        key
+      - 🔹 Использовать broadcast join для маленьких таблиц (оптимизатор часто выбирает
+        redistribute, что дороже)
+      - '🔹 Применять подсказки join order: /*+ Leading(t1 t2 t3) */ для принудительного
+        порядка соединения'
+      antipatterns:
+      - ❌ Оптимизация без анализа реального плана
+      - ❌ Игнорирование перекоса данных при распределении
+      stack_refs:
+      - greenplum
+      tools_refs:
+      - sql_tools
+      examples_refs: []
+      resource_ids:
+      - greeplum_dist
+    data_layering:
+      name: Организация данных в слоях
+      minimal_requirements:
+      - '🔹 Raw-слой: хранить данные в неизменном виде, как они поступили из источника'
+      - '🔹 Stage-слой: очищенные, обогащённые и структурированные данные'
+      - '🔹 Core-слой: интеграция данных из разных источников, бизнес-сущности, единая
+        версия правды'
+      - '🔹 Mart-слой: витрины данных, оптимизированные под конкретные задачи отделов'
+      antipatterns:
+      - ❌ Модификация raw-данных
+      - ❌ Отсутствие чётких границ между слоями
+      - ❌ Слишком много слоёв (over-engineering)
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids:
+      - data_engineering_book
+    partitioning:
+      name: Партиционирование таблиц
+      minimal_requirements:
+      - 🔹 Выбирать ключ партиционирования по часто используемым фильтрам (обычно дата)
+      - 🔹 Использовать range-партиционирование для временных рядов, list – для категориальных
+        значений
+      - 🔹 Создавать партиции с запасом на будущее
+      - 🔹 Для запросов всегда указывать фильтр по ключу партиции
+      antipatterns:
+      - ❌ Слишком мелкие партиции
+      - ❌ Слишком крупные партиции
+      - ❌ Запросы без фильтра по ключу партиции
+      stack_refs:
+      - postgresql
+      - greenplum
+      tools_refs:
+      - sql_tools
+      examples_refs: []
+      resource_ids:
+      - postgres_pro_dev1
+    partition_maintenance:
+      name: Ротация и архивация партиций
+      minimal_requirements:
+      - 🔹 Автоматизировать создание новых партиций
+      - '🔹 Определить политику хранения: старые партиции переносить в архивные таблицы
+        или удалять'
+      - 🔹 При удалении партиций использовать DROP PARTITION, а не DELETE
+      antipatterns:
+      - ❌ DELETE вместо DROP PARTITION
+      - ❌ Отсутствие автоматизации
+      - ❌ Удаление без резервного копирования
+      stack_refs:
+      - postgresql
+      - greenplum
+      tools_refs:
+      - sql_tools
+      examples_refs: []
+      resource_ids: []
+    spark_development:
+      name: Разработка и оптимизация Spark
+      minimal_requirements:
+      - 🔹 Использовать broadcast join для маленьких таблиц (размером до ~100 МБ)
+      - '🔹 Настраивать количество партиций под данные: обычно 2–3 партиции на ядро'
+      - 🔹 Для устранения перекоса данных (skew) использовать salting или увеличивать
+        параллелизм
+      - 🔹 Кешировать промежуточные DataFrames, используемые многократно
+      antipatterns:
+      - ❌ Перекос данных (skew) без обработки
+      - ❌ Слишком много мелких файлов при записи
+      - ❌ Использование groupByKey вместо reduceByKey
+      stack_refs:
+      - spark
+      - pyspark
+      tools_refs:
+      - spark_tools
+      examples_refs:
+      - spark_broadcast
+      resource_ids:
+      - spark_perf
+    greenplum_jdbc:
+      name: Эффективное чтение/запись в Greenplum через JDBC
+      minimal_requirements:
+      - 🔹 Для массовой загрузки использовать COPY API вместо построчных INSERT
+      - 🔹 Настраивать batch size (например, 1000–5000 записей)
+      - 🔹 Задавать delimiter (например, '|') для формата данных в COPY-операциях
+      - 🔹 Устанавливать reject limit для контроля ошибок загрузки
+      antipatterns:
+      - ❌ Построчная вставка миллионов записей через INSERT
+      - ❌ Игнорирование обработки ошибок COPY
+      - ❌ Неправильный выбор delimiter
+      stack_refs:
+      - greenplum
+      - jdbc
+      tools_refs:
+      - sql_tools
+      examples_refs: []
+      resource_ids: []
+    spark_configuration:
+      name: Настройка конфигурации Spark
+      minimal_requirements:
+      - 🔹 Анализировать пиковое использование памяти через Spark UI
+      - 🔹 При недоиспользовании памяти уменьшать executor memory до пикового значения
+        + 25% буфера
+      - 🔹 Мониторять время GC и объем shuffle spill
+      - 🔹 Для PySpark приложений отдельно настраивать spark.executor.pyspark.memory
+      antipatterns:
+      - ❌ Настройка памяти без анализа реального потребления
+      - ❌ Игнорирование overhead памяти
+      - ❌ Увеличение памяти без мониторинга влияния на другие рабочие нагрузки кластера
+      stack_refs:
+      - spark
+      - pyspark
+      tools_refs:
+      - spark_tools
+      examples_refs: []
+      resource_ids: []
+    ctl_design:
+      name: Проектирование CTL с учётом SLA и порядка загрузки
+      minimal_requirements:
+      - 🔹 Проектировать графы зависимостей задач (DAG) с учётом SLA критичных процессов
+      - '🔹 Определять порядок загрузки: источники → трансформации → витрины'
+      - 🔹 Использовать сенсоры для ожидания доступности данных
+      - 🔹 Настраивать временные окна выполнения задач, чтобы укладываться в SLA
+      antipatterns:
+      - ❌ Хаотичный порядок задач без учёта зависимостей
+      - ❌ Отсутствие мониторинга времени выполнения и SLA
+      - ❌ Игнорирование застревания задач
+      stack_refs:
+      - ctl
+      tools_refs: []
+      examples_refs: []
+      resource_ids: []
+    alerting:
+      name: Настройка алертов и правил перезапуска
+      minimal_requirements:
+      - 🔹 Определить пороговые значения для времени выполнения задач на основе исторических
+        данных
+      - 🔹 Настроить алерты на падение пайплайнов с немедленным уведомлением ответственных
+      - 🔹 Добавить мониторинг «застрявших» задач с эскалацией
+      - 🔹 Настраивать автоматические повторные попытки (обычно 3 попытки с интервалом
+        3-5 минут) для временных сбоев
+      antipatterns:
+      - ❌ Бесконечные повторные попытки без оповещения
+      - ❌ Настройка слишком низких порогов, вызывающих ложные срабатывания
+      - ❌ Отсутствие алертов на критические метрики
+      stack_refs: []
+      tools_refs:
+      - monitoring_tools
+      examples_refs: []
+      resource_ids: []
+    job_management:
+      name: Ручное управление заданиями
+      minimal_requirements:
+      - 🔹 Хранить конфигурации заданий в YAML/JSON файлах под версионным контролем
+      - 🔹 Параметризовать подключения через переменные окружения или секреты
+      - 🔹 Перед запуском проверять валидность конфигурации
+      - 🔹 Вести лог выполнения с уровнем детализации, достаточным для отладки
+      antipatterns:
+      - ❌ Хранение секретов в открытом виде
+      - ❌ Отсутствие документации по параметрам запуска
+      - ❌ Запуск заданий в «грязном» окружении
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids: []
+    clean_code:
+      name: Чистый поддерживаемый код
+      minimal_requirements:
+      - 🔹 Применять shift-left testing – обнаруживать ошибки на ранних этапах
+      - 🔹 Писать автоматические unit-тесты и интеграционные тесты
+      - 🔹 Использовать типизацию (Python type hints) для самодокументирования кода
+      - 🔹 Разделять код на функции и модули по принципу единственной ответственности
+      antipatterns:
+      - ❌ Отсутствие тестов для ETL-кода
+      - ❌ Монолитные SQL-запросы на тысячи строк без декомпозиции
+      - ❌ Игнорирование код-ревью для пайплайнов
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids:
+      - git_pro
+      - markdown_guide
+    testing:
+      name: Покрытие логики тестами
+      minimal_requirements:
+      - 🔹 Использовать pytest для тестирования PySpark-кода
+      - 🔹 Тестировать трансформации на небольших тестовых данных
+      - 🔹 Проверять граничные случаи (пустые DataFrames, null-значения)
+      antipatterns:
+      - ❌ Тестирование только на продакшн-данных
+      - ❌ Отсутствие тестов на ошибки в логике
+      stack_refs: []
+      tools_refs:
+      - quality_tools
+      examples_refs: []
+      resource_ids: []
+    code_review_mentoring:
+      name: Проводить код-ревью
+      minimal_requirements:
+      - 🔹 Оставлять комментарии, объясняющие не только ЧТО не так, но и ПОЧЕМУ это
+        проблема, и как исправить
+      - 🔹 Давать ссылки на документацию, статьи или примеры из кодовой базы, иллюстрирующие
+        правильный подход
+      - 🔹 Отмечать не только ошибки, но и удачные решения (положительная обратная
+        связь)
+      - 🔹 Проводить ревью регулярно и своевременно
+      antipatterns:
+      - ❌ Ревью без пояснений («неправильно», «переделай») — демотивирует и не учит
+      - ❌ Придирки к стилю без ссылок на общепринятые стандарты
+      - ❌ Требование идеального кода с первого раза без учёта опыта разработчика
+      - ❌ Затягивание ревью на дни и недели
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids: []
+    ci_cd:
+      name: Автоматизация деплоя
+      minimal_requirements:
+      - 🔹 Настроить pipeline в GitLab CI / GitHub Actions для автоматического тестирования
+        и деплоя
+      - 🔹 Разделять окружения (dev/stage/prod) с изолированными конфигурациями
+      - 🔹 Автоматизировать применение миграций схем БД в процессе деплоя
+      - 🔹 Добавить в pipeline статические проверки (линтеры) для SQL и Python
+      antipatterns:
+      - ❌ Ручное выполнение миграций на продакшене
+      - ❌ Отсутствие автоматических тестов перед деплоем
+      - ❌ Использование одних и тех же секретов для всех окружений
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids:
+      - git_pro
+    liquibase:
+      name: Применение миграций данных (Liquibase)
+      minimal_requirements:
+      - 🔹 Все изменения схемы БД фиксировать в changelog-файлах под версионным контролем
+      - 🔹 Использовать уникальные идентификаторы для каждого changeset
+      - 🔹 Разделять изменения на логические блоки, каждый в отдельном changeset
+      - 🔹 Тестировать миграции на копии продакшн-данных перед применением
+      antipatterns:
+      - ❌ Внесение изменений в схему вручную (без changelog)
+      - ❌ Объединение нескольких логических изменений в один changeset
+      - ❌ Отсутствие тестирования миграций на стенде
+      stack_refs:
+      - liquibase
+      tools_refs:
+      - liquibase_tools
+      examples_refs: []
+      resource_ids: []
+    metrics_collection:
+      name: Сбор метрик выполнения
+      minimal_requirements:
+      - '🔹 Настроить сбор ключевых метрик пайплайнов: длительность, количество записей,
+        объём данных'
+      - 🔹 Использовать Spark UI для мониторинга выполнения Spark-заданий
+      - 🔹 Интегрировать CTL с системами мониторинга (Prometheus, Graphite)
+      - 🔹 Сохранять историю метрик для анализа трендов
+      antipatterns:
+      - ❌ Отсутствие мониторинга времени выполнения
+      - ❌ Сбор только общих метрик без детализации по этапам
+      - ❌ Игнорирование метрик shuffle spill в Spark
+      stack_refs: []
+      tools_refs:
+      - monitoring_tools
+      examples_refs: []
+      resource_ids: []
+    logging:
+      name: Понятное логирование
+      minimal_requirements:
+      - 🔹 Использовать структурированные логи (JSON)
+      - '🔹 Добавлять контекст: идентификатор задачи, этап выполнения, входные параметры'
+      - '🔹 Разделять уровни логирования: ERROR, WARN, INFO, DEBUG'
+      - 🔹 Обеспечить централизованный сбор логов (ELK, Loki, Splunk)
+      antipatterns:
+      - ❌ Логи без контекста
+      - ❌ Избыточное логирование на уровне DEBUG в продакшене
+      - ❌ Логирование чувствительных данных в открытом виде
+      stack_refs: []
+      tools_refs:
+      - monitoring_tools
+      examples_refs: []
+      resource_ids: []
+    data_quality:
+      name: Обеспечение качества данных
+      minimal_requirements:
+      - 🔹 Проверять уникальность ключей после каждой загрузки
+      - 🔹 Валидировать NOT NULL в обязательных полях
+      - 🔹 Использовать Great Expectations или dbt-tests для автоматизации проверок
+      - 🔹 При критических нарушениях останавливать пайплайн (fail fast)
+      antipatterns:
+      - ❌ Проверки качества только на выходе пайплайна
+      - ❌ Слишком жёсткие правила, не учитывающие бизнес-контекст
+      - ❌ Отсутствие мониторинга метрик качества в динамике
+      stack_refs: []
+      tools_refs:
+      - quality_tools
+      examples_refs: []
+      resource_ids: []
+    data_quality_metrics:
+      name: Специализированные проверки метрик витрин
+      minimal_requirements:
+      - '🔹 Определить бизнес-метрики качества: точность, полнота, своевременность'
+      - 🔹 Для каждой витрины установить пороговые значения метрик
+      - 🔹 Автоматизировать сбор метрик в процессе загрузки данных
+      - 🔹 Визуализировать тренды метрик качества в дашбордах
+      antipatterns:
+      - ❌ Проверка метрик только в момент инцидента
+      - ❌ Отсутствие исторического тренда
+      - ❌ Слишком общие метрики, не отражающие бизнес-смысл
+      stack_refs: []
+      tools_refs:
+      - quality_tools
+      examples_refs: []
+      resource_ids: []
+    lineage_s2t:
+      name: Документирование полного цикла данных s2t
+      minimal_requirements:
+      - '🔹 Документировать каждый этап: источник → raw → stage → core → mart'
+      - 🔹 Указывать владельца данных на каждом этапе
+      - 🔹 Использовать инструменты автоматического сбора lineage (OpenLineage, Marquez)
+      antipatterns:
+      - ❌ Документация только в головах разработчиков
+      - ❌ Устаревшая документация
+      - ❌ Отсутствие связи между технической и бизнес-документацией
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids: []
+    impact_analysis:
+      name: Анализ влияния изменений
+      minimal_requirements:
+      - 🔹 Перед изменением структуры источника оценить все downstream-зависимости
+      - 🔹 Использовать data lineage инструменты для автоматического построения графа
+        зависимостей
+      - 🔹 При изменениях уведомлять всех потребителей заранее
+      - 🔹 Тестировать изменения на копии данных перед продакшеном
+      antipatterns:
+      - ❌ Изменения без предупреждения потребителей
+      - ❌ Игнорирование каскадного эффекта изменений
+      - ❌ Отсутствие тестовой среды для проверки влияния
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids: []
+    business_dictionary:
+      name: Ведение словаря бизнес смысла атрибутов
+      minimal_requirements:
+      - 🔹 Каждый атрибут должен иметь понятное бизнес-описание
+      - 🔹 Указывать формат, допустимые значения, примеры
+      - 🔹 Связывать технические имена полей с бизнес-терминами
+      antipatterns:
+      - ❌ Технические имена без пояснений
+      - ❌ Устаревшая документация
+      - ❌ Словарь только для разработчиков
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids: []
+    functional_solutions:
+      name: Описание сложных трансформаций и бизнес‑правил
+      minimal_requirements:
+      - 🔹 Документировать не только что сделано, но и почему принято такое решение
+      - 🔹 Описывать альтернативы и причины выбора
+      - 🔹 Фиксировать бизнес-правила, реализованные в трансформациях
+      antipatterns:
+      - ❌ Только код без пояснений
+      - ❌ Бизнес-правила только в головах аналитиков
+      - ❌ Изменения логики без обновления документации
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids: []
+    architecture_description:
+      name: Описание архитектуры решений
+      minimal_requirements:
+      - '🔹 Документировать общую архитектуру решения: компоненты, их взаимодействие,
+        потоки данных'
+      - 🔹 Использовать диаграммы (C4 model, UML) для визуализации
+      - '🔹 Описывать нефункциональные требования: масштабируемость, отказоустойчивость,
+        SLA'
+      antipatterns:
+      - ❌ Архитектура только в голове ведущего разработчика
+      - ❌ Устаревшая документация
+      - ❌ Отсутствие диаграмм (только текст)
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids: []
+    communication:
+      name: Перевод потребностей бизнеса в технические требования
+      minimal_requirements:
+      - 🔹 Участвовать в обсуждениях с заказчиками и аналитиками для уточнения целей
+      - 🔹 Формализовать требования в виде user stories или технических заданий
+      - 🔹 Декомпозировать крупные задачи на подзадачи
+      antipatterns:
+      - ❌ Реализация без понимания бизнес-цели
+      - ❌ Использование технического жаргона в общении с заказчиком
+      - ❌ Игнорирование нефункциональных требований
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids: []
+    analyst_support:
+      name: Помощь аналитикам в написании эффективных запросов
+      minimal_requirements:
+      - 🔹 Проводить обучения/воркшопы для аналитиков по оптимизации запросов
+      - 🔹 Создавать витрины данных, оптимизированные под типовые запросы
+      - 🔹 Делиться шаблонами эффективных запросов
+      antipatterns:
+      - ❌ Предоставление доступа к сырым данным без документации
+      - ❌ Критика неэффективных запросов без объяснения причин
+      - ❌ Отказ от создания витрин
+      stack_refs: []
+      tools_refs:
+      - sql_tools
+      examples_refs: []
+      resource_ids: []
+    stakeholder_agreement:
+      name: Согласование изменений с владельцами систем
+      minimal_requirements:
+      - 🔹 Перед внесением изменений определить всех потребителей
+      - 🔹 Уведомлять владельцев источников о планируемых изменениях заранее
+      - 🔹 Документировать все согласования в системе
+      antipatterns:
+      - ❌ Изменения без предупреждения — сломанные дашборды
+      - ❌ Неучтённые downstream-зависимости
+      - ❌ Отсутствие канала связи с владельцами источников
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids: []
+    task_decomposition:
+      name: Декомпозиция задач
+      minimal_requirements:
+      - 🔹 Разбивать крупные задачи на подзадачи размером не более 2–3 дней
+      - 🔹 Каждая подзадача должна иметь чёткий результат и критерии готовности
+      - '🔹 При декомпозиции учитывать все этапы: анализ, проектирование, разработку,
+        тестирование, документирование, деплой'
+      antipatterns:
+      - ❌ Слишком крупные задачи, которые длятся неделями
+      - ❌ Отсутствие этапа тестирования в декомпозиции
+      - ❌ Игнорирование документации как отдельного этапа
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids: []
+    task_estimation:
+      name: Реалистичная оценка сроков с учётом рисков
+      minimal_requirements:
+      - 🔹 Декомпозировать задачу на подзадачи размером не более 2-3 дней
+      - 🔹 При оценке учитывать время на анализ, разработку, тестирование, ревью и
+        документирование
+      - 🔹 Добавлять буфер на непредвиденные обстоятельства (обычно 20-30%)
+      antipatterns:
+      - ❌ Оптимистичные оценки «в лоб»
+      - ❌ Игнорирование рисков
+      - ❌ Оценка «с потолка» без декомпозиции
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids: []
+    task_lifecycle:
+      name: Ведение задачи от постановки до прода
+      minimal_requirements:
+      - 🔹 Принимая задачу, убедиться, что требования чётко сформулированы
+      - 🔹 Регулярно обновлять статус задачи в трекере
+      - 🔹 При возникновении блокеров немедленно информировать тимлида
+      antipatterns:
+      - ❌ «Забытые» задачи без движения
+      - ❌ Отсутствие комментариев по прогрессу
+      - ❌ Молчаливое затягивание сроков
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids: []
+    junior_mentoring_environment:
+      name: Помощь джунам с настройками окружения разработки
+      minimal_requirements:
+      - 🔹 Подготовить документацию по настройке окружения
+      - 🔹 Проводить онбординг-сессии
+      - 🔹 Создать скрипты / Docker-образы для быстрого развёртывания
+      antipatterns:
+      - ❌ Отсутствие документации
+      - ❌ Игнорирование вопросов
+      - ❌ Предоставление доступа к продакшену без объяснений
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      resource_ids: []
+    basic_data_structures:
+      name: Основные структуры данных
+      minimal_requirements:
+      - 🔹 Понимать различия между массивами, списками, множествами и словарями; выбирать
+        структуру исходя из временной сложности операций (O(1) для dict/set против
+        O(n) для list)
+      - '🔹 Уметь эффективно работать с JSON: сериализация/десериализация, работа с
+        вложенными структурами в Spark (struct, array, explode)'
+      - 🔹 Осознавать влияние выбора структуры на производительность при работе с большими
+        данными
+      - 🔹 Использовать множества для проверки наличия элемента (ускорение в 1000+
+        раз на больших данных)
+      - 🔹 При работе с PySpark отдавать предпочтение DataFrame API перед сбором данных
+        в драйвер (collect)
+      antipatterns:
+      - ❌ Использование списка для проверки наличия элемента вместо множества (O(n)
+        вместо O(1))
+      - ❌ Ручной парсинг JSON вместо использования встроенных функций Spark (from_json,
+        get_json_object)
+      - ❌ Сбор больших DataFrame в драйвер через .collect() или .toPandas()
+      - ❌ Мутация структур данных в трансформациях, нарушающая идемпотентность
+      stack_refs:
+      - python
+      - spark
+      - pyspark
+      tools_refs: []
+      examples_refs: []
+      resource_ids:
+      - kleppmann_ch2
+    etl_algorithms:
+      name: Алгоритмы ETL/ELT
+      minimal_requirements:
+      - 🔹 Различать пакетную (batch) и потоковую (streaming) обработку; понимать их
+        компромиссы (латентность vs стоимость)
+      - '🔹 Владеть стратегиями загрузки: полная перезагрузка (full refresh), инкрементальная
+        (incremental), merge (upsert), SCD Type 2'
+      - 🔹 Уметь выбирать стратегию в зависимости от объёма данных, требований к свежести
+        и SLA
+      - 🔹 Понимать, как работают механизмы Change Data Capture (CDC) для инкрементальной
+        загрузки
+      - '🔹 Знать современные гибридные подходы: ETLT и ELTL, формализованные как паттерны
+        проектирования'
+      antipatterns:
+      - ❌ Полная перезагрузка больших таблиц без необходимости (часы вместо минут)
+      - ❌ Инкрементальная загрузка без учёта обновлений и удалений (только вставки)
+      - ❌ Использование потоковой обработки там, где достаточно пакетной (избыточная
+        сложность и стоимость)
+      - ❌ Отсутствие идемпотентности — повторный запуск приводит к дублированию
+      stack_refs:
+      - spark
+      - ctl
+      - airflow
+      tools_refs: []
+      examples_refs:
+      - scd_example
+      resource_ids:
+      - data_engineering_book
+    query_performance_analysis:
+      name: Анализ производительности запросов
+      minimal_requirements:
+      - 🔹 Уметь измерять время выполнения запросов и выявлять узкие места с помощью
+        EXPLAIN ANALYZE
+      - '🔹 Анализировать ключевые метрики: время CPU, ввод/вывод, объём обработанных
+        данных, использование индексов'
+      - 🔹 Использовать профилировщики (Spark UI, TiDB slow query log) для диагностики
+      - 🔹 Понимать влияние перекосов данных (data skew) на производительность и уметь
+        их обнаруживать
+      - 🔹 Знать, как объём данных и количество партиций влияют на скорость выполнения
+      antipatterns:
+      - ❌ Оптимизация «на глаз» без измерений
+      - ❌ Игнорирование предупреждений о перекосах данных в плане запроса
+      - ❌ Чрезмерное количество партиций (слишком много мелких файлов) или недостаточное
+        (недогрузка ресурсов)
+      - ❌ Неправильная настройка broadcast join (принудительный broadcast для больших
+        таблиц)
+      stack_refs:
+      - postgresql
+      - greenplum
+      - spark
+      tools_refs:
+      - monitoring_tools
+      - sql_tools
+      - spark_tools
+      examples_refs:
+      - explain_analyze
+      - cte_optimization
+      resource_ids:
+      - postgres_pro_qpt
+      - postgres_pro_dev1
+    query_plan_analysis:
+      name: Анализ плана запроса
+      minimal_requirements:
+      - 🔹 Уметь читать и интерпретировать планы выполнения (EXPLAIN) в PostgreSQL/Greenplum
+        и Spark
+      - '🔹 Понимать узлы плана: Seq Scan, Index Scan, Hash Join, Redistribute Motion,
+        Broadcast, Sort'
+      - '🔹 Выявлять проблемы: неправильный выбор индекса, избыточное перемещение данных,
+        неверные оценки кардинальности'
+      - 🔹 Знать, как оптимизатор использует статистику, и уметь её обновлять (ANALYZE)
+      - 🔹 В Spark уметь анализировать физический и логический планы через explain('extended')
+      antipatterns:
+      - ❌ Игнорирование плана запроса при оптимизации
+      - ❌ Непонимание влияния distribution key на движение данных в Greenplum
+      - ❌ Неправильная интерпретация узлов (например, принятие любого Broadcast за
+        всегда хороший)
+      - ❌ Отсутствие регулярного анализа планов для критичных запросов
+      stack_refs:
+      - postgresql
+      - greenplum
+      - spark
+      tools_refs:
+      - sql_tools
+      - spark_tools
+      examples_refs:
+      - explain_analyze
+      resource_ids:
+      - postgres_pro_qpt
+    pipeline_decomposition:
+      name: Декомпозиция пайплайнов и идемпотентность
+      minimal_requirements:
+      - 🔹 Разбивать сложные пайплайны на логические этапы (extract, transform, load,
+        validate)
+      - 🔹 Проектировать идемпотентные задачи, которые можно безопасно перезапускать
+      - 🔹 Использовать промежуточные таблицы (raw, stage) для упрощения отладки и
+        повторного использования
+      - '🔹 Применять паттерны: фабрика данных, шаблонный метод для повторяющихся структур'
+      - 🔹 Учитывать зависимости между этапами и возможность параллельного выполнения
+        (DAG-мышление)
+      antipatterns:
+      - ❌ Монолитные пайплайны с сотнями шагов внутри одного задания
+      - ❌ Отсутствие чётких границ между этапами (все в одном скрипте)
+      - '❌ Неидемпотентность: повторный запуск приводит к дублированию или ошибкам'
+      - ❌ Игнорирование возможности чекпоинтов и перезапуска с места сбоя
+      stack_refs:
+      - ctl
+      - airflow
+      - dbt
+      tools_refs: []
+      examples_refs: []
+      resource_ids:
+      - data_engineering_book
+    sql_advanced:
+      name: Продвинутый SQL
+      minimal_requirements:
+      - 🔹 Уверенно использовать оконные функции (ROW_NUMBER, LAG, LEAD, SUM OVER)
+        для аналитических задач
+      - 🔹 Применять named windows (WINDOW clause) для переиспользования оконных определений
+        и соблюдения DRY
+      - 🔹 Понимать, что такое перекос данных в SQL-запросах и уметь его избегать (salting,
+        переписывание)
+      - 🔹 Владеть техниками дедупликации, агрегации и фильтрации без потери производительности
+      - 🔹 Использовать CTE (Common Table Expressions) для улучшения читаемости и оптимизации
+      antipatterns:
+      - ❌ Копирование одного и того же OVER-определения несколько раз вместо named
+        window
+      - ❌ Использование подзапросов там, где эффективнее JOIN
+      - ❌ Неправильное применение оконных функций (фильтрация по результату окна без
+        подзапроса)
+      - ❌ Игнорирование перекоса данных при GROUP BY (особенно в MPP-системах)
+      stack_refs:
+      - postgresql
+      - greenplum
+      tools_refs:
+      - sql_tools
+      examples_refs:
+      - cte_optimization
+      resource_ids:
+      - leetcode_sql
+      - postgres_pro_dev1
+      - dbt_labs_cte
+    dbt_development:
+      name: Разработка с dbt
+      minimal_requirements:
+      - '🔹 Понимать ментальный сдвиг от task-оркестрации к DAG-мышлению: определять
+        трансформации и их зависимости, а не порядок выполнения'
+      - '🔹 Использовать слоистую архитектуру: staging → intermediate → marts с соответствующими
+        тегами'
+      - 🔹 Применять теги для группировки моделей вместо ручного перечисления (--select
+        tag:staging)
+      - 🔹 Всегда использовать ref() и source() для построения графа зависимостей,
+        никогда не хардкодить имена таблиц
+      - 🔹 Настраивать параллельное выполнение независимых моделей через threads
+      antipatterns:
+      - ❌ Создание отдельных dbt run для каждой модели (как в Airflow) вместо использования
+        селекторов
+      - ❌ Хардкод таблиц без ref() — потеря lineage и автоматического определения
+        порядка
+      - ❌ Все модели в одной папке без организации по слоям
+      - ❌ Добавление тегов после того, как накопилось 200+ моделей
+      stack_refs:
+      - dbt
+      - postgresql
+      - greenplum
+      - spark
+      tools_refs:
+      - dbt_tools
+      - quality_tools
+      examples_refs: []
+      resource_ids: []
+    unit_testing_parent:
+      name: Юнит-тестирование
+      minimal_requirements: []
+      antipatterns: []
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      is_parent: true
+    unit_test_writing:
+      name: Писать юнит-тесты
+      minimal_requirements:
+      - 🔹 Писать тесты для отдельных функций и трансформаций (white-box тестирование)
+      - 🔹 Использовать Arrange-Act-Assert (AAA) паттерн
+      - 🔹 Параметризовать тесты для проверки множества входных данных
+      - 🔹 Писать тесты для обработки исключений и ошибок
+      antipatterns:
+      - ❌ Писать тесты после кода (post-factum), а не параллельно
+      - ❌ Тестировать только позитивные сценарии
+      - ❌ Создавать тесты, зависящие от внешнего состояния (БД, API)
+      stack_refs:
+      - python
+      - pyspark
+      tools_refs:
+      - quality_tools
+      examples_refs:
+      - unit_test_chispa
+      resource_ids:
+      - git_pro
+    unit_test_technologies:
+      name: Использовать технологии тестирования
+      minimal_requirements:
+      - 🔹 Использовать pytest как основной фреймворк (или аналоги для других языков)
+      - 🔹 Использовать библиотеки для тестирования PySpark (chispa, assert_df_equality)
+      - 🔹 Использовать фикстуры и моки (unittest.mock, pytest-mock)
+      - 🔹 Применять плагины для измерения покрытия, параллельного запуска
+      antipatterns:
+      - ❌ Использовать только print-отладку вместо тестов
+      - ❌ Писать сложные тесты без использования фикстур
+      - ❌ Игнорировать возможность параллельного запуска тестов
+      stack_refs:
+      - python
+      - pyspark
+      tools_refs:
+      - quality_tools
+      examples_refs:
+      - unit_test_chispa
+      resource_ids:
+      - git_pro
+    unit_test_edge_cases:
+      name: Тестировать граничные случаи
+      minimal_requirements:
+      - 🔹 Тестировать пустые входные данные (пустой DataFrame, null-значения)
+      - 🔹 Тестировать крайние значения (минимум, максимум, границы диапазонов)
+      - 🔹 Тестировать некорректные типы данных
+      - 🔹 Тестировать перекос данных (data skew) в распределённых системах
+      antipatterns:
+      - ❌ Предполагать, что входные данные всегда корректны
+      - ❌ Не проверять обработку исключительных ситуаций
+      - ❌ Игнорировать возможные побочные эффекты
+      stack_refs:
+      - pyspark
+      - python
+      tools_refs: []
+      examples_refs: []
+      resource_ids:
+      - git_pro
+    unit_test_isolation:
+      name: Изолировать тесты
+      minimal_requirements:
+      - 🔹 Использовать in-memory Spark для тестов (local mode)
+      - 🔹 Изолировать тесты от внешних систем (заменять вызовы моками)
+      - 🔹 Сбрасывать состояние между тестами (clean-up)
+      - 🔹 Использовать временные директории и базы данных
+      antipatterns:
+      - ❌ Тесты, которые влияют друг на друга (порядок выполнения важен)
+      - ❌ Обращаться к реальным API или БД в юнит-тестах
+      - ❌ Не очищать тестовые данные после выполнения
+      stack_refs:
+      - pyspark
+      - python
+      tools_refs:
+      - quality_tools
+      examples_refs: []
+      resource_ids:
+      - git_pro
+    unit_test_integration:
+      name: Интегрировать юнит-тесты
+      minimal_requirements:
+      - 🔹 Интегрировать тесты в CI/CD (запуск при каждом коммите)
+      - 🔹 Использовать coverage-отчёты для оценки покрытия
+      - 🔹 Настраивать быстрый запуск только изменённых тестов
+      - 🔹 Публиковать результаты тестов в общий дашборд
+      antipatterns:
+      - ❌ Запускать тесты только вручную перед релизом
+      - ❌ Игнорировать упавшие тесты
+      - ❌ Не анализировать покрытие кода
+      stack_refs: []
+      tools_refs:
+      - quality_tools
+      examples_refs: []
+      resource_ids:
+      - git_pro
+    code_quality_parent:
+      name: Качество кода
+      minimal_requirements: []
+      antipatterns: []
+      stack_refs: []
+      tools_refs: []
+      examples_refs: []
+      is_parent: true
+    code_quality_linters:
+      name: Использовать линтеры и форматтеры
+      minimal_requirements:
+      - 🔹 Использовать pylint, flake8 для Python
+      - 🔹 Использовать black для автоматического форматирования
+      - 🔹 Использовать SQLFluff для SQL
+      - 🔹 Настроить pre-commit хуки для автоматической проверки
+      antipatterns:
+      - ❌ Игнорировать предупреждения линтеров
+      - ❌ Отключать линтеры без веской причины
+      - ❌ Не использовать автоформатирование
+      stack_refs:
+      - python
+      - sql
+      tools_refs:
+      - quality_tools
+      examples_refs: []
+      resource_ids:
+      - markdown_guide
+      - git_pro
+    code_quality_principles:
+      name: Следовать принципам кодирования
+      minimal_requirements:
+      - '🔹 SOLID: единственная ответственность, открытость/закрытость, подстановка
+        Лисков, разделение интерфейсов, инверсия зависимостей'
+      - '🔹 DRY: избегать дублирования кода'
+      - '🔹 KISS: стремиться к простоте'
+      - '🔹 YAGNI: не добавлять функциональность, которая не нужна сейчас'
+      antipatterns:
+      - ❌ Копипаста вместо повторного использования
+      - ❌ Излишне сложные решения простых задач
+      - ❌ Нарушение единственной ответственности (монстро-функции)
+      stack_refs:
+      - python
+      - pyspark
+      - sql
+      tools_refs: []
+      examples_refs: []
+      resource_ids:
+      - git_pro
+    code_quality_documentation:
+      name: Документировать код
+      minimal_requirements:
+      - 🔹 Писать docstrings для функций и классов (PEP 257)
+      - 🔹 Комментировать сложные участки кода
+      - 🔹 Поддерживать README в актуальном состоянии
+      - 🔹 Документировать архитектурные решения (ADR)
+      antipatterns:
+      - ❌ Комментарии, объясняющие очевидное
+      - ❌ Устаревшая документация
+      - ❌ Отсутствие документации для сложной логики
+      stack_refs:
+      - python
+      - sql
+      tools_refs: []
+      examples_refs: []
+      resource_ids:
+      - markdown_guide
+    code_quality_refactoring:
+      name: Планировать рефакторинг
+      minimal_requirements:
+      - 🔹 Выявлять технический долг (сложные функции, дублирование, устаревшие подходы)
+      - 🔹 Планировать рефакторинг в спринтах
+      - 🔹 Использовать рефакторинг с тестами для безопасности
+      - 🔹 Постепенно улучшать код без остановки разработки
+      antipatterns:
+      - ❌ Рефакторинг без тестов (риск сломать функциональность)
+      - ❌ Откладывать рефакторинг навсегда
+      - ❌ Глобальный рефакторинг вместо инкрементальных улучшений
+      stack_refs:
+      - python
+      - pyspark
+      - sql
+      tools_refs: []
+      examples_refs: []
+      resource_ids:
+      - git_pro
+    quarantine_pattern:
+      name: Реализация Quarantine Pattern при schema drift
+      minimal_requirements:
+      - '🔹 Реализовать трёхступенчатый паттерн: Bouncer (строгая проверка схемы),
+        Jail (карантинная таблица), Siren (контекстные алерты)'
+      - 🔹 Определить обязательные поля (must-have) и проверять их наличие перед загрузкой
+      - 🔹 При несоответствии схемы направлять проблемные записи в карантин, а остальные
+        обрабатывать штатно
+      - '🔹 Настраивать алерты с контекстом: ''Schema Drift Detected: 700 rows quarantined.
+        Column Revenue changed to Rev_2025'''
+      - 🔹 Документировать изменения схемы и уведомлять владельцев источников
+      antipatterns:
+      - ❌ Полная остановка пайплайна при любом изменении схемы
+      - ❌ Автоматическое принятие всех изменений без проверки (auto-evolve)
+      - ❌ Алерты без контекста ('Job Failed' без объяснения причины)
+      - ❌ Игнорирование карантинных записей — они накапливаются и никогда не обрабатываются
+      stack_refs:
+      - python
+      - spark
+      tools_refs:
+      - monitoring_tools
+      - quality_tools
+      examples_refs: []
+      resource_ids: []
+  ui_config:
+    default_domain_open: true
+    max_description_length: 500
+    enable_preview: true
+    enable_related_skills: true
+    animation_speed: 300
+    colors:
+      primary: '#3498db'
+      success: '#2ecc71'
+      warning: '#f39c12'
+      danger: '#e74c3c'
+      info: '#9b59b6'
+    section_titles:
+      minimal_requirements: Минимальный объем
+      antipatterns: Антипаттерны

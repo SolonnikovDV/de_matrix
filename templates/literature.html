@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+
+{% block title %}Каталог литературы | Матрица навыков{% endblock %}
+
+{% block header_title %}Каталог литературы{% endblock %}
+
+{% block footer_hint %}Добавляйте источники и привязывайте их к компетенциям (листам матрицы){% endblock %}
+
+{% block content %}
+<div class="literature-container" style="padding: 20px;">
+    <div class="literature-actions" style="margin-bottom: 20px;">
+        <button type="button" class="btn btn-primary" id="btnAddLiterature">
+            <i class="fas fa-plus"></i> Добавить литературу
+        </button>
+    </div>
+    
+    <div class="literature-list" id="literatureList">
+        <p><i class="fas fa-spinner fa-spin"></i> Загрузка...</p>
+    </div>
+</div>
+
+<!-- Модальное окно: добавить литературу -->
+<div class="modal-overlay" id="modalAdd" style="display: none;">
+    <div class="modal-box">
+        <h3>Добавить источник</h3>
+        <form id="formAddLiterature">
+            <label>Название *</label>
+            <input type="text" name="title" required placeholder="Название книги или статьи">
+            <label>Глава / раздел</label>
+            <input type="text" name="chapter" placeholder="Глава 2: ...">
+            <label>Страницы</label>
+            <input type="text" name="pages" placeholder="С. 45-78">
+            <label>URL</label>
+            <input type="url" name="url" placeholder="https://...">
+            <label>Описание</label>
+            <textarea name="description" rows="3" placeholder="Краткое описание"></textarea>
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary">Сохранить</button>
+                <button type="button" class="btn btn-secondary" id="btnCloseAdd">Отмена</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Модальное окно: привязать к листам -->
+<div class="modal-overlay" id="modalLink" style="display: none;">
+    <div class="modal-box" style="max-width: 500px;">
+        <h3>Привязать к компетенциям (листам)</h3>
+        <p id="modalLinkTitle" style="margin-bottom: 15px;"></p>
+        <div class="leaves-checkboxes" id="leavesCheckboxes" style="max-height: 300px; overflow-y: auto;"></div>
+        <div class="modal-actions" style="margin-top: 15px;">
+            <button type="button" class="btn btn-primary" id="btnSaveLink">Сохранить привязку</button>
+            <button type="button" class="btn btn-secondary" id="btnCloseLink">Закрыть</button>
+        </div>
+    </div>
+</div>
+
+<!-- Скачать в каталог data/library -->
+<div class="modal-overlay" id="modalDownload" style="display: none;">
+    <div class="modal-box">
+        <h3>Скачать в каталог library</h3>
+        <p style="font-size: 0.9em; color: #666;">Файл по URL будет сохранён в data/library и привязан к записи.</p>
+        <input type="hidden" id="downloadLitId">
+        <label>URL файла (PDF, и т.д.)</label>
+        <input type="url" id="downloadUrl" placeholder="https://...">
+        <div class="modal-actions" style="margin-top: 15px;">
+            <button type="button" class="btn btn-primary" id="btnDoDownload"><i class="fas fa-download"></i> Скачать</button>
+            <button type="button" class="btn btn-secondary" id="btnCloseDownload">Отмена</button>
+        </div>
+    </div>
+</div>
+
+<!-- Предпросмотр страницы по ссылке (когда файл для скачивания не найден) -->
+<div class="modal-overlay" id="modalPreview" style="display: none;">
+    <div class="modal-box modal-preview-box">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h3>Предпросмотр страницы по ссылке</h3>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnClosePreview">&times;</button>
+        </div>
+        <p id="previewMessage" style="font-size: 0.9em; color: #e67e22; margin-bottom: 10px;"></p>
+        <p style="font-size: 0.85em; color: #7f8c8d; margin-bottom: 8px;">Если страница не отображается (блокировка встраивания), <a href="#" id="previewOpenLink" target="_blank" rel="noopener">откройте ссылку в новой вкладке</a>.</p>
+        <iframe id="previewIframe" style="width: 100%; height: 65vh; border: 1px solid #ddd; border-radius: 8px;" sandbox="allow-same-origin allow-scripts allow-popups"></iframe>
+    </div>
+</div>
+
+<style>
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: flex-start; justify-content: center; padding: 20px; overflow-y: auto; }
+.modal-box { background: white; border-radius: 12px; padding: 25px; max-width: 400px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.2); margin: auto; }
+.modal-box label { display: block; margin-top: 10px; font-weight: 600; color: #2c3e50; }
+.modal-box input, .modal-box textarea { width: 100%; padding: 8px 12px; margin-top: 4px; border: 1px solid #ddd; border-radius: 6px; }
+.modal-preview-box { max-width: 900px; }
+.modal-actions { margin-top: 20px; display: flex; gap: 10px; }
+.lit-card { background: white; border: 1px solid #eef2f6; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+.lit-card h4 { margin: 0 0 8px 0; font-size: 1.05em; }
+.lit-card .lit-meta { font-size: 0.9em; color: #7f8c8d; margin-bottom: 8px; }
+.lit-card .lit-linked { font-size: 0.85em; color: #5d6d7e; }
+.lit-card a { color: #3498db; }
+.lit-card .lit-actions { margin-top: 10px; }
+.leaves-checkboxes label { display: flex; align-items: center; gap: 8px; margin: 6px 0; cursor: pointer; font-weight: normal; }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadLiterature();
+    document.getElementById('btnAddLiterature').onclick = () => { document.getElementById('modalAdd').style.display = 'flex'; };
+    document.getElementById('btnCloseAdd').onclick = () => { document.getElementById('modalAdd').style.display = 'none'; };
+    document.getElementById('formAddLiterature').onsubmit = submitAddLiterature;
+    document.getElementById('btnCloseLink').onclick = () => { document.getElementById('modalLink').style.display = 'none'; };
+    document.getElementById('btnSaveLink').onclick = saveLink;
+    document.getElementById('btnCloseDownload').onclick = () => { document.getElementById('modalDownload').style.display = 'none'; };
+    document.getElementById('btnDoDownload').onclick = doDownload;
+    document.getElementById('btnClosePreview').onclick = closePreviewModal;
+    document.getElementById('modalPreview').onclick = (e) => { if (e.target.id === 'modalPreview') closePreviewModal(); };
+});
+function closePreviewModal() {
+    document.getElementById('modalPreview').style.display = 'none';
+    document.getElementById('previewIframe').src = 'about:blank';
+}
+
+function openDownloadModal(litId, currentUrl) {
+    document.getElementById('downloadLitId').value = litId;
+    document.getElementById('downloadUrl').value = currentUrl || '';
+    document.getElementById('modalDownload').style.display = 'flex';
+}
+
+async function doDownload() {
+    const litId = document.getElementById('downloadLitId').value;
+    const url = document.getElementById('downloadUrl').value.trim();
+    if (!url) { alert('Введите URL'); return; }
+    try {
+        const res = await fetch(`/api/literature/${litId}/download`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
+        const out = await res.json();
+        if (res.ok) {
+            document.getElementById('modalDownload').style.display = 'none';
+            loadLiterature();
+            alert('Сохранено: ' + (out.local_path || ''));
+        } else if (out.preview_url) {
+            document.getElementById('modalDownload').style.display = 'none';
+            document.getElementById('previewMessage').textContent = out.error || 'Файлов для скачивания не найдено.';
+            document.getElementById('previewIframe').src = out.preview_url;
+            const openLink = document.getElementById('previewOpenLink');
+            openLink.href = out.preview_url;
+            document.getElementById('modalPreview').style.display = 'flex';
+        } else {
+            alert(out.error || 'Ошибка');
+        }
+    } catch (e) {
+        alert('Ошибка сети');
+    }
+}
+
+async function loadLiterature() {
+    try {
+        const res = await fetch('/api/literature');
+        const list = await res.json();
+        const el = document.getElementById('literatureList');
+        if (list.length === 0) {
+            el.innerHTML = '<p>Нет записей. Нажмите «Добавить литературу».</p>';
+            return;
+        }
+        el.innerHTML = list.map(item => `
+            <div class="lit-card" data-id="${item.id}">
+                <h4>${escapeHtml(item.title)}</h4>
+                <div class="lit-meta">${item.chapter ? escapeHtml(item.chapter) : ''} ${item.pages ? ' · ' + escapeHtml(item.pages) : ''}</div>
+                ${item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">Ссылка</a>` : ''}
+                ${item.description ? `<p style="margin:8px 0 0 0;font-size:0.9em;">${escapeHtml(item.description)}</p>` : ''}
+                <div class="lit-linked">Привязка: ${item.linked_templates.length ? item.linked_templates.map(t => escapeHtml(t.name)).join('; ') : '—'}</div>
+                <div class="lit-actions">
+                    <button type="button" class="btn btn-sm btn-info" onclick="openLinkModal('${item.id}', '${escapeHtml(item.title).replace(/'/g, "\\'")}')">
+                        <i class="fas fa-link"></i> Привязать к листам
+                    </button>
+                    <button type="button" class="btn btn-sm btn-success" onclick="openDownloadModal('${item.id}', '${escapeHtml((item.url || "").replace(/'/g, "\\'"))}')" title="Скачать в каталог data/library">
+                        <i class="fas fa-download"></i> Скачать в каталог
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        document.getElementById('literatureList').innerHTML = '<p class="error">Ошибка загрузки</p>';
+    }
+}
+
+function escapeHtml(s) {
+    if (!s) return '';
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+}
+
+async function submitAddLiterature(e) {
+    e.preventDefault();
+    const form = e.target;
+    const data = {
+        title: form.title.value,
+        chapter: form.chapter.value,
+        pages: form.pages.value,
+        url: form.url.value,
+        description: form.description.value
+    };
+    try {
+        const res = await fetch('/api/literature', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        const out = await res.json();
+        if (res.ok) {
+            document.getElementById('modalAdd').style.display = 'none';
+            form.reset();
+            loadLiterature();
+        } else {
+            alert(out.error || 'Ошибка');
+        }
+    } catch (err) {
+        alert('Ошибка сети');
+    }
+}
+
+let currentLinkLitId = null;
+async function openLinkModal(litId, title) {
+    currentLinkLitId = litId;
+    document.getElementById('modalLinkTitle').textContent = 'Источник: ' + title;
+    const res = await fetch('/api/leaves');
+    const leaves = await res.json();
+    const litRes = await fetch('/api/literature');
+    const litList = await litRes.json();
+    const current = (litList.find(l => l.id === litId) || {}).linked_templates || [];
+    const linkedTemplateIds = new Set(current.map(t => t.template_id));
+    document.getElementById('leavesCheckboxes').innerHTML = leaves.map(l => {
+        const pathStr = l.path.join('/');
+        const checked = l.template_id && linkedTemplateIds.has(l.template_id) ? ' checked' : '';
+        return `<label><input type="checkbox" data-path="${pathStr}"${checked}> ${escapeHtml(l.name)}</label>`;
+    }).join('');
+    document.getElementById('modalLink').style.display = 'flex';
+}
+
+async function saveLink() {
+    if (!currentLinkLitId) return;
+    const checkboxes = document.querySelectorAll('#leavesCheckboxes input:checked');
+    const leaf_paths = Array.from(checkboxes).map(cb => cb.dataset.path);
+    try {
+        const res = await fetch(`/api/literature/${currentLinkLitId}/link`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ leaf_paths })
+        });
+        const out = await res.json();
+        if (res.ok) {
+            document.getElementById('modalLink').style.display = 'none';
+            loadLiterature();
+        } else {
+            alert(out.error || 'Ошибка');
+        }
+    } catch (err) {
+        alert('Ошибка сети');
+    }
+}
+</script>
+{% endblock %}

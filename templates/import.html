@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+
+{% block title %}Импорт данных{% endblock %}
+
+{% block header_title %}Догрузка данных{% endblock %}
+
+{% block footer_hint %}JSON или Excel с колонками Domain, Skill, Action, [Subaction]{% endblock %}
+
+{% block extra_css %}
+<style>
+    .import-container { padding: 20px; max-width: 800px; margin: 0 auto; }
+    .import-section {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        padding: 24px;
+        margin-bottom: 24px;
+        border: 1px solid #eef2f6;
+    }
+    .import-section h2 { color: #2c3e50; margin-bottom: 16px; font-size: 1.25em; display: flex; align-items: center; gap: 10px; }
+    .import-section h2 i { color: #3498db; }
+    .reload-hint { font-size: 13px; color: #7f8c8d; margin-top: 12px; padding: 10px; background: #f8f9fa; border-radius: 6px; }
+    .upload-section { margin-bottom: 16px; }
+    .upload-section input[type="file"] { margin-right: 10px; }
+    .upload-btn { padding: 10px 20px; background: #27ae60; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    .upload-btn:hover { background: #219a52; }
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px; overflow-y: auto; }
+    .modal-box { background: white; border-radius: 12px; max-width: 900px; width: 100%; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.2); margin: auto; }
+    .modal-box .modal-header { flex-shrink: 0; padding: 20px 24px 0; }
+    .modal-box .modal-body { flex: 1; overflow-y: auto; min-height: 0; padding: 16px 24px; }
+    .modal-box .modal-footer { flex-shrink: 0; padding: 0 24px 24px; border-top: 1px solid #eee; padding-top: 16px; }
+    .modal-box h3 { margin: 0 0 16px 0; color: #2c3e50; }
+    .preview-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
+    .preview-table th, .preview-table td { padding: 8px 12px; border: 1px solid #eef2f6; text-align: left; }
+    .preview-table th { background: #2c3e50; color: white; }
+    .validation-block { padding: 12px; border-radius: 8px; margin-bottom: 12px; }
+    .validation-errors { background: #fadbd8; border: 1px solid #e74c3c; }
+    .validation-warnings { background: #fef9e7; border: 1px solid #f39c12; }
+    .validation-recommendations { background: #e8f6f3; border: 1px solid #1abc9c; }
+    .validation-block h4 { margin: 0 0 8px 0; font-size: 14px; }
+    .validation-block ul { margin: 0; padding-left: 20px; }
+    .modal-actions { margin-top: 20px; display: flex; gap: 10px; }
+    .btn-primary { padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 8px; cursor: pointer; }
+    .btn-secondary { padding: 10px 20px; background: #95a5a6; color: white; border: none; border-radius: 8px; cursor: pointer; }
+    .merge-options select { padding: 8px 12px; border-radius: 6px; border: 1px solid #ddd; min-width: 280px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="import-container">
+    <div class="import-section">
+        <h2><i class="fas fa-upload"></i> Догрузка данных</h2>
+        <p class="reload-hint">
+            Загрузите JSON или Excel с колонками Domain, Skill, Action, [Subaction]. Данные объединятся с текущим источником.
+            Перед применением создаётся бэкап.
+        </p>
+        <div class="upload-section">
+            <input type="file" id="uploadFile" accept=".json,.xlsx,.xls">
+            <button type="button" class="upload-btn" onclick="previewUpload()">
+                <i class="fas fa-eye"></i> Предпросмотр и валидация
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="uploadModal" style="display: none;">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3><i class="fas fa-table"></i> Предпросмотр догрузки</h3>
+        </div>
+        <div class="modal-body">
+        <div class="merge-options" style="margin-bottom: 16px;">
+            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Режим слияния (автоскейл):</label>
+            <select id="mergeMode" onchange="toggleTargetSelects()">
+                <option value="append">Автоматически — по имени домена/навыка</option>
+                <option value="append_to_domain">В указанный домен</option>
+                <option value="append_to_skill">В указанный навык</option>
+            </select>
+            <div id="targetDomainWrap" style="display: none; margin-top: 10px;">
+                <label>Домен:</label>
+                <select id="targetDomain"></select>
+                <span style="margin-left: 10px; color: #7f8c8d;">или новый:</span>
+                <input type="text" id="targetDomainNew" placeholder="Название домена" style="margin-left: 6px; padding: 6px; width: 200px;">
+            </div>
+            <div id="targetSkillWrap" style="display: none; margin-top: 10px;">
+                <label>Навык:</label>
+                <select id="targetSkill"></select>
+            </div>
+        </div>
+        <div id="previewContent"></div>
+        <div id="validationContent"></div>
+        </div>
+        <div class="modal-footer">
+        <div class="modal-actions">
+            <button type="button" class="btn-primary" id="btnDoUpload" onclick="doUpload()">
+                <i class="fas fa-upload"></i> Загрузить
+            </button>
+            <button type="button" class="btn-secondary" onclick="closeUploadModal()">Отмена</button>
+        </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let pendingUploadFile = null;
+let domainsData = [];
+
+async function loadDomainsForUpload() {
+    try {
+        const r = await fetch('/api/domains');
+        const data = await r.json();
+        domainsData = data.domains || [];
+    } catch (e) { domainsData = []; }
+}
+
+function toggleTargetSelects() {
+    const mode = document.getElementById('mergeMode').value;
+    const domainWrap = document.getElementById('targetDomainWrap');
+    const skillWrap = document.getElementById('targetSkillWrap');
+    domainWrap.style.display = (mode === 'append_to_domain' || mode === 'append_to_skill') ? 'block' : 'none';
+    skillWrap.style.display = mode === 'append_to_skill' ? 'block' : 'none';
+    if (mode === 'append_to_domain' || mode === 'append_to_skill') {
+        fillDomainSelect();
+        if (mode === 'append_to_skill') fillSkillSelect();
+    }
+}
+
+function fillDomainSelect() {
+    const sel = document.getElementById('targetDomain');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— Выберите домен —</option>';
+    domainsData.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.name || '';
+        opt.textContent = d.name || '';
+        sel.appendChild(opt);
+    });
+}
+
+function fillSkillSelect() {
+    const domainSel = document.getElementById('targetDomain');
+    const skillSel = document.getElementById('targetSkill');
+    if (!skillSel) return;
+    const domainName = domainSel ? domainSel.value : '';
+    const domain = domainsData.find(d => d.name === domainName);
+    skillSel.innerHTML = '<option value="">— Выберите навык —</option>';
+    if (domain && domain.skills) {
+        domain.skills.forEach(s => {
+            if (s) {
+                const opt = document.createElement('option');
+                opt.value = s;
+                opt.textContent = s;
+                skillSel.appendChild(opt);
+            }
+        });
+    }
+}
+
+document.getElementById('targetDomain')?.addEventListener('change', function() {
+    if (document.getElementById('mergeMode').value === 'append_to_skill') fillSkillSelect();
+});
+
+async function previewUpload() {
+    const input = document.getElementById('uploadFile');
+    if (!input.files || !input.files[0]) { alert('Выберите файл'); return; }
+    const formData = new FormData();
+    formData.append('file', input.files[0]);
+    try {
+        const r = await fetch('/api/source/upload/preview', { method: 'POST', body: formData });
+        const data = await r.json();
+        if (!data.ok) { alert(data.error || 'Ошибка'); return; }
+        pendingUploadFile = input.files[0];
+        await loadDomainsForUpload();
+        toggleTargetSelects();
+        renderPreview(data);
+        document.getElementById('uploadModal').style.display = 'flex';
+    } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+function escapeHtml(s) {
+    if (!s) return '';
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+}
+
+function renderPreview(data) {
+    const v = data.validation || {};
+    let html = '';
+    if (data.preview && data.preview.length) {
+        html += `<p>Доменов: ${data.domains_count || 0}, записей: ${data.preview.length}</p>`;
+        html += `<table class="preview-table"><thead><tr><th>Домен</th><th>Навык</th><th>Действие</th><th>Поддействие</th><th>Template ID</th></tr></thead><tbody>`;
+        data.preview.slice(0, 50).forEach(row => {
+            html += `<tr><td>${escapeHtml(row.domain)}</td><td>${escapeHtml(row.skill)}</td><td>${escapeHtml(row.action)}</td><td>${escapeHtml(row.subaction)}</td><td>${escapeHtml(row.template_id || '')}</td></tr>`;
+        });
+        if (data.preview.length > 50) html += `<tr><td colspan="5">... и ещё ${data.preview.length - 50} записей</td></tr>`;
+        html += '</tbody></table>';
+    }
+    document.getElementById('previewContent').innerHTML = html || '<p>Нет данных для отображения</p>';
+
+    let valHtml = '';
+    if (v.errors && v.errors.length) {
+        valHtml += `<div class="validation-block validation-errors"><h4>Ошибки (исправьте перед загрузкой)</h4><ul>`;
+        v.errors.forEach(e => valHtml += `<li>${escapeHtml(e)}</li>`);
+        valHtml += '</ul></div>';
+    }
+    if (v.warnings && v.warnings.length) {
+        valHtml += `<div class="validation-block validation-warnings"><h4>Предупреждения</h4><ul>`;
+        v.warnings.forEach(w => valHtml += `<li>${escapeHtml(w)}</li>`);
+        valHtml += '</ul></div>';
+    }
+    if (v.recommendations && v.recommendations.length) {
+        valHtml += `<div class="validation-block validation-recommendations"><h4>Рекомендации</h4><ul>`;
+        v.recommendations.forEach(r => valHtml += `<li>${escapeHtml(r)}</li>`);
+        valHtml += '</ul></div>';
+    }
+    if (!valHtml) valHtml = '<div class="validation-block validation-recommendations"><p>Структура файла корректна.</p></div>';
+    document.getElementById('validationContent').innerHTML = valHtml;
+
+    document.getElementById('btnDoUpload').disabled = !v.ok;
+}
+
+function closeUploadModal() {
+    document.getElementById('uploadModal').style.display = 'none';
+    pendingUploadFile = null;
+}
+
+async function doUpload() {
+    if (!pendingUploadFile) return;
+    const formData = new FormData();
+    formData.append('file', pendingUploadFile);
+    formData.append('merge_mode', document.getElementById('mergeMode').value);
+    const mode = document.getElementById('mergeMode').value;
+    if (mode === 'append_to_domain' || mode === 'append_to_skill') {
+        const domainNew = document.getElementById('targetDomainNew')?.value?.trim();
+        const domain = domainNew || document.getElementById('targetDomain')?.value || '';
+        if (domain) formData.append('target_domain', domain);
+        if (mode === 'append_to_skill') {
+            const skill = document.getElementById('targetSkill').value;
+            if (skill) formData.append('target_skill', skill);
+        }
+    }
+    document.getElementById('btnDoUpload').disabled = true;
+    try {
+        const r = await fetch('/api/source/upload', { method: 'POST', body: formData });
+        const data = await r.json();
+        if (data.ok) {
+            alert('Данные загружены. Страница будет перезагружена.');
+            closeUploadModal();
+            window.location.reload();
+        } else {
+            alert('Ошибка: ' + (data.error || 'Unknown'));
+        }
+    } catch (e) { alert('Ошибка: ' + e.message); }
+    finally { document.getElementById('btnDoUpload').disabled = false; }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Главная — Матрица компетенций{% endblock %}
+
+{% block header_title %}Матрица компетенций Middle Data Engineer{% endblock %}
+
+{% block footer_hint %}Выберите домен в сайдбаре или перейдите в Матрицу{% endblock %}
+
+{% block content %}
+<div class="home-dashboard">
+    <div class="home-welcome">
+        <h2><i class="fas fa-brain"></i> Добро пожаловать</h2>
+        <p class="home-intro">
+            Матрица компетенций для оценки Middle Data Engineer. Выберите домен в сайдбаре слева или перейдите в раздел Матрица для просмотра всех карточек.
+        </p>
+    </div>
+    <div class="home-stats">
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.domains }}</div>
+            <div class="stat-label">Доменов</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.skills }}</div>
+            <div class="stat-label">Навыков</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.actions }}</div>
+            <div class="stat-label">Действий</div>
+        </div>
+    </div>
+    <div class="home-actions">
+        <a href="/matrix" class="home-action-card">
+            <i class="fas fa-th-large"></i>
+            <span>Матрица</span>
+            <small>Сетка карточек доменов</small>
+        </a>
+        <a href="/graph" class="home-action-card">
+            <i class="fas fa-project-diagram"></i>
+            <span>Граф</span>
+            <small>Визуализация дерева</small>
+        </a>
+        <a href="/import" class="home-action-card">
+            <i class="fas fa-upload"></i>
+            <span>Импорт</span>
+            <small>Догрузка JSON/Excel</small>
+        </a>
+    </div>
+    {% if domains %}
+    <div class="home-quick-domains">
+        <h3>Быстрый переход к доменам</h3>
+        <div class="quick-domain-list">
+            {% for d in domains[:5] %}
+            <a href="/domain/{{ loop.index0 }}" class="quick-domain-link">{{ d.name }}</a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

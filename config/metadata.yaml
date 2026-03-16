@@ -1,0 +1,208 @@
+stack_labels:
+  postgresql:
+    name: PostgreSQL
+    icon: database
+    color: '#336791'
+    description: Реляционная база данных
+  greenplum:
+    name: Greenplum
+    icon: cloud
+    color: '#00A86B'
+    description: MPP аналитическая база данных
+  spark:
+    name: Apache Spark
+    icon: fire
+    color: '#E25A1C'
+    description: Фреймворк для распределенной обработки
+  pyspark:
+    name: PySpark
+    icon: python
+    color: '#FFD43B'
+    description: Python API для Spark
+  ctl:
+    name: CTL Orchestrator
+    icon: clock
+    color: '#6f42c1'
+    description: Оркестратор ETL процессов
+  liquibase:
+    name: Liquibase
+    icon: database
+    color: '#2C3E50'
+    description: Управление миграциями схем БД
+  jdbc:
+    name: JDBC
+    icon: plug
+    color: '#F39C12'
+    description: Java Database Connectivity
+  dbt:
+    name: dbt (Data Build Tool)
+    icon: cube
+    color: '#FF694B'
+    description: Инструмент для трансформации данных в хранилище
+  airflow:
+    name: Apache Airflow
+    icon: wind
+    color: '#017A79'
+    description: Платформа оркестрации пайплайнов
+  python:
+    name: Python
+    icon: python
+    color: '#3776AB'
+    description: Язык программирования
+  sql:
+    name: SQL
+    icon: database
+    color: '#336791'
+    description: Язык запросов
+tools_patterns:
+  sql_tools:
+  - sql
+  - postgresql
+  - postgres
+  - greenplum
+  - запрос
+  - запросов
+  - индекс
+  - индексы
+  - explain
+  - план запроса
+  - dbeaver
+  - psql
+  - datagrip
+  - sqlfluff
+  spark_tools:
+  - spark
+  - pyspark
+  - databricks
+  - yarn
+  - jupyter
+  - распределенн
+  - skew
+  - перекос
+  dbt_tools:
+  - dbt
+  - data build tool
+  - трансформац
+  - dag
+  - тег
+  - модел
+  liquibase_tools:
+  - liquibase
+  - миграц
+  - flyway
+  - схема
+  - schema
+  quality_tools:
+  - pytest
+  - тест
+  - юнит
+  - great expectations
+  - soda
+  - dqx
+  - chispa
+  - линтер
+  - форматтер
+  - pylint
+  - flake8
+  - black
+  - качество кода
+  - код-ревью
+  - рефакторинг
+  monitoring_tools:
+  - мониторинг
+  - метрик
+  - алерт
+  - логирован
+  - grafana
+  - prometheus
+  - elk
+  - datadog
+  - openlineage
+  - marquez
+  cicd_tools:
+  - ci/cd
+  - деплой
+  - pipeline
+  - пайплайн
+  - git
+  - github
+  - gitlab
+  - jenkins
+  - github actions
+tools_groups:
+  sql_tools:
+    name: SQL и БД
+    tools:
+    - psql
+    - pgAdmin
+    - DBeaver
+    - DataGrip
+    - SQLFluff
+    - Azure Data Studio
+    - DBT
+    - Metabase
+    - Superset
+  spark_tools:
+    name: Spark и распределённая обработка
+    tools:
+    - Spark UI
+    - YARN
+    - Jupyter
+    - Databricks
+    - Spark History Server
+    - Livy
+    - Delta Lake
+    - Apache Iceberg
+  dbt_tools:
+    name: dbt
+    tools:
+    - dbt Core
+    - dbt Cloud
+    - Paradime
+    - dbt Docs
+  liquibase_tools:
+    name: Миграции схем
+    tools:
+    - Liquibase CLI
+    - Liquibase Hub
+    - Flyway
+    - Sqitch
+  quality_tools:
+    name: Качество кода и данных
+    tools:
+    - pytest
+    - Great Expectations
+    - Soda Core
+    - Databricks DLT
+    - chispa
+    - DQX
+    - pylint
+    - flake8
+    - black
+    - SQLFluff
+    - mypy
+    - Deequ
+    - dbt test
+  monitoring_tools:
+    name: Мониторинг и наблюдаемость
+    tools:
+    - Grafana
+    - Prometheus
+    - ELK Stack
+    - Datadog
+    - OpenLineage
+    - Marquez
+    - Spark UI
+    - CTL
+  cicd_tools:
+    name: CI/CD и оркестрация
+    tools:
+    - Git
+    - GitHub Actions
+    - GitLab CI
+    - Jenkins
+    - Apache Airflow
+    - Prefect
+    - Dagster
+    - Docker
+    - Kubernetes

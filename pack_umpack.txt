@@ -1,0 +1,4 @@
+python pack_to_txt.py ./app_gpa packed.zip
+
+python unpack_from_txt.py ./ output_zip.zip
+python unpack_from_txt.py  output_zip.zip ./

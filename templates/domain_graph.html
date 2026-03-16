@@ -1,0 +1,697 @@
+{% extends "base.html" %}
+
+{% block title %}Граф домена {{ domain.name }} | Матрица навыков{% endblock %}
+
+{% block header_title %}Граф домена: {{ domain.name }}{% endblock %}
+
+{% block footer_hint %}Граф навыков и технологий домена • Двойной клик для перехода{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css">
+<style>
+    .graph-container {
+        padding: 20px;
+        background: #f8f9fa;
+        position: relative;
+        min-height: 800px;
+    }
+    
+    .domain-info {
+        background: linear-gradient(135deg, {{ domain.name|domain_color }}, {{ domain.name|domain_color }}dd);
+        color: white;
+        padding: 15px 25px;
+        border-radius: 12px;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    
+    .domain-info i {
+        font-size: 2em;
+    }
+    
+    .domain-info h2 {
+        margin: 0;
+        font-size: 1.5em;
+    }
+    
+    .domain-info p {
+        margin: 5px 0 0;
+        opacity: 0.9;
+    }
+    
+    .graph-controls {
+        position: absolute;
+        top: 120px;
+        right: 30px;
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .graph-control-btn {
+        width: 45px;
+        height: 45px;
+        border-radius: 50%;
+        background: white;
+        border: none;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2em;
+        color: #2c3e50;
+        transition: all 0.3s ease;
+    }
+    
+    .graph-control-btn:hover {
+        transform: scale(1.1);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+        background: {{ domain.name|domain_color }};
+        color: white;
+    }
+    
+    .network-container {
+        width: 100%;
+        height: 600px;
+        border: 2px solid #eef2f6;
+        border-radius: 15px;
+        background: white;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+    
+    .graph-legend {
+        margin-top: 20px;
+        padding: 15px 20px;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 25px;
+    }
+    
+    .legend-title {
+        font-weight: bold;
+        color: #2c3e50;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        margin-bottom: 5px;
+    }
+    
+    .legend-items {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+    }
+    
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.9em;
+    }
+    
+    .legend-color {
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+    }
+    
+    .node-info {
+        margin-top: 20px;
+        padding: 20px;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    }
+    
+    .node-info h3 {
+        color: #2c3e50;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .node-info-content {
+        color: #34495e;
+        min-height: 50px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border-left: 4px solid {{ domain.name|domain_color }};
+    }
+    
+    .btn-sm {
+        padding: 5px 10px;
+        font-size: 0.9em;
+        margin-top: 10px;
+    }
+    
+    .loading-spinner {
+        text-align: center;
+        padding: 40px;
+        color: #7f8c8d;
+    }
+    
+    .loading-spinner i {
+        color: #3498db;
+        margin-bottom: 15px;
+    }
+    
+    .error-message {
+        color: #e74c3c;
+        padding: 20px;
+        text-align: center;
+        background: #fdf0ed;
+        border-radius: 8px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="graph-container">
+    <div class="domain-info">
+        <i class="fas fa-{{ domain.name|domain_icon(domain_idx) }}"></i>
+        <div>
+            <h2>{{ domain.name }}</h2>
+            <p>Детальный граф навыков и технологий (слева направо)</p>
+        </div>
+    </div>
+    
+    <div class="graph-controls">
+        <button class="graph-control-btn" onclick="if(window.domainGraph) window.domainGraph.fit()" title="Подогнать размер">
+            <i class="fas fa-expand-arrows-alt"></i>
+        </button>
+        <button class="graph-control-btn" onclick="if(window.domainGraph) window.domainGraph.center()" title="Центрировать">
+            <i class="fas fa-crosshairs"></i>
+        </button>
+        <button class="graph-control-btn" onclick="if(window.domainGraph) window.domainGraph.reset()" title="Сбросить вид">
+            <i class="fas fa-redo-alt"></i>
+        </button>
+        <button class="graph-control-btn" onclick="if(window.domainGraph) window.domainGraph.exportAsPNG()" title="Сохранить как PNG">
+            <i class="fas fa-camera"></i>
+        </button>
+        <button class="graph-control-btn" onclick="if(window.domainGraph) window.domainGraph.togglePhysics()" title="Вкл/Выкл физику">
+            <i class="fas fa-physics"></i>
+        </button>
+    </div>
+    
+    <div id="network" class="network-container">
+        <div class="loading-spinner" id="loading-spinner">
+            <i class="fas fa-spinner fa-spin fa-3x"></i>
+            <p>Загрузка графа...</p>
+        </div>
+    </div>
+    
+    <div class="graph-legend">
+        <div class="legend-title">
+            <i class="fas fa-info-circle"></i> Условные обозначения
+        </div>
+        <div class="legend-items">
+            <div class="legend-item">
+                <div class="legend-color" style="background: {{ domain.name|domain_color }}; border-radius: 50%;"></div>
+                <span>Домен (корневой)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #2ecc71; border-radius: 50%;"></div>
+                <span>Навыки</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #f39c12; border-radius: 50%;"></div>
+                <span>Действия</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #9b59b6; border-radius: 50%;"></div>
+                <span>Технологии</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="graph-modal-overlay" id="graphModalOverlay" style="display: none;">
+        <div class="graph-modal" id="graphModal">
+            <div class="graph-modal-header">
+                <h3 id="graphModalTitle"></h3>
+                <button type="button" class="graph-modal-close" id="graphModalClose">&times;</button>
+            </div>
+            <div class="graph-modal-body" id="graphModalBody"></div>
+            <div class="graph-modal-footer" id="graphModalFooter">
+                <a href="#" class="btn btn-primary btn-sm" id="graphModalLink"><i class="fas fa-external-link-alt"></i> Открыть полную версию</a>
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+.graph-modal-overlay { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+.graph-modal { background: white; border-radius: 12px; max-width: 560px; width: 100%; max-height: 80vh; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+.graph-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 1px solid #eee; }
+.graph-modal-close { background: none; border: none; font-size: 1.5em; cursor: pointer; }
+.graph-modal-body { padding: 20px; overflow-y: auto; max-height: 60vh; }
+.graph-modal-footer { padding: 15px 20px; border-top: 1px solid #eee; }
+.graph-modal-section { margin-bottom: 16px; }
+.graph-modal-type { display: inline-block; padding: 4px 10px; background: #ecf0f1; border-radius: 6px; font-size: 0.85em; font-weight: 600; color: #2c3e50; margin-bottom: 8px; }
+.graph-modal-desc { margin: 0 0 12px 0; color: #5d6d7e; font-size: 0.95em; line-height: 1.5; }
+.graph-modal-section-title { margin: 0 0 10px 0; font-size: 0.95em; color: #7f8c8d; display: flex; align-items: center; gap: 8px; }
+.graph-tree { background: #f8f9fa; border-radius: 8px; padding: 12px; border-left: 3px solid #3498db; }
+.graph-tree-item { padding: 4px 0; font-size: 0.9em; }
+.graph-tree-item[data-depth="0"] { font-weight: 600; color: #2c3e50; }
+.graph-tree-type { font-size: 0.8em; color: #7f8c8d; margin-right: 6px; }
+.graph-tree-desc { color: #95a5a6; font-size: 0.85em; }
+.graph-tree-leaf-link { color: #3498db; margin-left: 6px; }
+.graph-tree-stack-badge { display: inline-block; padding: 3px 10px; border-radius: 6px; color: white; font-size: 0.9em; }
+.graph-tools-section { background: linear-gradient(135deg, #f8f9fa 0%, #fff 100%); border-radius: 10px; padding: 16px; border: 1px solid #e9ecef; }
+.graph-tools-title { margin: 0 0 8px 0; font-size: 1em; color: #2c3e50; display: flex; align-items: center; gap: 8px; }
+.graph-tools-hint { margin: 0 0 16px 0; font-size: 0.9em; color: #7f8c8d; }
+.graph-tool-card { display: flex; align-items: flex-start; gap: 14px; padding: 14px; background: white; border-radius: 10px; border-left: 4px solid var(--tool-color, #9b59b6); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.graph-tool-icon { width: 44px; height: 44px; border-radius: 10px; background: var(--tool-color, #9b59b6); color: white; display: flex; align-items: center; justify-content: center; font-size: 1.2em; flex-shrink: 0; }
+.graph-tool-info { flex: 1; }
+.graph-tool-desc { margin: 8px 0 0 0; font-size: 0.9em; color: #5d6d7e; line-height: 1.4; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Initializing domain graph for domain index:', {{ domain_idx }});
+    window.domainGraph = new DomainGraph({{ domain_idx }});
+});
+
+class DomainGraph {
+    constructor(domainIdx) {
+        this.domainIdx = domainIdx;
+        this.network = null;
+        this.nodes = null;
+        this.edges = null;
+        this.physicsEnabled = false;
+        this.init();
+    }
+    
+    async init() {
+        try {
+            console.log('Loading domain graph data for domain index:', this.domainIdx);
+            const response = await fetch(`/api/domain-graph/${this.domainIdx}`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            console.log('Received domain graph data:', data);
+            
+            if (data.error) {
+                console.error('Error loading graph:', data.error);
+                this.showError(data.error);
+                return;
+            }
+            
+            if (!data.nodes || data.nodes.length === 0) {
+                console.warn('No nodes data received');
+                this.showError('Нет данных для отображения графа');
+                return;
+            }
+            
+            console.log(`Nodes: ${data.nodes.length}, Links: ${data.links.length}`);
+            this.createGraph(data);
+            
+            const spinner = document.getElementById('loading-spinner');
+            if (spinner) spinner.style.display = 'none';
+            
+        } catch (error) {
+            console.error('Error loading domain graph:', error);
+            this.showError('Ошибка загрузки данных графа: ' + error.message);
+        }
+    }
+    
+    showError(message) {
+        const container = document.getElementById('network');
+        const spinner = document.getElementById('loading-spinner');
+        if (spinner) spinner.style.display = 'none';
+        container.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle"></i> ${message}</div>`;
+    }
+    
+    createGraph(data) {
+        this.nodes = new vis.DataSet(data.nodes.map(node => {
+            const baseNode = {
+                id: node.id,
+                label: (node.name && node.name.length > 35) ? node.name.substring(0, 32) + '…' : (node.name || ''),
+                title: node.full_name || node.description || node.name,
+                level: node.level,
+                leaf_path: node.leaf_path,
+                full_name: node.full_name || node.name,
+                type: node.type,
+                description: node.description,
+                icon: node.icon,
+                color: node.color
+            };
+            
+            switch(node.type) {
+                case 'domain_root':
+                    return {
+                        ...baseNode,
+                        color: {
+                            background: node.color || '#3498db',
+                            border: '#2980b9',
+                            highlight: {
+                                background: node.color || '#5faee3',
+                                border: '#3498db'
+                            }
+                        },
+                        font: { color: 'white', size: 14, face: 'bold' },
+                        shape: 'box',
+                        widthConstraint: { minimum: 120, maximum: 200 },
+                        heightConstraint: { minimum: 40 }
+                    };
+                case 'skill':
+                    return {
+                        ...baseNode,
+                        color: {
+                            background: node.color || '#2ecc71',
+                            border: '#27ae60',
+                            highlight: {
+                                background: '#4cd787',
+                                border: '#2ecc71'
+                            }
+                        },
+                        font: { color: 'white', size: 12 },
+                        shape: 'box',
+                        widthConstraint: { minimum: 100, maximum: 180 },
+                        heightConstraint: { minimum: 35 }
+                    };
+                case 'action':
+                case 'subaction':
+                    return {
+                        ...baseNode,
+                        color: {
+                            background: node.color || '#f39c12',
+                            border: '#e67e22',
+                            highlight: {
+                                background: '#f5b041',
+                                border: '#f39c12'
+                            }
+                        },
+                        font: { color: 'white', size: 11 },
+                        shape: 'box',
+                        widthConstraint: { minimum: 90, maximum: 160 },
+                        heightConstraint: { minimum: 30 }
+                    };
+                case 'stack':
+                    return {
+                        ...baseNode,
+                        color: {
+                            background: node.color || '#9b59b6',
+                            border: '#8e44ad',
+                            highlight: {
+                                background: node.color || '#af7ac5',
+                                border: '#9b59b6'
+                            }
+                        },
+                        font: { color: 'white', size: 10 },
+                        shape: 'box',
+                        widthConstraint: { minimum: 80, maximum: 140 },
+                        heightConstraint: { minimum: 25 }
+                    };
+                default:
+                    return baseNode;
+            }
+        }));
+        
+        this.rawLinks = data.links || [];
+        this.edges = new vis.DataSet(data.links.map(link => ({
+            from: link.source,
+            to: link.target,
+            label: link.label || '',
+            arrows: {
+                to: {
+                    enabled: true,
+                    type: 'arrow',
+                    scaleFactor: 0.8
+                }
+            },
+            color: {
+                color: '#7f8c8d',
+                highlight: '#3498db',
+                hover: '#3498db',
+                opacity: 0.8
+            },
+            font: {
+                size: 9,
+                align: 'middle',
+                color: '#34495e'
+            },
+            smooth: { enabled: false },
+            width: 1.5
+        })));
+        
+        const options = {
+            layout: {
+                hierarchical: {
+                    enabled: true,
+                    direction: 'LR',
+                    sortMethod: 'directed',
+                    levelSeparation: 200,
+                    nodeSpacing: 150,
+                    treeSpacing: 200
+                }
+            },
+            interaction: {
+                hover: true,
+                tooltipDelay: 200,
+                hideEdgesOnDrag: false,
+                keyboard: true,
+                zoomView: true,
+                dragView: true
+            },
+            physics: { enabled: this.physicsEnabled },
+            edges: {
+                smooth: false,
+                arrows: { to: { enabled: true, type: 'arrow' } },
+                color: { color: '#7f8c8d', highlight: '#3498db' }
+            },
+            nodes: {
+                margin: { top: 10, bottom: 10, left: 10, right: 10 },
+                borderWidth: 2,
+                borderWidthSelected: 3,
+                shadow: { enabled: true, color: 'rgba(0,0,0,0.2)', size: 5, x: 2, y: 2 }
+            }
+        };
+        
+        const container = document.getElementById('network');
+        container.innerHTML = '';
+        
+        const networkData = { nodes: this.nodes, edges: this.edges };
+        this.network = new vis.Network(container, networkData, options);
+        
+        this.network.on('click', (params) => {
+            if (params.nodes.length > 0) {
+                const nodeId = params.nodes[0];
+                const node = this.nodes.get(nodeId);
+                if (node.leaf_path && typeof this.showLeafModal === 'function') {
+                    this.showLeafModal(node);
+                } else {
+                    this.showNodeModal(node);
+                }
+            }
+        });
+        
+        this.network.on('doubleClick', (params) => {
+            if (params.nodes.length > 0) {
+                const nodeId = params.nodes[0];
+                const node = this.nodes.get(nodeId);
+                if (node.leaf_path) {
+                    window.location.href = `/leaf/${node.leaf_path}`;
+                } else if (node.type === 'action' && node.domain_idx !== undefined) {
+                    window.location.href = `/action/${node.domain_idx}/${node.skill_idx}/${node.action_idx}`;
+                } else if (node.type === 'domain_root') {
+                    window.location.href = `/domain/${this.domainIdx}`;
+                }
+            }
+        });
+        
+        setTimeout(() => this.fit(), 100);
+        console.log('Domain graph created successfully');
+    }
+    
+    truncateLabel(text, maxLength) {
+        if (!text) return '';
+        return text.length > maxLength ? text.substring(0, maxLength - 3) + '...' : text;
+    }
+    
+    showNodeModal(node) {
+        const overlay = document.getElementById('graphModalOverlay');
+        const titleEl = document.getElementById('graphModalTitle');
+        const bodyEl = document.getElementById('graphModalBody');
+        const footerEl = document.getElementById('graphModalFooter');
+        const linkEl = document.getElementById('graphModalLink');
+        if (!overlay || !titleEl || !bodyEl) return;
+        titleEl.textContent = node.full_name || node.label || '';
+        let html = '';
+        let linkHref = '';
+        let linkText = '';
+        const typeLabels = { domain_root: 'Домен', skill: 'Навык', action: 'Действие', subaction: 'Поддействие', stack: 'Инструмент' };
+        const typeLabel = typeLabels[node.type] || node.type || '';
+        if (node.type === 'stack') {
+            html = '<div class="graph-modal-section graph-tools-section">';
+            html += '<h4 class="graph-tools-title"><i class="fas fa-tools"></i> Инструменты и технологии</h4>';
+            html += '<p class="graph-tools-hint">Этот элемент представляет технологию или инструмент, используемый в компетенциях.</p>';
+            html += `<div class="graph-tool-card" style="--tool-color: ${node.color || '#9b59b6'}">`;
+            html += `<div class="graph-tool-icon"><i class="fas fa-${node.icon || 'cube'}"></i></div>`;
+            html += `<div class="graph-tool-info"><strong>${node.label || node.full_name || ''}</strong>`;
+            if (node.description) html += `<p class="graph-tool-desc">${node.description}</p>`;
+            html += '</div></div></div>';
+        } else {
+            html = `<div class="graph-modal-section"><span class="graph-modal-type">${typeLabel}</span>`;
+            if (node.description) html += `<p class="graph-modal-desc">${node.description}</p>`;
+            html += '</div>';
+            html += '<div class="graph-modal-section"><h4 class="graph-modal-section-title"><i class="fas fa-sitemap"></i> Состав дерева до листьев</h4>';
+            const subtree = this.buildSubtree(node.id);
+            html += '<div class="graph-tree">' + (subtree ? this.renderTreeHtml(subtree) : '') + '</div></div>';
+            if (node.leaf_path) {
+                linkHref = `/leaf/${node.leaf_path}`;
+                linkText = 'Открыть полную версию';
+            } else if (node.domain_idx !== undefined) {
+                linkHref = `/action/${node.domain_idx}/${node.skill_idx}/${node.action_idx}`;
+                linkText = 'Открыть полную версию';
+            }
+        }
+        bodyEl.innerHTML = html;
+        if (linkHref && linkEl) {
+            linkEl.href = linkHref;
+            linkEl.innerHTML = '<i class="fas fa-external-link-alt"></i> ' + (linkText || 'Открыть полную версию');
+            footerEl.style.display = '';
+        } else {
+            footerEl.style.display = 'none';
+        }
+        overlay.style.display = 'flex';
+        document.getElementById('graphModalClose').onclick = () => { overlay.style.display = 'none'; };
+        overlay.onclick = (e) => { if (e.target === overlay) overlay.style.display = 'none'; };
+    }
+    
+    getConnectedNodes(nodeId) {
+        return this.network ? this.network.getConnectedNodes(nodeId) : [];
+    }
+    
+    getChildNodes(nodeId) {
+        return (this.rawLinks || []).filter(l => l.source === nodeId).map(l => l.target);
+    }
+    
+    buildSubtree(nodeId, visited) {
+        visited = visited || new Set();
+        if (visited.has(nodeId)) return null;
+        visited.add(nodeId);
+        const node = this.nodes.get(nodeId);
+        if (!node) return null;
+        const childIds = this.getChildNodes(nodeId);
+        const children = childIds.map(cid => this.buildSubtree(cid, visited)).filter(Boolean);
+        return { node, children };
+    }
+    
+    renderTreeHtml(subtree, depth) {
+        if (!subtree) return '';
+        depth = depth || 0;
+        const { node, children } = subtree;
+        const indent = depth * 16;
+        const typeLabels = { domain_root: 'Домен', skill: 'Навык', action: 'Действие', subaction: 'Поддействие', stack: 'Инструмент' };
+        const typeLabel = typeLabels[node.type] || node.type || '';
+        const isLeaf = node.leaf_path && children.length === 0;
+        let html = `<div class="graph-tree-item" style="margin-left: ${indent}px;" data-depth="${depth}" data-type="${node.type}">`;
+        html += `<span class="graph-tree-node"><span class="graph-tree-type">${typeLabel}</span> `;
+        if (node.type === 'stack') {
+            html += `<span class="graph-tree-stack-badge" style="background: ${node.color || '#9b59b6'};"><i class="fas fa-${node.icon || 'cube'}"></i> ${node.label || node.full_name || ''}</span>`;
+        } else {
+            html += (node.label || node.full_name || '');
+        }
+        if (node.description && node.type !== 'stack') html += ` <span class="graph-tree-desc">— ${node.description.substring(0, 80)}${node.description.length > 80 ? '…' : ''}</span>`;
+        if (isLeaf) html += ` <a href="/leaf/${node.leaf_path}" class="graph-tree-leaf-link" target="_blank"><i class="fas fa-external-link-alt"></i></a>`;
+        html += `</span>`;
+        if (children.length) {
+            html += '<div class="graph-tree-children">';
+            children.forEach(c => { html += this.renderTreeHtml(c, depth + 1); });
+            html += '</div>';
+        }
+        html += '</div>';
+        return html;
+    }
+    
+    async showLeafModal(node) {
+        const overlay = document.getElementById('graphModalOverlay');
+        const titleEl = document.getElementById('graphModalTitle');
+        const bodyEl = document.getElementById('graphModalBody');
+        const footerEl = document.getElementById('graphModalFooter');
+        const linkEl = document.getElementById('graphModalLink');
+        if (!overlay || !titleEl || !bodyEl || !linkEl) return;
+        titleEl.textContent = node.full_name || node.label || '';
+        linkEl.href = `/leaf/${node.leaf_path}`;
+        linkEl.innerHTML = '<i class="fas fa-external-link-alt"></i> Открыть полную версию';
+        footerEl.style.display = '';
+        bodyEl.innerHTML = '<p><i class="fas fa-spinner fa-spin"></i> Загрузка...</p>';
+        overlay.style.display = 'flex';
+        document.getElementById('graphModalClose').onclick = () => { overlay.style.display = 'none'; };
+        overlay.onclick = (e) => { if (e.target === overlay) overlay.style.display = 'none'; };
+        try {
+            const res = await fetch(`/api/leaf/${node.leaf_path}`);
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+            let desc = data.description || '';
+            if (typeof desc === 'string' && desc.includes('<')) {
+                const div = document.createElement('div');
+                div.innerHTML = desc;
+                desc = div.textContent || div.innerText || '';
+            }
+            if (desc.length > 400) desc = desc.substring(0, 397) + '…';
+            bodyEl.innerHTML = desc ? desc.replace(/\n/g, '<br>') : '<p>Нет краткого описания.</p>';
+        } catch (e) {
+            bodyEl.innerHTML = '<p class="error-message">Не удалось загрузить описание.</p>';
+        }
+    }
+    
+    fit() { if (this.network) this.network.fit({ animation: { duration: 500 } }); }
+    center() { if (this.network) this.network.moveTo({ position: { x: 0, y: 0 }, scale: 1, animation: { duration: 500 } }); }
+    
+    reset() {
+        if (this.network) {
+            this.network.setSelection([]);
+            this.network.setOptions({
+                layout: {
+                    hierarchical: {
+                        enabled: true,
+                        direction: 'LR',
+                        levelSeparation: 200,
+                        nodeSpacing: 150,
+                        treeSpacing: 200
+                    }
+                }
+            });
+            this.network.redraw();
+            setTimeout(() => this.fit(), 100);
+        }
+    }
+    
+    exportAsPNG() {
+        if (this.network) {
+            const canvas = this.network.canvas.body.canvas;
+            const link = document.createElement('a');
+            link.download = `domain-${this.domainIdx}-graph.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+    }
+    
+    togglePhysics() {
+        this.physicsEnabled = !this.physicsEnabled;
+        if (this.network) {
+            this.network.setOptions({ physics: { enabled: this.physicsEnabled } });
+        }
+    }
+}
+
+window.DomainGraph = DomainGraph;
+</script>
+{% endblock %}
