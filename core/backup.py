@@ -25,12 +25,45 @@ def _backup_id() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
 
 
+def _stable_state_path(base_dir: Path) -> Path:
+    """Файл с указателем на стабильный бэкап."""
+    return _backup_dir(base_dir) / "stable_state.json"
+
+
+def get_stable_backup_id(base_dir: Path) -> Optional[str]:
+    """Возвращает id стабильного бэкапа, если он задан."""
+    p = _stable_state_path(base_dir)
+    if not p.exists():
+        return None
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        bid = (data.get("stable_backup_id") or "").strip()
+        return bid or None
+    except Exception:
+        return None
+
+
+def set_stable_backup_id(base_dir: Path, backup_id: str) -> bool:
+    """Сохраняет id стабильного бэкапа."""
+    try:
+        p = _stable_state_path(base_dir)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump({"stable_backup_id": backup_id}, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+
 def create_backup(
     base_dir: Path,
     config_dir: Path,
     source_dir: Path,
     source_filename: str,
     checkpoint_path: str,
+    change_type: str = "manual",
+    note: str = "",
 ) -> Optional[str]:
     """
     Создаёт бэкап: config (metadata.yaml, metadata.json, settings.yaml) + источник + чекпоинт.
@@ -60,6 +93,8 @@ def create_backup(
             "source_file": source_filename,
             "checkpoint_file": checkpoint_path,
             "schema_version": SCHEMA_VERSION,
+            "change_type": change_type or "manual",
+            "note": note or "",
         }
         try:
             src_path = dest / "source" / source_filename
@@ -83,6 +118,7 @@ def list_backups(base_dir: Path) -> List[Dict[str, Any]]:
     bd = _backup_dir(base_dir)
     if not bd.exists():
         return []
+    stable_id = get_stable_backup_id(base_dir)
     result = []
     for p in sorted(bd.iterdir(), reverse=True):
         if not p.is_dir() or not p.name.startswith("backup_"):
@@ -98,12 +134,72 @@ def list_backups(base_dir: Path) -> List[Dict[str, Any]]:
                     "created": meta.get("created", backup_id),
                     "source_file": meta.get("source_file", ""),
                     "schema_version": meta.get("schema_version"),
+                    "change_type": meta.get("change_type", "manual"),
+                    "note": meta.get("note", ""),
+                    "stable": bool(stable_id and backup_id == stable_id),
                 })
             except Exception:
-                result.append({"id": backup_id, "created": backup_id, "source_file": "", "schema_version": None})
+                result.append({
+                    "id": backup_id,
+                    "created": backup_id,
+                    "source_file": "",
+                    "schema_version": None,
+                    "change_type": "manual",
+                    "note": "",
+                    "stable": bool(stable_id and backup_id == stable_id),
+                })
         else:
-            result.append({"id": backup_id, "created": backup_id, "source_file": "", "schema_version": None})
+            result.append({
+                "id": backup_id,
+                "created": backup_id,
+                "source_file": "",
+                "schema_version": None,
+                "change_type": "manual",
+                "note": "",
+                "stable": bool(stable_id and backup_id == stable_id),
+            })
+    # Версия = порядковый номер изменения (1..N по времени).
+    for idx, item in enumerate(reversed(result), start=1):
+        item["version"] = idx
     return result
+
+
+def ensure_stable_backup(
+    base_dir: Path,
+    config_dir: Path,
+    source_dir: Path,
+    source_filename: str,
+    checkpoint_path: str,
+) -> Optional[str]:
+    """
+    Гарантирует наличие stable-состояния.
+    1) если уже есть валидный stable — возвращает его;
+    2) иначе, если уже есть бэкапы — назначает самым ранним;
+    3) иначе создаёт новый стартовый stable-бэкап.
+    """
+    bid = get_stable_backup_id(base_dir)
+    bd = _backup_dir(base_dir)
+    if bid and (bd / f"backup_{bid}").exists():
+        return bid
+
+    backups = list_backups(base_dir)
+    if backups:
+        oldest = backups[-1]["id"]
+        set_stable_backup_id(base_dir, oldest)
+        return oldest
+
+    created = create_backup(
+        base_dir=base_dir,
+        config_dir=config_dir,
+        source_dir=source_dir,
+        source_filename=source_filename,
+        checkpoint_path=checkpoint_path,
+        change_type="stable_init",
+        note="Автоматически зафиксированное стабильное состояние",
+    )
+    if created:
+        set_stable_backup_id(base_dir, created)
+    return created
 
 
 def check_backup_compatibility(base_dir: Path, backup_id: str) -> Tuple[bool, Optional[str]]:

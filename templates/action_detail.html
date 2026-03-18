@@ -154,14 +154,16 @@ function loadActionDetails() {
                                 <ul class="literature-list">
                     `;
                     data.literature.forEach(item => {
+                        var litData = JSON.stringify(item).replace(/"/g, '&quot;');
                         html += `
                             <li class="literature-item">
-                                <a href="${item.url}" target="_blank" rel="noopener noreferrer" class="literature-link">
-                                    <strong>${item.title}</strong>
+                                <a href="#" class="literature-link literature-preview-trigger" data-lit="${litData}">
+                                    <strong>${(item.title || '').replace(/</g, '&lt;')}</strong>
+                                    <i class="fas fa-external-link-alt" style="margin-left: 6px; font-size: 0.85em;"></i>
                                 </a>
-                                ${item.chapter ? `<br><span class="literature-chapter">${item.chapter}</span>` : ''}
-                                ${item.pages ? `<span class="literature-pages">, ${item.pages}</span>` : ''}
-                                ${item.description ? `<p class="literature-description">${item.description}</p>` : ''}
+                                ${item.chapter ? `<br><span class="literature-chapter">${(item.chapter || '').replace(/</g, '&lt;')}</span>` : ''}
+                                ${item.pages ? `<span class="literature-pages">, ${(item.pages || '').replace(/</g, '&lt;')}</span>` : ''}
+                                ${item.description ? `<p class="literature-description">${(item.description || '').replace(/</g, '&lt;')}</p>` : ''}
                             </li>
                         `;
                     });
@@ -183,6 +185,14 @@ function loadActionDetails() {
             }
             
             content.innerHTML = html || '<p class="empty-message">Нет дополнительной информации</p>';
+            content.querySelectorAll('.literature-preview-trigger').forEach(function(a) {
+                a.onclick = function(e) {
+                    e.preventDefault();
+                    if (window.openLiteraturePreview && a.dataset.lit) {
+                        try { window.openLiteraturePreview(JSON.parse(a.dataset.lit.replace(/&quot;/g, '"'))); } catch(err) {}
+                    }
+                };
+            });
             animateSections();
         })
         .catch(error => {

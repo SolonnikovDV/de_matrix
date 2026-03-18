@@ -4,12 +4,35 @@
 
 {% block header_title %}500 - Внутренняя ошибка сервера{% endblock %}
 
+{% block extra_css %}
+<style>
+    .status-page {
+        text-align: center;
+        padding: 100px 20px;
+    }
+    .status-icon {
+        font-size: 80px;
+        color: #e74c3c;
+        margin-bottom: 20px;
+    }
+    .status-text {
+        color: #7f8c8d;
+        margin-top: 20px;
+    }
+    .status-home-link {
+        display: inline-block;
+        margin-top: 20px;
+        text-decoration: none;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div style="text-align: center; padding: 100px 20px;">
-    <i class="fas fa-exclamation-triangle" style="font-size: 80px; color: #e74c3c; margin-bottom: 20px;"></i>
+<div class="status-page">
+    <i class="fas fa-exclamation-triangle status-icon"></i>
     <h2>Что-то пошло не так</h2>
-    <p style="color: #7f8c8d; margin-top: 20px;">Мы уже работаем над исправлением. Пожалуйста, попробуйте позже</p>
-    <a href="/" class="btn btn-primary" style="display: inline-block; margin-top: 20px; text-decoration: none;">
+    <p class="status-text">Мы уже работаем над исправлением. Пожалуйста, попробуйте позже</p>
+    <a href="/" class="btn btn-primary status-home-link">
         <i class="fas fa-home"></i> Вернуться на главную
     </a>
 </div>

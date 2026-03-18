@@ -4,7 +4,7 @@
 
 {% block header_title %}Догрузка данных{% endblock %}
 
-{% block footer_hint %}JSON или Excel с колонками Domain, Skill, Action, [Subaction]{% endblock %}
+{% block footer_hint %}JSON или Excel. Формат: Domain, Skill, Action, Subaction, Description, Template ID{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -24,12 +24,7 @@
     .upload-section input[type="file"] { margin-right: 10px; }
     .upload-btn { padding: 10px 20px; background: #27ae60; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
     .upload-btn:hover { background: #219a52; }
-    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px; overflow-y: auto; }
-    .modal-box { background: white; border-radius: 12px; max-width: 900px; width: 100%; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.2); margin: auto; }
-    .modal-box .modal-header { flex-shrink: 0; padding: 20px 24px 0; }
-    .modal-box .modal-body { flex: 1; overflow-y: auto; min-height: 0; padding: 16px 24px; }
-    .modal-box .modal-footer { flex-shrink: 0; padding: 0 24px 24px; border-top: 1px solid #eee; padding-top: 16px; }
-    .modal-box h3 { margin: 0 0 16px 0; color: #2c3e50; }
+    #uploadModal .modal-box { width: min(900px, 96vw); }
     .preview-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
     .preview-table th, .preview-table td { padding: 8px 12px; border: 1px solid #eef2f6; text-align: left; }
     .preview-table th { background: #2c3e50; color: white; }
@@ -39,10 +34,27 @@
     .validation-recommendations { background: #e8f6f3; border: 1px solid #1abc9c; }
     .validation-block h4 { margin: 0 0 8px 0; font-size: 14px; }
     .validation-block ul { margin: 0; padding-left: 20px; }
-    .modal-actions { margin-top: 20px; display: flex; gap: 10px; }
+    .modal-actions { margin-top: 20px; }
     .btn-primary { padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 8px; cursor: pointer; }
     .btn-secondary { padding: 10px 20px; background: #95a5a6; color: white; border: none; border-radius: 8px; cursor: pointer; }
     .merge-options select { padding: 8px 12px; border-radius: 6px; border: 1px solid #ddd; min-width: 280px; }
+    .template-block { margin-bottom: 16px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef; }
+    .template-code-start { margin-left: 6px; }
+    .template-download-link {
+        margin-left: 12px;
+        padding: 6px 12px;
+        background: #3498db;
+        color: white;
+        text-decoration: none;
+        border-radius: 6px;
+    }
+    .merge-options { margin-bottom: 16px; }
+    .merge-mode-label { display: block; margin-bottom: 8px; font-weight: 600; }
+    .merge-help { margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 0.9em; color: #5d6d7e; }
+    .target-wrap { margin-top: 10px; }
+    .target-new-label { margin-left: 10px; color: #7f8c8d; }
+    .target-new-input { margin-left: 6px; padding: 6px; width: 200px; }
+    .skeleton-gap-10 { margin-top: 10px; }
 </style>
 {% endblock %}
 
@@ -50,8 +62,15 @@
 <div class="import-container">
     <div class="import-section">
         <h2><i class="fas fa-upload"></i> Догрузка данных</h2>
+        <div class="template-block">
+            <strong>Единый шаблон Excel:</strong>
+            <code class="template-code-start">Domain</code>, <code>Skill</code>, <code>Action</code>, <code>Subaction</code>, <code>Description</code>, <code>Template ID</code>
+            <a href="/api/import/template" class="btn btn-sm template-download-link">
+                <i class="fas fa-download"></i> Скачать шаблон
+            </a>
+        </div>
         <p class="reload-hint">
-            Загрузите JSON или Excel с колонками Domain, Skill, Action, [Subaction]. Данные объединятся с текущим источником.
+            Загрузите JSON или Excel. Поддерживаются также русские заголовки: Домен, Навык, Действие, Поддействие.
             Перед применением создаётся бэкап.
         </p>
         <div class="upload-section">
@@ -63,26 +82,28 @@
     </div>
 </div>
 
-<div class="modal-overlay" id="uploadModal" style="display: none;">
+<div class="modal-overlay is-hidden" id="uploadModal">
     <div class="modal-box">
         <div class="modal-header">
             <h3><i class="fas fa-table"></i> Предпросмотр догрузки</h3>
         </div>
         <div class="modal-body">
-        <div class="merge-options" style="margin-bottom: 16px;">
-            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Режим слияния (автоскейл):</label>
+        <div class="merge-options">
+            <label class="merge-mode-label">Режим загрузки:</label>
             <select id="mergeMode" onchange="toggleTargetSelects()">
-                <option value="append">Автоматически — по имени домена/навыка</option>
+                <option value="append">Инкрементальная — добавить к существующим (автоскейл)</option>
                 <option value="append_to_domain">В указанный домен</option>
                 <option value="append_to_skill">В указанный навык</option>
+                <option value="replace_all">Полная замена матрицы</option>
             </select>
-            <div id="targetDomainWrap" style="display: none; margin-top: 10px;">
+            <div id="mergeModeHelp" class="merge-help"></div>
+            <div id="targetDomainWrap" class="target-wrap is-hidden">
                 <label>Домен:</label>
                 <select id="targetDomain"></select>
-                <span style="margin-left: 10px; color: #7f8c8d;">или новый:</span>
-                <input type="text" id="targetDomainNew" placeholder="Название домена" style="margin-left: 6px; padding: 6px; width: 200px;">
+                <span class="target-new-label">или новый:</span>
+                <input type="text" id="targetDomainNew" class="target-new-input" placeholder="Название домена">
             </div>
-            <div id="targetSkillWrap" style="display: none; margin-top: 10px;">
+            <div id="targetSkillWrap" class="target-wrap is-hidden">
                 <label>Навык:</label>
                 <select id="targetSkill"></select>
             </div>
@@ -107,6 +128,20 @@
 let pendingUploadFile = null;
 let domainsData = [];
 
+function getFreshSelectedFile() {
+    const input = document.getElementById('uploadFile');
+    if (!input) return null;
+    if (input.files && input.files.length > 0) return input.files[0];
+    return null;
+}
+
+function resetUploadSelection(reason) {
+    const input = document.getElementById('uploadFile');
+    if (input) input.value = '';
+    pendingUploadFile = null;
+    if (reason) alert(reason);
+}
+
 async function loadDomainsForUpload() {
     try {
         const r = await fetch('/api/domains');
@@ -115,12 +150,21 @@ async function loadDomainsForUpload() {
     } catch (e) { domainsData = []; }
 }
 
+const MERGE_MODE_HELP = {
+    append: 'Данные объединяются с текущей матрицей. Новые домены/навыки создаются, существующие дополняются. Дубликаты действий не добавляются.',
+    append_to_domain: 'Все загруженные навыки и действия будут помещены в выбранный домен. Существующие навыки дополняются.',
+    append_to_skill: 'Все загруженные действия будут добавлены в выбранный навык указанного домена.',
+    replace_all: 'ВНИМАНИЕ: Текущая матрица будет полностью заменена загруженными данными. Действия, литература и шаблоны из текущего источника будут утеряны. Создаётся бэкап перед заменой.'
+};
+
 function toggleTargetSelects() {
     const mode = document.getElementById('mergeMode').value;
     const domainWrap = document.getElementById('targetDomainWrap');
     const skillWrap = document.getElementById('targetSkillWrap');
+    const helpEl = document.getElementById('mergeModeHelp');
     domainWrap.style.display = (mode === 'append_to_domain' || mode === 'append_to_skill') ? 'block' : 'none';
     skillWrap.style.display = mode === 'append_to_skill' ? 'block' : 'none';
+    if (helpEl) helpEl.textContent = MERGE_MODE_HELP[mode] || '';
     if (mode === 'append_to_domain' || mode === 'append_to_skill') {
         fillDomainSelect();
         if (mode === 'append_to_skill') fillSkillSelect();
@@ -161,22 +205,79 @@ function fillSkillSelect() {
 document.getElementById('targetDomain')?.addEventListener('change', function() {
     if (document.getElementById('mergeMode').value === 'append_to_skill') fillSkillSelect();
 });
+document.addEventListener('DOMContentLoaded', function() {
+    toggleTargetSelects();
+    const input = document.getElementById('uploadFile');
+    if (input) {
+        // После выбора нового файла всегда заново валидируем/предпросматриваем.
+        input.addEventListener('change', function() { pendingUploadFile = null; });
+    }
+    // Защита от restore состояния страницы: визуально имя файла может остаться,
+    // но File-объект уже недоступен для браузера после refresh/back-forward cache.
+    resetUploadSelection();
+});
+window.addEventListener('pageshow', function(e) {
+    if (e.persisted) {
+        resetUploadSelection();
+    }
+});
 
 async function previewUpload() {
     const input = document.getElementById('uploadFile');
-    if (!input.files || !input.files[0]) { alert('Выберите файл'); return; }
+    const selectedFile = getFreshSelectedFile();
+    if (!selectedFile) {
+        if (input && input.value) {
+            resetUploadSelection('Файл был сброшен после обновления страницы. Выберите файл заново.');
+        } else {
+            alert('Выберите файл');
+        }
+        return;
+    }
+    const triggerBtn = document.querySelector('.upload-btn');
+    if (triggerBtn) {
+        triggerBtn.disabled = true;
+        triggerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Анализ файла...';
+    }
     const formData = new FormData();
-    formData.append('file', input.files[0]);
+    formData.append('file', selectedFile);
+    document.getElementById('previewContent').innerHTML = `
+        <div class="skeleton-card">
+            <span class="skeleton skeleton-line w-40"></span>
+            <span class="skeleton skeleton-line w-80 skeleton-gap-10"></span>
+            <span class="skeleton skeleton-line w-80"></span>
+            <span class="skeleton skeleton-line w-60"></span>
+        </div>`;
+    document.getElementById('validationContent').innerHTML = `
+        <div class="skeleton-card">
+            <span class="skeleton skeleton-line w-40"></span>
+            <span class="skeleton skeleton-line w-80 skeleton-gap-10"></span>
+            <span class="skeleton skeleton-line w-60"></span>
+        </div>`;
     try {
-        const r = await fetch('/api/source/upload/preview', { method: 'POST', body: formData });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 45000);
+        const r = await fetch('/api/source/upload/preview', { method: 'POST', body: formData, signal: controller.signal });
+        clearTimeout(timeoutId);
         const data = await r.json();
         if (!data.ok) { alert(data.error || 'Ошибка'); return; }
-        pendingUploadFile = input.files[0];
+        pendingUploadFile = selectedFile;
         await loadDomainsForUpload();
         toggleTargetSelects();
         renderPreview(data);
         document.getElementById('uploadModal').style.display = 'flex';
-    } catch (e) { alert('Ошибка: ' + e.message); }
+    } catch (e) {
+        if (e && e.name === 'AbortError') {
+            alert('Анализ файла занял слишком много времени. Попробуйте уменьшить файл или проверьте структуру Excel.');
+        } else {
+            alert('Ошибка: ' + e.message);
+        }
+    }
+    finally {
+        if (triggerBtn) {
+            triggerBtn.disabled = false;
+            triggerBtn.innerHTML = '<i class="fas fa-eye"></i> Предпросмотр и валидация';
+        }
+    }
 }
 
 function escapeHtml(s) {
@@ -197,6 +298,8 @@ function renderPreview(data) {
         });
         if (data.preview.length > 50) html += `<tr><td colspan="5">... и ещё ${data.preview.length - 50} записей</td></tr>`;
         html += '</tbody></table>';
+    } else if (v.ok) {
+        html = '<p>Файл успешно прочитан, но данных для догрузки пока нет (пустой шаблон).</p>';
     }
     document.getElementById('previewContent').innerHTML = html || '<p>Нет данных для отображения</p>';
 
@@ -228,11 +331,17 @@ function closeUploadModal() {
 }
 
 async function doUpload() {
-    if (!pendingUploadFile) return;
+    if (!pendingUploadFile) {
+        alert('Сначала выберите файл и выполните предпросмотр/валидацию.');
+        return;
+    }
+    const mode = document.getElementById('mergeMode').value;
+    if (mode === 'replace_all' && !confirm('Полная замена матрицы. Текущие данные будут утеряны (создаётся бэкап). Продолжить?')) {
+        return;
+    }
     const formData = new FormData();
     formData.append('file', pendingUploadFile);
-    formData.append('merge_mode', document.getElementById('mergeMode').value);
-    const mode = document.getElementById('mergeMode').value;
+    formData.append('merge_mode', mode);
     if (mode === 'append_to_domain' || mode === 'append_to_skill') {
         const domainNew = document.getElementById('targetDomainNew')?.value?.trim();
         const domain = domainNew || document.getElementById('targetDomain')?.value || '';

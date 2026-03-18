@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}О приложении | Матрица навыков{% endblock %}
+
+{% block header_title %}О приложении{% endblock %}
+
+{% block footer_hint %}Информация о проекте, авторе и лицензии{% endblock %}
+
+{% block extra_css %}
+<style>
+    .about-wrap { padding: 20px; max-width: 900px; margin: 0 auto; }
+    .about-card {
+        background: white;
+        border: 1px solid #eef2f6;
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 16px;
+    }
+    .about-card:last-child { margin-bottom: 0; }
+    .about-title { margin-top: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="about-wrap">
+    <section class="about-card">
+        <h2 class="about-title"><i class="fas fa-circle-info"></i> О приложении</h2>
+        <p>
+            Data Engineer Matrix — веб-приложение для визуализации, управления и развития матрицы компетенций:
+            дерево навыков, графы, литература, импорт/экспорт и бэкапы источников.
+        </p>
+        <p>
+            Источник данных — единый файл в каталоге <code>data/sources</code>
+            (по умолчанию <code>matrix.json</code>), а контент страниц обновляется через API и интерфейсные формы.
+        </p>
+        <p>
+            Репозиторий проекта:
+            <a href="{{ repository_url }}" target="_blank" rel="noopener">{{ repository_url }}</a>
+        </p>
+    </section>
+
+    <section id="author" class="about-card">
+        <h2 class="about-title"><i class="fas fa-user"></i> Об авторе</h2>
+        <p><strong>{{ author_name }}</strong></p>
+        <p>
+            Контакты:
+            <a href="{{ author_telegram }}" target="_blank" rel="noopener" aria-label="Telegram автора">
+                <i class="fab fa-telegram-plane"></i> Telegram
+            </a>
+        </p>
+    </section>
+
+    <section class="about-card">
+        <h2 class="about-title"><i class="fas fa-scale-balanced"></i> Лицензия</h2>
+        <p>
+            Проект распространяется по лицензии MIT.
+            Полный текст см. в файле <code>LICENSE</code> в корне репозитория.
+        </p>
+    </section>
+</div>
+{% endblock %}
+

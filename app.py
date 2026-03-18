@@ -28,12 +28,23 @@ from core.checkpoint import (
     build_checkpoint_data,
     get_source_content_hash,
 )
-from core.backup import create_backup, list_backups, restore_backup, check_backup_compatibility
+from core.backup import (
+    create_backup,
+    list_backups,
+    restore_backup,
+    check_backup_compatibility,
+    get_stable_backup_id,
+    set_stable_backup_id,
+    ensure_stable_backup,
+)
 from core.upload_merge import merge_upload_into_source
 
 app = Flask(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+AUTHOR_NAME = os.environ.get("DE_MATRIX_AUTHOR_NAME", "Dmitry Solonnikov")
+AUTHOR_TELEGRAM = os.environ.get("DE_MATRIX_AUTHOR_TELEGRAM", "https://t.me/Dmitry_as_SoloD")
+REPOSITORY_URL = os.environ.get("DE_MATRIX_REPO_URL", "https://github.com/SolonnikovDV/de_matrix.git")
 # Путь к config — гарантированно относительно app.py (для metadata.yaml: stack_labels, tools)
 _config_loader.CONFIG_DIR = PathLib(BASE_DIR) / "config"
 
@@ -109,6 +120,37 @@ def _current_source_for_backup() -> str:
     if default and default in candidates:
         return default
     return candidates[0] if candidates else ""
+
+
+def _create_version_backup(change_type: str, note: str = "") -> str:
+    """
+    Создаёт версионный бэкап перед изменением.
+    Также гарантирует наличие stable-состояния.
+    """
+    source_file = _current_source_for_backup()
+    if not source_file:
+        return ""
+    base = PathLib(BASE_DIR)
+    cfg = base / "config"
+    src = PathLib(_source_dir_path())
+    cp = _checkpoint_path()
+    ensure_stable_backup(
+        base_dir=base,
+        config_dir=cfg,
+        source_dir=src,
+        source_filename=source_file,
+        checkpoint_path=cp,
+    )
+    backup_id = create_backup(
+        base_dir=base,
+        config_dir=cfg,
+        source_dir=src,
+        source_filename=source_file,
+        checkpoint_path=cp,
+        change_type=change_type,
+        note=note,
+    )
+    return backup_id or ""
 
 
 def _ensure_data_loaded(force_source_filename: str = None):
@@ -493,7 +535,10 @@ def inject_globals():
         'get_domain_icon': get_domain_icon,
         'get_skill_icon': get_skill_icon,
         'get_domain_color': get_domain_color,
-        'get_skill_color': get_skill_color
+        'get_skill_color': get_skill_color,
+        'author_name': AUTHOR_NAME,
+        'author_telegram': AUTHOR_TELEGRAM,
+        'repository_url': REPOSITORY_URL,
     }
 
 # ----- ОСНОВНЫЕ МАРШРУТЫ -----
@@ -644,6 +689,49 @@ def _leaf_breadcrumb(tree_nodes, path: list) -> str:
     return " → ".join(p for p in parts if p)
 
 
+@app.route('/api/tree-for-link')
+def api_tree_for_link():
+    """Дерево для модала привязки: домены → навыки → действия → листья (с path, template_id)."""
+    data = get_matrix()
+    domains = (data or {}).get("domains", [])
+    meta = get_meta()
+    templates = meta.get("action_templates", {})
+    out = []
+    for di, d in enumerate(domains):
+        domain_node = {"name": d.get("name", ""), "skills": []}
+        for si, s in enumerate(d.get("skills", [])):
+            skill_node = {"name": s.get("name", ""), "actions": []}
+            for ai, a in enumerate(s.get("actions", [])):
+                if a.get("subactions"):
+                    for subi, sub in enumerate(a["subactions"]):
+                        path = [di, si, ai, subi]
+                        node = get_node_by_path(get_tree(), path)
+                        tid = (node or {}).get("template_id")
+                        if tid and tid in templates:
+                            skill_node["actions"].append({
+                                "name": sub.get("text", ""),
+                                "path": path,
+                                "path_str": "/".join(map(str, path)),
+                                "template_id": tid,
+                            })
+                else:
+                    path = [di, si, ai]
+                    node = get_node_by_path(get_tree(), path)
+                    tid = (node or {}).get("template_id")
+                    if tid and tid in templates:
+                        skill_node["actions"].append({
+                            "name": a.get("text", ""),
+                            "path": path,
+                            "path_str": "/".join(map(str, path)),
+                            "template_id": tid,
+                        })
+            if skill_node["actions"]:
+                domain_node["skills"].append(skill_node)
+        if domain_node["skills"]:
+            out.append(domain_node)
+    return jsonify(out)
+
+
 @app.route('/api/leaves')
 def api_leaves():
     """Список всех листьев с path, template_id, url и иерархией (домен → навык → дерево)."""
@@ -663,6 +751,28 @@ def api_leaves():
             item["breadcrumb"] = _leaf_breadcrumb(tree, p)
         out.append(item)
     return jsonify(out)
+
+@app.route('/api/leaf-literature')
+def api_leaf_literature():
+    """Мапа path_str -> список названий привязанной литературы для отображения в матрице."""
+    meta = get_meta()
+    templates = meta.get("action_templates", {})
+    literature = meta.get("literature", {})
+    tree = get_tree()
+    leaves = collect_leaves(tree)
+    out = {}
+    for n in leaves:
+        p = n.get("path", [])
+        tid = n.get("template_id")
+        if not tid or tid not in templates:
+            continue
+        rids = templates[tid].get("resource_ids", [])
+        titles = [literature.get(rid, {}).get("title", rid) for rid in rids if rid in literature]
+        if titles:
+            path_str = "/".join(str(x) for x in p)
+            out[path_str] = titles
+    return jsonify(out)
+
 
 @app.route('/api/meta')
 def api_meta():
@@ -1138,6 +1248,12 @@ def import_page():
     return render_template('import.html')
 
 
+@app.route('/about')
+def about_page():
+    """Раздел «О приложении»."""
+    return render_template('about.html')
+
+
 @app.route('/settings')
 def settings_page():
     return render_template('settings.html')
@@ -1161,6 +1277,11 @@ def api_literature_list():
             template_to_lit.setdefault(rid, []).append({"template_id": tid, "name": t.get('name', tid)})
     out = []
     for rid, item in lit.items():
+        local_path = item.get("local_path") or item.get("file_path", "")
+        if local_path:
+            abs_local = local_path if os.path.isabs(local_path) else os.path.join(BASE_DIR, local_path)
+            if not os.path.isfile(abs_local):
+                local_path = ""
         out.append({
             "id": rid,
             "title": item.get("title", rid),
@@ -1168,7 +1289,7 @@ def api_literature_list():
             "pages": item.get("pages", ""),
             "url": item.get("url", ""),
             "description": item.get("description", ""),
-            "local_path": item.get("local_path") or item.get("file_path", ""),
+            "local_path": local_path,
             "linked_templates": template_to_lit.get(rid, []),
         })
     return jsonify(out)
@@ -1186,6 +1307,7 @@ def api_literature_add():
     lid = slugify(title)[:40] + '_' + hashlib.md5(title.encode()).hexdigest()[:6]
     if lid in lit:
         return jsonify({"error": "already exists", "id": lid}), 409
+    _create_version_backup("literature_add", f"Добавление источника: {title}")
     lit[lid] = {
         "title": title,
         "chapter": (data.get('chapter') or '').strip(),
@@ -1231,6 +1353,7 @@ def api_literature_upload():
     lid = slugify(title)[:40] + "_" + hashlib.md5((title + rel_path).encode()).hexdigest()[:6]
     if lid in lit:
         lid = lid + "_" + hashlib.md5(rel_path.encode()).hexdigest()[:4]
+    _create_version_backup("literature_upload", f"Загрузка файла литературы: {title}")
     lit[lid] = {
         "title": title,
         "chapter": chapter,
@@ -1241,6 +1364,54 @@ def api_literature_upload():
     }
     save_meta(meta)
     return jsonify({"id": lid, "title": title, "local_path": rel_path})
+
+
+@app.route('/api/literature/<lit_id>', methods=['PATCH'])
+def api_literature_edit(lit_id):
+    """Редактирование литературы: title/chapter/pages/url/description/local_path."""
+    global _meta
+    data = request.get_json() or {}
+    meta = get_meta()
+    lit = meta.get('literature', {})
+    if lit_id not in lit:
+        return jsonify({"error": "literature not found"}), 404
+    _create_version_backup("literature_edit", f"Редактирование литературы: {lit_id}")
+    item = lit[lit_id]
+    if 'title' in data:
+        item['title'] = (data.get('title') or '').strip()
+    if 'chapter' in data:
+        item['chapter'] = (data.get('chapter') or '').strip()
+    if 'pages' in data:
+        item['pages'] = (data.get('pages') or '').strip()
+    if 'url' in data:
+        item['url'] = (data.get('url') or '').strip()
+    if 'description' in data:
+        item['description'] = (data.get('description') or '').strip()
+    if 'local_path' in data:
+        item['local_path'] = (data.get('local_path') or '').strip()
+    save_meta(meta)
+    return jsonify({"id": lit_id, "title": item.get("title", lit_id)})
+
+
+@app.route('/api/literature/<lit_id>', methods=['DELETE'])
+def api_literature_delete(lit_id):
+    """Удаление литературы: удаляет из каталога и убирает привязки (resource_ids) из всех шаблонов."""
+    global _meta
+    meta = get_meta()
+    lit = meta.get('literature', {})
+    if lit_id not in lit:
+        return jsonify({"error": "literature not found"}), 404
+    _create_version_backup("literature_delete", f"Удаление литературы: {lit_id}")
+    templates = meta.get('action_templates', {})
+    removed = 0
+    for tid, t in templates.items():
+        rids = t.get('resource_ids', [])
+        if lit_id in rids:
+            t['resource_ids'] = [r for r in rids if r != lit_id]
+            removed += 1
+    del lit[lit_id]
+    save_meta(meta)
+    return jsonify({"id": lit_id, "removed_from_templates": removed})
 
 
 @app.route('/api/literature/<lit_id>/link', methods=['POST'])
@@ -1254,6 +1425,7 @@ def api_literature_link(lit_id):
     meta = get_meta()
     if lit_id not in meta.get('literature', {}):
         return jsonify({"error": "literature not found"}), 404
+    _create_version_backup("literature_link", f"Привязка литературы: {lit_id}")
     templates = meta.setdefault('action_templates', {})
     tree = get_tree()
     updated = 0
@@ -1310,6 +1482,7 @@ def api_literature_download(lit_id):
     meta = get_meta()
     if lit_id not in meta.get('literature', {}):
         return jsonify({"error": "literature not found"}), 404
+    _create_version_backup("literature_download", f"Скачивание литературы по URL: {lit_id}")
     lib_dir = _literature_dir()
     try:
         import ssl
@@ -1425,6 +1598,30 @@ def api_sources():
     })
 
 
+@app.route('/api/import/template')
+def api_import_template():
+    """Скачивание пустого шаблона Excel для импорта (единый формат с экспортом)."""
+    try:
+        from openpyxl import Workbook
+        from io import BytesIO
+    except ImportError:
+        return jsonify({"error": "openpyxl не установлен (pip install openpyxl)"}), 500
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Матрица навыков"
+    ws.append(["Domain", "Skill", "Action", "Subaction", "Description", "Template ID"])
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    from flask import send_file
+    return send_file(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="matrix_import_template.xlsx",
+    )
+
+
 @app.route('/api/source/upload/preview', methods=["POST"])
 def api_source_upload_preview():
     """Предпросмотр догрузки: парсинг файла без сохранения, возврат preview + validation."""
@@ -1507,7 +1704,7 @@ def api_source_upload():
     merge_mode = (request.form.get("merge_mode") or "append").strip()
     target_domain = (request.form.get("target_domain") or "").strip() or None
     target_skill = (request.form.get("target_skill") or "").strip() or None
-    if merge_mode not in ("append", "append_to_domain", "append_to_skill", "replace_domain", "replace_skill"):
+    if merge_mode not in ("append", "append_to_domain", "append_to_skill", "replace_domain", "replace_skill", "replace_all"):
         merge_mode = "append"
     if merge_mode == "append_to_domain" and not target_domain:
         return jsonify({"ok": False, "error": "Для режима «В домен» укажите target_domain"}), 400
@@ -1542,14 +1739,8 @@ def api_source_upload():
     if not os.path.isfile(source_path):
         return jsonify({"ok": False, "error": f"Файл источника не найден: {source_file}"}), 404
 
-    # Бэкап перед догрузкой
-    create_backup(
-        PathLib(BASE_DIR),
-        PathLib(BASE_DIR) / "config",
-        PathLib(source_dir),
-        source_file,
-        _checkpoint_path(),
-    )
+    # Версионный бэкап перед догрузкой
+    _create_version_backup("source_upload", f"Догрузка данных, режим: {merge_mode}")
 
     try:
         current = load_unified_source(source_path)
@@ -1596,13 +1787,7 @@ def api_source_load():
         return jsonify({"ok": False, "error": "file not found in source_dir"}), 404
     source_file = _current_source_for_backup()
     if source_file:
-        create_backup(
-            PathLib(BASE_DIR),
-            PathLib(BASE_DIR) / "config",
-            PathLib(_source_dir_path()),
-            source_file,
-            _checkpoint_path(),
-        )
+        _create_version_backup("source_load", f"Переключение источника на: {filename}")
     _invalidate_caches()
     _ensure_data_loaded(force_source_filename=filename)
     return jsonify({"ok": True, "source_file": filename, "message": "Источник загружен, чекпоинт обновлён"})
@@ -1611,6 +1796,15 @@ def api_source_load():
 @app.route('/api/backups')
 def api_backups():
     """Список бэкапов конфига и источника."""
+    source_file = _current_source_for_backup()
+    if source_file:
+        ensure_stable_backup(
+            base_dir=PathLib(BASE_DIR),
+            config_dir=PathLib(BASE_DIR) / "config",
+            source_dir=PathLib(_source_dir_path()),
+            source_filename=source_file,
+            checkpoint_path=_checkpoint_path(),
+        )
     backups = list_backups(PathLib(BASE_DIR))
     return jsonify({"ok": True, "backups": backups})
 
@@ -1625,6 +1819,18 @@ def api_backup_compatibility(backup_id):
         "compatible": compatible,
         "warning": warning,
     })
+
+
+@app.route('/api/backups/<backup_id>/mark-stable', methods=["POST"])
+def api_mark_stable(backup_id):
+    """Помечает выбранный бэкап как стабильное состояние."""
+    backups = list_backups(PathLib(BASE_DIR))
+    exists = any(b.get("id") == backup_id for b in backups)
+    if not exists:
+        return jsonify({"ok": False, "error": "Backup not found"}), 404
+    if not set_stable_backup_id(PathLib(BASE_DIR), backup_id):
+        return jsonify({"ok": False, "error": "Не удалось сохранить stable-состояние"}), 500
+    return jsonify({"ok": True, "stable_backup_id": backup_id})
 
 
 @app.route('/api/restore', methods=["POST"])
@@ -1647,6 +1853,7 @@ def api_restore():
 
     config_dir = PathLib(BASE_DIR) / "config"
     source_dir = PathLib(_source_dir_path())
+    _create_version_backup("restore_before", f"Перед восстановлением backup_{backup_id}")
     if not restore_backup(PathLib(BASE_DIR), config_dir, source_dir, backup_id):
         return jsonify({"ok": False, "error": "Backup not found or restore failed"}), 404
     invalidate_metadata_cache()
@@ -1660,18 +1867,71 @@ def api_restore():
     })
 
 
+@app.route('/api/restore/stable', methods=["POST"])
+def api_restore_stable():
+    """Откат к стабильному состоянию (stable backup)."""
+    stable_id = get_stable_backup_id(PathLib(BASE_DIR))
+    if not stable_id:
+        return jsonify({"ok": False, "error": "Стабильное состояние не задано"}), 404
+    force = bool((request.get_json() or {}).get("force"))
+    # Повторяем логику api_restore для стабильного backup id
+    compatible, warning = check_backup_compatibility(PathLib(BASE_DIR), stable_id)
+    if not compatible and not force:
+        return jsonify({
+            "ok": False,
+            "error": "Несовместимость схемы",
+            "warning": warning,
+            "force_required": True,
+        }), 409
+    config_dir = PathLib(BASE_DIR) / "config"
+    source_dir = PathLib(_source_dir_path())
+    _create_version_backup("restore_before", f"Перед восстановлением stable backup_{stable_id}")
+    if not restore_backup(PathLib(BASE_DIR), config_dir, source_dir, stable_id):
+        return jsonify({"ok": False, "error": "Stable backup not found or restore failed"}), 404
+    invalidate_metadata_cache()
+    _invalidate_caches()
+    get_matrix()
+    get_tree()
+    return jsonify({"ok": True, "backup_id": stable_id, "message": "Восстановлено стабильное состояние"})
+
+
+@app.route('/api/restore/last-change', methods=["POST"])
+def api_restore_last_change():
+    """
+    Откат последнего изменения.
+    Так как бэкап создаётся перед мутацией, достаточно восстановить самый свежий бэкап.
+    """
+    backups = list_backups(PathLib(BASE_DIR))
+    if not backups:
+        return jsonify({"ok": False, "error": "Нет доступных бэкапов"}), 404
+    last_id = backups[0]["id"]
+    compatible, warning = check_backup_compatibility(PathLib(BASE_DIR), last_id)
+    force = bool((request.get_json() or {}).get("force"))
+    if not compatible and not force:
+        return jsonify({
+            "ok": False,
+            "error": "Несовместимость схемы",
+            "warning": warning,
+            "force_required": True,
+        }), 409
+    config_dir = PathLib(BASE_DIR) / "config"
+    source_dir = PathLib(_source_dir_path())
+    _create_version_backup("restore_before", f"Перед откатом последнего изменения backup_{last_id}")
+    if not restore_backup(PathLib(BASE_DIR), config_dir, source_dir, last_id):
+        return jsonify({"ok": False, "error": "Backup not found or restore failed"}), 404
+    invalidate_metadata_cache()
+    _invalidate_caches()
+    get_matrix()
+    get_tree()
+    return jsonify({"ok": True, "backup_id": last_id, "message": "Откат выполнен по последнему изменению"})
+
+
 @app.route('/api/reload')
 def api_reload():
     """Перезагрузка: сброс кэша и повторная сверка источника с чекпоинтом (при изменении файла или для autoscale)."""
     source_file = _current_source_for_backup()
     if source_file:
-        create_backup(
-            PathLib(BASE_DIR),
-            PathLib(BASE_DIR) / "config",
-            PathLib(_source_dir_path()),
-            source_file,
-            _checkpoint_path(),
-        )
+        _create_version_backup("reload", "Ручная перезагрузка данных")
     _invalidate_caches()
     get_matrix()
     get_tree()
@@ -1699,6 +1959,22 @@ def debug():
 @app.route('/static/<path:path>')
 def static_files(path):
     return send_from_directory('static', path)
+
+
+@app.route('/library/<path:filename>')
+def library_file(filename):
+    """Раздача файлов из data/library для предпросмотра."""
+    if ".." in filename:
+        abort(404)
+    lib_dir = PathLib(_literature_dir())
+    path = (lib_dir / filename).resolve()
+    lib_resolved = lib_dir.resolve()
+    if not str(path).startswith(str(lib_resolved)) or path == lib_resolved:
+        abort(404)
+    if not path.exists() or not path.is_file():
+        abort(404)
+    rel = path.relative_to(lib_resolved)
+    return send_from_directory(lib_dir, str(rel))
 
 @app.errorhandler(404)
 def not_found(e):

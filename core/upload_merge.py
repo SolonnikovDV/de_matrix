@@ -57,15 +57,27 @@ def merge_upload_into_source(
     Сливает загруженные данные с текущим источником. Автоскейл: в существующую ветку или новую.
 
     merge_mode:
-      - append: автоскейл по имени — в существующие домены/навыки или создание новых
+      - append: инкрементальная загрузка — автоскейл по имени, добавление в существующие ветки
       - append_to_domain: все данные в указанный домен (target_domain)
       - append_to_skill: все действия в указанный навык (target_domain + target_skill)
       - replace_domain: заменить домен целиком
       - replace_skill: заменить навык целиком
+      - replace_all: полная замена матрицы — загруженные данные полностью заменяют текущие
     """
     current = _normalize_unified(current) if current else _empty_unified()
     upload = _normalize_unified(upload) if upload else {"domains": []}
     upload_domains = upload.get("domains") or []
+
+    if merge_mode == "replace_all":
+        out = _empty_unified()
+        out["schema_version"] = SCHEMA_VERSION
+        out["domains"] = deepcopy(upload_domains)
+        for key in META_KEYS:
+            uv = upload.get(key)
+            if uv is not None:
+                default = [] if key == "action_examples" else {}
+                out[key] = deepcopy(uv) if isinstance(uv, (dict, list)) else default
+        return out
 
     if not upload_domains:
         return current

@@ -43,27 +43,98 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
     Загружает Excel-файл. Ожидаемые колонки: Domain, Skill, Action, [Subaction], [Description], [Template ID], ...
     Или первый столбец — уровень вложенности (1=домен, 2=навык, 3=действие, 4=поддействие), далее Name, Description, Template ID.
     """
+    rows: List[Dict[str, str]] = []
+    columns: List[str] = []
+
+    # 1) Быстрый путь через pandas (если установлен)
     try:
         import pandas as pd
-    except ImportError:
-        raise RuntimeError("Для загрузки Excel установите: pip install pandas openpyxl")
-
-    df = pd.read_excel(path, sheet_name=sheet_name or 0)
-    df = df.astype(str).replace("nan", "")
-
-    # Вариант 1: колонки Domain, Skill, Action, Subaction
-    if "Domain" in df.columns or "domain" in df.columns:
-        domain_col = "Domain" if "Domain" in df.columns else "domain"
-        skill_col = "Skill" if "Skill" in df.columns else "skill"
-        action_col = "Action" if "Action" in df.columns else "action"
-        sub_col = "Subaction" if "Subaction" in df.columns else ("subaction" if "subaction" in df.columns else None)
-
-        domains_map: Dict[str, Dict] = {}
+        df = pd.read_excel(path, sheet_name=sheet_name or 0)
+        df = df.astype(str).replace("nan", "")
+        columns = [str(c) for c in df.columns]
+        rows = []
         for _, row in df.iterrows():
+            rows.append({str(k): (row.get(k) or "").strip() for k in df.columns})
+    except ImportError:
+        # 2) Фолбэк без pandas — только openpyxl
+        try:
+            from openpyxl import load_workbook
+        except ImportError:
+            raise RuntimeError("Для загрузки Excel установите: pip install openpyxl")
+
+        wb = load_workbook(path, data_only=True, read_only=True)
+        try:
+            try:
+                if isinstance(sheet_name, str):
+                    ws = wb[sheet_name]
+                elif isinstance(sheet_name, int):
+                    ws = wb.worksheets[sheet_name]
+                else:
+                    ws = wb.worksheets[0]
+            except Exception:
+                ws = wb.worksheets[0]
+
+            header_iter = ws.iter_rows(min_row=1, max_row=1, values_only=True)
+            header_row = next(header_iter, None)
+            if not header_row:
+                return {"domains": []}
+
+            columns = [str(c).strip() if c is not None else "" for c in header_row]
+            rows = []
+            max_data_rows = 200000
+            empty_streak = 0
+            max_empty_streak = 2000
+            for raw in ws.iter_rows(min_row=2, values_only=True):
+                rec: Dict[str, str] = {}
+                has_values = False
+                for i, col_name in enumerate(columns):
+                    if not col_name:
+                        continue
+                    v = raw[i] if i < len(raw) else None
+                    s = "" if v is None else str(v).strip()
+                    if s:
+                        has_values = True
+                    rec[col_name] = s
+
+                if has_values:
+                    rows.append(rec)
+                    empty_streak = 0
+                else:
+                    empty_streak += 1
+                    # У части файлов XLSX "хвост" состоит из тысяч пустых строк из-за форматирования листа.
+                    # Прерываем чтение, чтобы preview/validation не зависали.
+                    if empty_streak >= max_empty_streak:
+                        break
+
+                if len(rows) >= max_data_rows:
+                    break
+        finally:
+            wb.close()
+
+    # Единый формат: Domain/Домен, Skill/Навык, Action/Действие, Subaction/Поддействие, Description/Описание, Template ID
+    def _col(cols, *candidates):
+        for c in candidates:
+            if c in cols:
+                return c
+        return None
+
+    domain_col = _col(columns, "Domain", "domain", "Домен")
+    skill_col = _col(columns, "Skill", "skill", "Навык")
+    action_col = _col(columns, "Action", "action", "Действие")
+    sub_col = _col(columns, "Subaction", "subaction", "Поддействие")
+    desc_col = _col(columns, "Description", "description", "Описание навыка", "Описание")
+    tpl_col = _col(columns, "Template ID", "template_id", "Template_ID")
+
+    if domain_col and skill_col and action_col:
+        domains_map: Dict[str, Dict] = {}
+        for row in rows:
             d_name = (row.get(domain_col) or "").strip()
             s_name = (row.get(skill_col) or "").strip()
             a_name = (row.get(action_col) or "").strip()
             sub_name = (row.get(sub_col) or "").strip() if sub_col else ""
+            desc = (row.get(desc_col) or "").strip() if desc_col else ""
+            tpl = (row.get(tpl_col) or "").strip() or None if tpl_col else None
+
             if not d_name and not s_name and not a_name:
                 continue
             d_name = d_name or "Общее"
@@ -76,15 +147,16 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
             skills = domains_map[d_name]["skills"]
             if s_name not in skills:
                 skills[s_name] = {"name": s_name, "description": "", "actions": []}
+            if desc and not skills[s_name]["description"]:
+                skills[s_name]["description"] = desc
 
             if sub_name:
-                # Ищем родительское действие с subactions
                 actions = skills[s_name]["actions"]
                 if not actions or "subactions" not in actions[-1]:
-                    actions.append({"text": a_name, "template_id": None, "subactions": []})
-                actions[-1]["subactions"].append({"text": sub_name, "template_id": None})
+                    actions.append({"text": a_name, "template_id": tpl, "subactions": []})
+                actions[-1]["subactions"].append({"text": sub_name, "template_id": tpl})
             else:
-                skills[s_name]["actions"].append({"text": a_name, "template_id": None})
+                skills[s_name]["actions"].append({"text": a_name, "template_id": tpl})
 
         domains_list = []
         for d in domains_map.values():
@@ -94,11 +166,11 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
         return {"domains": domains_list}
 
     # Вариант 2: Level (1-4), Name, Description, Template ID
-    if "Level" in df.columns or "level" in df.columns:
-        level_col = "Level" if "Level" in df.columns else "level"
-        name_col = "Name" if "Name" in df.columns else "name"
-        desc_col = "Description" if "Description" in df.columns else ("description" if "description" in df.columns else None)
-        tpl_col = "Template ID" if "Template ID" in df.columns else ("template_id" if "template_id" in df.columns else None)
+    if "Level" in columns or "level" in columns:
+        level_col = "Level" if "Level" in columns else "level"
+        name_col = "Name" if "Name" in columns else "name"
+        desc_col = "Description" if "Description" in columns else ("description" if "description" in columns else None)
+        tpl_col = "Template ID" if "Template ID" in columns else ("template_id" if "template_id" in columns else None)
 
         def parse_level(s):
             try:
@@ -106,11 +178,10 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
             except (ValueError, TypeError):
                 return 0
 
-        stack: List[Dict] = []  # stack of (level, node) for building hierarchy
         root = {"nodes": []}
         current = [root]
 
-        for _, row in df.iterrows():
+        for row in rows:
             level = parse_level(row.get(level_col, 0))
             name = (row.get(name_col) or "").strip()
             desc = (row.get(desc_col) or "").strip() if desc_col else ""

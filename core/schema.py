@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Optional, Set
 SCHEMA_VERSION = 1
 
 # Допустимые ключи верхнего уровня
-ROOT_KEYS = {"domains", "action_examples", "literature", "action_templates", "ui_config"}
+ROOT_KEYS = {"schema_version", "domains", "action_examples", "literature", "action_templates", "ui_config"}
 
 # Допустимые ключи в domain
 DOMAIN_KEYS = {"name", "skills"}
@@ -211,7 +211,7 @@ def validate_source(data: Any) -> ValidationResult:
                                 )
 
     if not domains and result.ok:
-        result.warnings.append("Источник пуст: нет доменов")
+        result.recommendations.append("Источник пуст: нет доменов. Добавьте хотя бы одну строку Domain/Skill/Action для загрузки.")
 
     return result
 

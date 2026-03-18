@@ -1,322 +1,235 @@
-# Data Engineer Matrix (de_matrix)
+# Data Engineer Matrix (`de_matrix`)
 
-Веб-приложение для визуализации и управления матрицей компетенций Data Engineer. Позволяет отслеживать навыки, действия и технологии в структурированном виде с интерактивными графами, деревом доменов и детальным просмотром.
+Веб-приложение на Flask для ведения и визуализации матрицы компетенций Data Engineer:
+- структура доменов/навыков/действий;
+- графы и дерево компетенций;
+- каталог литературы и привязки к листам;
+- импорт/экспорт данных;
+- бэкапы и восстановление источника.
 
-<hr>
+## Что актуально сейчас
 
-## 📋 Содержание
+- Источник данных **единый**: `data/sources/matrix.json` (или другой файл из `source_dir`).
+- `matrix_data.json` в runtime не используется.
+- Импорт и экспорт выровнены по единому Excel-формату.
+- Для литературы есть CRUD, привязка к листам, предпросмотр и загрузка в `data/library`.
+- Есть страница `О приложении`, MIT License и конфигурируемые данные автора/репозитория.
 
-- [Описание](#-описание)
-- [Функциональность](#-функциональность)
-- [Технологический стек](#-технологический-стек)
-- [Структура проекта](#-структура-проекта)
-- [Установка и запуск](#-установка-и-запуск)
-- [Конфигурация](#-конфигурация)
-- [API endpoints](#-api-endpoints)
-- [Интерфейс](#-интерфейс)
-- [Разработка](#-разработка)
-- [Лицензия](#-лицензия)
+## Основной функционал
 
-<hr>
+### UI-страницы
 
-## 📝 Описание
+| Страница | Маршрут | Назначение |
+|---|---|---|
+| Главная | `/` | Краткая статистика и навигация |
+| Матрица | `/matrix` | Карточки доменов и навыков |
+| Домен | `/domain/<domain_idx>` | Дерево: домен → навыки → действия → поддействия |
+| Навык домена | `/domain/<domain_idx>/skill/<skill_idx>` | Дерево с фокусом на один навык |
+| Глобальный граф | `/graph` | Иерархический граф всей матрицы |
+| Граф домена | `/domain-graph/<domain_idx>` | Граф конкретного домена |
+| Экспорт | `/export` | Табличный просмотр + XLSX/CSV |
+| Импорт | `/import` | Валидация и загрузка JSON/XLSX |
+| Литература | `/literature` | Каталог источников и привязки |
+| Настройки | `/settings` | Работа с бэкапами и источниками |
+| О приложении | `/about` | Инфо о проекте/авторе/лицензии |
 
-**Data Engineer Matrix** — инструмент для технических лидеров и HR-специалистов для оценки и отслеживания компетенций инженеров данных. Приложение предоставляет наглядное представление навыков, разбитых по доменам, с возможностью детального просмотра каждого действия, связанных технологий и литературы.
+### Импорт/экспорт
 
-### Ключевые возможности
-
-- **Сайдбар** — единая навигация: Главная, Матрица, Граф, Экспорт, Литература, Импорт, Настройки; дерево доменов и навыков
-- **Матрица** — интерактивные карточки доменов с раскрывающимися навыками и действиями
-- **Дерево домена** — представление слева направо (домен → навыки → действия → поддействия)
-- **Графы** — общий граф (саммари доменов) и графы по доменам с технологическим стеком
-- **Модалы** — клик по любому элементу графа открывает модал: описание, состав дерева до листьев, ссылка «Открыть полную версию»
-- **Экспорт** — все домены или выбранные; таблица, XLSX, CSV, печать
-- **Литература** — каталог, привязка к компетенциям, скачивание в библиотеку (с проверкой типа и предпросмотром веб-страниц)
-- **Импорт** — догрузка данных из JSON/Excel с валидацией и предпросмотром
-- **Бэкапы** — автосоздание при импорте, восстановление из чекпоинтов
-
-<hr>
-
-## ✨ Функциональность
-
-### Навигация и страницы
-
-| Страница | Маршрут | Описание |
-|----------|---------|----------|
-| Главная | `/` | Дашборд: статистика (домены, навыки, действия), быстрые действия, ссылки на домены |
-| Матрица | `/matrix` | Карточки доменов с раскрывающимися навыками и действиями |
-| Домен | `/domain/<idx>` | Дерево элементов слева направо |
-| Граф | `/graph` | Общий граф (root → домены → навыки → действия → поддействия) |
-| Граф домена | `/domain-graph/<idx>` | Граф домена с технологиями (stack) |
-| Экспорт | `/export` | Таблица, экспорт в XLSX/CSV, фильтр по доменам |
-| Литература | `/literature` | Каталог, привязка к листам, скачивание в `data/library` |
-| Импорт | `/import` | Загрузка JSON/Excel с предпросмотром и валидацией |
-| Настройки | `/settings` | Восстановление из бэкапов |
-
-### Графы
-
-- **Клик** по любому узлу — модал с описанием и составом дерева до листьев
-- **Листья** — модал с кратким описанием страницы и кнопкой «Открыть полную версию»
-- **Инструменты (stack)** — модал «Инструменты и технологии» с карточкой
-- **Двойной клик** — переход на страницу листа/действия/графа домена
-- Экспорт графа в PNG (доменные графы)
-
-### Экспорт
-
-- Область: **Все домены** или **Выбранные домены** (чекбоксы)
-- URL `?domains=0,1,2` — предвыбор доменов
-- Ссылка «Экспорт этого домена» в представлении домена
+- Поддержка JSON/YAML/XLSX/XLS.
+- Preview + validation перед применением.
+- Merge-режимы загрузки:
+  - `append`
+  - `append_to_domain`
+  - `append_to_skill`
+  - `replace_all`
+- Автобэкап перед изменениями источника.
+- Шаблон импорта: `GET /api/import/template`.
+- Единый Excel-формат:
+  - `Domain`, `Skill`, `Action`, `Subaction`, `Description`, `Template ID`
+  - также принимаются русские заголовки.
 
 ### Литература
 
-- Добавление источников, привязка к компетенциям (листам)
-- Скачивание по URL: проверка Content-Type; если веб-страница — предпросмотр в модале вместо скачивания
-- SSL-сертификаты: используется `certifi` для корректной загрузки
+- Добавление, редактирование и удаление источников.
+- Привязка литературы к листам (`leaf`) матрицы.
+- Загрузка файла в `data/library`.
+- Загрузка по URL с определением контента.
+- Предпросмотр:
+  - для доступных ресурсов — в модальном iframe;
+  - fallback-кнопка открытия источника в новой вкладке.
 
-### Импорт и бэкапы
+## Архитектура данных
 
-- Догрузка JSON/Excel в существующий или новый источник
-- Предпросмотр таблицей, валидация, модал с ошибками
-- Автобэкап при догрузке
-- Восстановление из любого бэкапа с проверкой совместимости
+### Единый источник
 
-<hr>
+Основной файл (`matrix.json`) содержит:
+- `domains` (структура матрицы),
+- `action_templates`,
+- `literature`,
+- `action_examples`,
+- `ui_config`.
 
-## 🛠 Технологический стек
+### Конфигурация и кэш
 
-### Backend
+- `config/settings.yaml` — пути и runtime-настройки.
+- `config/metadata.yaml` / `config/metadata.json` — метаданные для UI/инструментов.
+- `data/checkpoint.yaml` — чекпоинт со сверкой по хэшу источника.
+- `data/backups/` — бэкапы источника.
 
-- Python 3.8+
-- Flask 2.3+
-- Jinja2, PyYAML, pandas, openpyxl
-- certifi (SSL-сертификаты)
-
-### Frontend
-
-- HTML5/CSS3, JavaScript (ES6+)
-- Vis.js для графов
-- Font Awesome 6
-- XLSX.js для экспорта
-
-### Данные
-
-- **Единый источник** — `data/sources/matrix.json` (или YAML/Excel): структура доменов + `action_templates`, `literature`, `stack_labels`, `ui_config`
-- **Конфигурация** — `config/settings.yaml` (пути), `config/metadata.yaml` (при необходимости)
-- **Чекпоинт** — `data/checkpoint.yaml` (состояние после загрузки)
-
-<hr>
-
-## 📁 Структура проекта
+## Структура проекта
 
 ```text
 de_matrix/
-├── app.py                    # Flask-приложение, маршруты, API
-├── requirements.txt
-├── README.md
-│
+├── app.py
 ├── core/
-│   ├── config_loader.py      # Загрузка config/settings.yaml, metadata
-│   ├── loaders.py            # Загрузка из JSON, YAML, Excel
-│   ├── tree.py               # Универсальное дерево, листья, path
-│   ├── schema.py             # Схема источника, валидация
-│   ├── checkpoint.py         # Чекпоинт, бэкапы
 │   ├── backup.py
-│   ├── upload_merge.py       # Слияние при догрузке
-│   └── tools_matcher.py     # Сопоставление инструментов по паттернам
-│
+│   ├── checkpoint.py
+│   ├── config_loader.py
+│   ├── loaders.py
+│   ├── schema.py
+│   ├── tools_matcher.py
+│   ├── tree.py
+│   └── upload_merge.py
 ├── config/
-│   ├── settings.yaml        # source_dir, checkpoint_file, literature_dir
-│   └── metadata.yaml        # (опционально) stack_labels, ui_config
-│
+│   ├── settings.yaml
+│   ├── metadata.yaml
+│   └── metadata.json
 ├── data/
-│   ├── sources/             # Файлы-источники (matrix.json и др.)
-│   ├── checkpoint.yaml      # Текущее состояние
-│   ├── library/             # Скачанная литература
-│   └── backups/             # Автобэкапы
-│
+│   ├── sources/
+│   │   └── matrix.json
+│   ├── checkpoint.yaml
+│   ├── backups/
+│   └── library/
 ├── static/
 │   ├── css/style.css
-│   └── js/matrix.js         # Обработчики матрицы, заглушка MatrixGraph
-│
+│   └── js/matrix.js
 ├── templates/
-│   ├── base.html            # Сайдбар, навигация, домены
-│   ├── home.html            # Главная (дашборд)
-│   ├── matrix.html          # Матрица
-│   ├── domain_view.html     # Дерево домена
-│   ├── graph.html           # Общий граф (с модалами)
-│   ├── domain_graph.html    # Граф домена (с модалами)
-│   ├── export.html          # Экспорт с фильтром доменов
+│   ├── base.html
+│   ├── home.html
+│   ├── matrix.html
+│   ├── domain_view.html
+│   ├── graph.html
+│   ├── domain_graph.html
+│   ├── export.html
+│   ├── import.html
 │   ├── literature.html
-│   ├── import.html          # Импорт JSON/Excel
-│   ├── settings.html         # Бэкапы
+│   ├── settings.html
+│   ├── about.html
 │   ├── action_detail.html
-│   ├── 404.html, 500.html
-│   └── ...
-│
+│   ├── 404.html
+│   └── 500.html
 ├── scripts/
-│   ├── merge_to_unified_source.py
-│   └── ...
-└── utils/
+├── requirements.txt
+├── LICENSE
+└── README.md
 ```
 
-<hr>
-
-## 🚀 Установка и запуск
-
-### Требования
+## Требования
 
 - Python 3.8+
 - pip
 
-### Установка
+`requirements.txt`:
+- Flask, Jinja2, Werkzeug
+- PyYAML
+- pandas
+- openpyxl
+- certifi
+
+## Быстрый старт
 
 ```bash
-git clone https://github.com/SolonnikovDV/de_matrix.git
-cd de_matrix
-
 python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
-
 pip install -r requirements.txt
-```
-
-### Запуск
-
-```bash
 python app.py
 ```
 
-По умолчанию приложение доступно на http://localhost:5000 (порт может отличаться при занятости).
+По умолчанию запуск на порту `5001`.
 
-### Параметры
+Параметры запуска:
 
 ```bash
-python app.py --port=8080
+python app.py --port 5001
 python app.py --auto-port
 python app.py --debug
 ```
 
-<hr>
+## Конфигурация
 
-## ⚙️ Конфигурация
-
-### `config/settings.yaml`
+`config/settings.yaml`:
 
 ```yaml
 source_dir: data/sources
 checkpoint_file: data/checkpoint.yaml
 default_source: matrix.json
 literature_dir: data/library
+ssl_verify: false
 flexible: true
 ```
 
-### Источник данных (`data/sources/matrix.json`)
+Переменные окружения:
 
-Единый файл: структура доменов + мета.
+- `DE_MATRIX_AUTHOR_NAME`
+- `DE_MATRIX_AUTHOR_TELEGRAM`
+- `DE_MATRIX_REPO_URL`
+- `DE_MATRIX_SSL_VERIFY` (`0/1`)
 
-```json
-{
-  "domains": [
-    {
-      "name": "Домен",
-      "skills": [
-        {
-          "name": "Навык",
-          "description": "...",
-          "actions": [
-            { "text": "Действие", "template_id": "..." }
-          ]
-        }
-      ]
-    }
-  ],
-  "action_templates": { ... },
-  "literature": { ... },
-  "stack_labels": { ... }
-}
-```
+## API (актуальный набор)
 
-<hr>
+### Данные и дерево
 
-## 🔌 API Endpoints
+- `GET /api/matrix`
+- `GET /api/tree`
+- `GET /api/tree-for-link`
+- `GET /api/leaves`
+- `GET /api/leaf-literature`
+- `GET /api/meta`
 
-### Страницы
+### Листья/действия/графы
 
-| Маршрут | Описание |
-|---------|----------|
-| / | Главная (дашборд) |
-| /matrix | Матрица |
-| /domain/<idx> | Дерево домена |
-| /domain/<idx>/skill/<idx> | Дерево с фокусом на навык |
-| /graph | Общий граф |
-| /domain-graph/<idx> | Граф домена |
-| /export | Экспорт |
-| /literature | Литература |
-| /import | Импорт |
-| /settings | Настройки |
-| /leaf/<path> | Страница листа |
-| /action/<di>/<si>/<ai> | Детальная страница действия |
+- `GET /api/leaf/<path>`
+- `GET /api/action/<di>/<si>/<ai>`
+- `GET /api/subaction/<di>/<si>/<ai>/<sub_idx>`
+- `GET /api/graph-data`
+- `GET /api/domain-graph/<domain_idx>`
 
-### API
+### Источники и импорт
 
-| Маршрут | Метод | Описание |
-|---------|-------|----------|
-| /api/matrix | GET | Данные матрицы |
-| /api/tree | GET | Дерево |
-| /api/leaves | GET | Список листьев |
-| /api/meta | GET | Метаданные |
-| /api/leaf/<path> | GET | Данные листа |
-| /api/graph-data | GET | Данные общего графа |
-| /api/domain-graph/<idx> | GET | Данные графа домена |
-| /api/literature | GET, POST | Список, добавление |
-| /api/literature/<id>/link | POST | Привязка к листам |
-| /api/literature/<id>/download | POST | Скачать в library |
-| /api/schema | GET | Схема источника |
-| /api/validate | POST | Валидация |
-| /api/source/upload/preview | POST | Предпросмотр загрузки |
-| /api/source/upload | POST | Загрузка |
-| /api/backups | GET | Список бэкапов |
-| /api/restore | POST | Восстановление |
+- `GET /api/sources`
+- `POST /api/source/load`
+- `POST /api/source/upload/preview`
+- `POST /api/source/upload`
+- `GET /api/import/template`
+- `GET /api/schema`
+- `POST /api/validate`
 
-<hr>
+### Литература
 
-## 🎨 Интерфейс
+- `GET /api/literature`
+- `POST /api/literature`
+- `POST /api/literature/upload`
+- `PATCH /api/literature/<lit_id>`
+- `DELETE /api/literature/<lit_id>`
+- `POST /api/literature/<lit_id>/link`
+- `POST /api/literature/<lit_id>/download`
 
-- **Сайдбар** — фиксированный слева, навигация + дерево доменов
-- **Матрица** — карточки доменов, раскрытие навыков и действий
-- **Дерево домена** — колонки слева направо
-- **Графы** — иерархия, модалы при клике, экспорт PNG
-- **Экспорт** — фильтр доменов, кнопки копирования и скачивания
-- **Адаптивность** — мобильное меню, сворачиваемый сайдбар
+### Домены/бэкапы/служебные
 
-<hr>
+- `GET /api/domains`
+- `GET /api/domain/<domain_idx>`
+- `GET /api/backups`
+- `GET /api/backups/<backup_id>/compatibility`
+- `POST /api/restore`
+- `GET /api/reload`
+- `GET /debug`
 
-## 🧪 Разработка
+## Заметки по предпросмотру литературы
 
-### Добавление навыков
+- Если ресурс в iframe не отображается, чаще всего причина на стороне внешнего сайта (`X-Frame-Options`/`CSP`).
+- В модале всегда доступна кнопка открытия источника в новой вкладке.
+- Для локальных файлов предпросмотр идет через `/library/<filename>`.
 
-1. Отредактируйте `data/sources/matrix.json` или загрузите через Импорт
-2. Добавьте домен/навык/действие в структуру
-3. Перезапустите приложение (или используйте Reload в настройках)
+## Лицензия
 
-### Отладка
-
-```bash
-curl http://localhost:5000/debug/data
-curl http://localhost:5000/api/matrix
-```
-
-<hr>
-
-## 📞 Контакты
-
-Автор: Dmitry Solonnikov  
-GitHub: [SolonnikovDV](https://github.com/SolonnikovDV)
-
-<hr>
-
-## 🙏 Благодарности
-
-- Vis.js — библиотека графов
-- Font Awesome — иконки
-- Flask, PyYAML, pandas — backend
+MIT, см. файл `LICENSE`.

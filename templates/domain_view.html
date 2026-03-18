@@ -6,15 +6,32 @@
 
 {% block footer_hint %}Дерево элементов: раскрытие слева направо{% endblock %}
 
+{% block extra_css %}
+<style>
+    .domain-breadcrumbs { margin-bottom: 16px; }
+    .domain-breadcrumbs a {
+        color: #3498db;
+        text-decoration: none;
+    }
+    .domain-breadcrumbs .sep { color: #95a5a6; }
+    .domain-export-link { margin-left: 12px; }
+    .domain-export-link a {
+        color: #27ae60;
+        text-decoration: none;
+    }
+    .tree-hidden { display: none; }
+</style>
+{% endblock %}
+
 {% block content %}
-<p style="margin-bottom: 16px;">
-    <a href="/" style="color: #3498db; text-decoration: none;"><i class="fas fa-home"></i> Главная</a>
+<p class="domain-breadcrumbs">
+    <a href="/"><i class="fas fa-home"></i> Главная</a>
     {% if focus_skill and domain.skills %}
-    <span style="color: #95a5a6;"> → </span>
-    <a href="/domain/{{ domain.index }}" style="color: #3498db; text-decoration: none;">{{ domain.name }}</a>
+    <span class="sep"> → </span>
+    <a href="/domain/{{ domain.index }}">{{ domain.name }}</a>
     {% endif %}
-    <span style="margin-left: 12px;">
-        <a href="/export?domains={{ domain.index }}" style="color: #27ae60; text-decoration: none;"><i class="fas fa-table"></i> Экспорт этого домена</a>
+    <span class="domain-export-link">
+        <a href="/export?domains={{ domain.index }}"><i class="fas fa-table"></i> Экспорт этого домена</a>
     </span>
 </p>
 <div class="domain-tree-view" id="domainTreeView">
@@ -41,14 +58,14 @@
         <div class="tree-actions-placeholder" id="treeActionsPlaceholder">
             <span class="tree-placeholder-text">Выберите навык</span>
         </div>
-        <div class="tree-actions-content" id="treeActionsContent" style="display: none;"></div>
+        <div class="tree-actions-content tree-hidden" id="treeActionsContent"></div>
     </div>
     <div class="tree-column tree-subactions-col">
         <div class="tree-level-label">Поддействия</div>
         <div class="tree-subactions-placeholder" id="treeSubactionsPlaceholder">
             <span class="tree-placeholder-text">Выберите действие</span>
         </div>
-        <div class="tree-subactions-content" id="treeSubactionsContent" style="display: none;"></div>
+        <div class="tree-subactions-content tree-hidden" id="treeSubactionsContent"></div>
     </div>
 </div>
 

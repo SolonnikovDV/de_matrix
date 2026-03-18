@@ -7,23 +7,21 @@
 {% block footer_hint %}Добавляйте источники и привязывайте их к компетенциям (листам матрицы){% endblock %}
 
 {% block content %}
-<div class="literature-container" style="padding: 20px;">
-    <div class="literature-actions" style="margin-bottom: 20px;">
+<div class="literature-container">
+    <div class="literature-actions">
         <button type="button" class="btn btn-primary" id="btnAddLiterature">
             <i class="fas fa-plus"></i> Добавить литературу
         </button>
-        <button type="button" class="btn btn-success" id="btnUploadFile" style="margin-left: 8px;">
+        <button type="button" class="btn btn-success btn-upload-offset" id="btnUploadFile">
             <i class="fas fa-file-upload"></i> Загрузить файл
         </button>
     </div>
     
-    <div class="literature-list" id="literatureList">
-        <p><i class="fas fa-spinner fa-spin"></i> Загрузка...</p>
-    </div>
+    <div class="literature-list" id="literatureList"></div>
 </div>
 
 <!-- Модальное окно: добавить литературу -->
-<div class="modal-overlay" id="modalAdd" style="display: none;">
+<div class="modal-overlay is-hidden" id="modalAdd">
     <div class="modal-box">
         <h3>Добавить источник</h3>
         <form id="formAddLiterature">
@@ -45,24 +43,11 @@
     </div>
 </div>
 
-<!-- Модальное окно: привязать к листам -->
-<div class="modal-overlay" id="modalLink" style="display: none;">
-    <div class="modal-box" style="max-width: 500px;">
-        <h3>Привязать к компетенциям (листам)</h3>
-        <p id="modalLinkTitle" style="margin-bottom: 15px;"></p>
-        <div class="leaves-checkboxes" id="leavesCheckboxes" style="max-height: 300px; overflow-y: auto;"></div>
-        <div class="modal-actions" style="margin-top: 15px;">
-            <button type="button" class="btn btn-primary" id="btnSaveLink">Сохранить привязку</button>
-            <button type="button" class="btn btn-secondary" id="btnCloseLink">Закрыть</button>
-        </div>
-    </div>
-</div>
-
 <!-- Загрузка физического файла -->
-<div class="modal-overlay" id="modalUpload" style="display: none;">
+<div class="modal-overlay is-hidden" id="modalUpload">
     <div class="modal-box">
         <h3>Загрузить файл в каталог library</h3>
-        <p style="font-size: 0.9em; color: #666; margin-bottom: 12px;">PDF, DOC и др. сохранятся в data/library с привязкой к записи литературы.</p>
+        <p class="modal-note">PDF, DOC и др. сохранятся в data/library с привязкой к записи литературы.</p>
         <form id="formUploadFile">
             <label>Файл *</label>
             <input type="file" name="file" accept=".pdf,.doc,.docx,.epub,.txt,.md" required>
@@ -74,7 +59,7 @@
             <input type="text" name="pages" placeholder="С. 45-78">
             <label>Описание</label>
             <textarea name="description" rows="2" placeholder="Краткое описание"></textarea>
-            <div class="modal-actions" style="margin-top: 15px;">
+            <div class="modal-actions modal-actions-tight">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-upload"></i> Загрузить</button>
                 <button type="button" class="btn btn-secondary" id="btnCloseUpload">Отмена</button>
             </div>
@@ -82,15 +67,39 @@
     </div>
 </div>
 
+<!-- Редактирование литературы -->
+<div class="modal-overlay is-hidden" id="modalEdit">
+    <div class="modal-box">
+        <h3>Редактировать источник</h3>
+        <form id="formEditLiterature">
+            <input type="hidden" id="editLitId" name="id">
+            <label>Название *</label>
+            <input type="text" id="editTitle" name="title" required placeholder="Название книги или статьи">
+            <label>Глава / раздел</label>
+            <input type="text" id="editChapter" name="chapter" placeholder="Глава 2: ...">
+            <label>Страницы</label>
+            <input type="text" id="editPages" name="pages" placeholder="С. 45-78">
+            <label>URL</label>
+            <input type="url" id="editUrl" name="url" placeholder="https://...">
+            <label>Описание</label>
+            <textarea id="editDescription" name="description" rows="3" placeholder="Краткое описание"></textarea>
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary">Сохранить</button>
+                <button type="button" class="btn btn-secondary" id="btnCloseEdit">Отмена</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- Скачать в каталог data/library -->
-<div class="modal-overlay" id="modalDownload" style="display: none;">
+<div class="modal-overlay is-hidden" id="modalDownload">
     <div class="modal-box">
         <h3>Скачать в каталог library</h3>
-        <p style="font-size: 0.9em; color: #666;">Файл по URL будет сохранён в data/library и привязан к записи.</p>
+        <p class="modal-note">Файл по URL будет сохранён в data/library и привязан к записи.</p>
         <input type="hidden" id="downloadLitId">
         <label>URL файла (PDF, и т.д.)</label>
         <input type="url" id="downloadUrl" placeholder="https://...">
-        <div class="modal-actions" style="margin-top: 15px;">
+        <div class="modal-actions modal-actions-tight">
             <button type="button" class="btn btn-primary" id="btnDoDownload"><i class="fas fa-download"></i> Скачать</button>
             <button type="button" class="btn btn-secondary" id="btnCloseDownload">Отмена</button>
         </div>
@@ -98,25 +107,40 @@
 </div>
 
 <!-- Предпросмотр страницы по ссылке (когда файл для скачивания не найден) -->
-<div class="modal-overlay" id="modalPreview" style="display: none;">
+<div class="modal-overlay is-hidden" id="modalPreview">
     <div class="modal-box modal-preview-box">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <div class="preview-header">
             <h3>Предпросмотр страницы по ссылке</h3>
             <button type="button" class="btn btn-secondary btn-sm" id="btnClosePreview">&times;</button>
         </div>
-        <p id="previewMessage" style="font-size: 0.9em; color: #e67e22; margin-bottom: 10px;"></p>
-        <p style="font-size: 0.85em; color: #7f8c8d; margin-bottom: 8px;">Если страница не отображается (блокировка встраивания), <a href="#" id="previewOpenLink" target="_blank" rel="noopener">откройте ссылку в новой вкладке</a>.</p>
-        <iframe id="previewIframe" style="width: 100%; height: 65vh; border: 1px solid #ddd; border-radius: 8px;" sandbox="allow-same-origin allow-scripts allow-popups"></iframe>
+        <p id="previewMessage" class="preview-message"></p>
+        <p class="preview-hint">Если страница не отображается (блокировка встраивания), <a href="#" id="previewOpenLink" target="_blank" rel="noopener">откройте ссылку в новой вкладке</a>.</p>
+        <iframe id="previewIframe" class="preview-iframe" sandbox="allow-same-origin allow-scripts allow-popups"></iframe>
     </div>
 </div>
 
 <style>
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: flex-start; justify-content: center; padding: 20px; overflow-y: auto; }
-.modal-box { background: white; border-radius: 12px; padding: 25px; max-width: 400px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.2); margin: auto; }
-.modal-box label { display: block; margin-top: 10px; font-weight: 600; color: #2c3e50; }
-.modal-box input, .modal-box textarea { width: 100%; padding: 8px 12px; margin-top: 4px; border: 1px solid #ddd; border-radius: 6px; }
-.modal-preview-box { max-width: 900px; }
-.modal-actions { margin-top: 20px; display: flex; gap: 10px; }
+#modalAdd.modal-overlay,
+#modalUpload.modal-overlay,
+#modalEdit.modal-overlay,
+#modalDownload.modal-overlay,
+#modalPreview.modal-overlay { align-items: flex-start; }
+#modalAdd .modal-box,
+#modalUpload .modal-box,
+#modalEdit .modal-box,
+#modalDownload .modal-box,
+#modalPreview .modal-box { padding: 25px; max-width: 400px; width: 100%; max-height: 90vh; overflow-y: auto; }
+#modalPreview .modal-box { max-width: 1100px; width: min(1100px, 95vw); }
+#modalAdd .modal-box label,
+#modalUpload .modal-box label,
+#modalEdit .modal-box label,
+#modalDownload .modal-box label { display: block; margin-top: 10px; font-weight: 600; color: #2c3e50; }
+#modalAdd .modal-box input, #modalAdd .modal-box textarea,
+#modalUpload .modal-box input, #modalUpload .modal-box textarea,
+#modalEdit .modal-box input, #modalEdit .modal-box textarea,
+#modalDownload .modal-box input, #modalDownload .modal-box textarea { width: 100%; padding: 8px 12px; margin-top: 4px; border: 1px solid #ddd; border-radius: 6px; }
+.modal-preview-box { max-width: 1100px; width: min(1100px, 95vw); }
+.modal-actions { margin-top: 20px; }
 .lit-card { background: white; border: 1px solid #eef2f6; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
 .lit-card h4 { margin: 0 0 8px 0; font-size: 1.05em; }
 .lit-card .lit-meta { font-size: 0.9em; color: #7f8c8d; margin-bottom: 8px; }
@@ -127,33 +151,162 @@
 .link-domain-group { margin-top: 12px; margin-bottom: 6px; color: #3498db; }
 .link-domain-group:first-child { margin-top: 0; }
 .link-breadcrumb { color: #95a5a6; font-size: 0.85em; }
+.lit-skeleton-wrap { padding-top: 4px; }
+.literature-container { padding: 20px; }
+.literature-actions { margin-bottom: 20px; }
+.btn-upload-offset { margin-left: 8px; }
+.modal-note { font-size: 0.9em; color: #666; margin-bottom: 12px; }
+.modal-actions-tight { margin-top: 15px; }
+.preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.preview-message { font-size: 0.9em; color: #e67e22; margin-bottom: 10px; }
+.preview-hint { font-size: 0.85em; color: #7f8c8d; margin-bottom: 8px; }
+.preview-iframe { width: 100%; height: 65vh; border: 1px solid #ddd; border-radius: 8px; }
+.skeleton-gap-8 { margin-top: 8px; }
+.skeleton-gap-10 { margin-top: 10px; }
+.lit-preview-icon { font-size: 0.85em; color: #95a5a6; cursor: pointer; }
+.lit-description { margin: 8px 0 0 0; font-size: 0.9em; }
 </style>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    loadLiterature();
-    document.getElementById('btnAddLiterature').onclick = () => { document.getElementById('modalAdd').style.display = 'flex'; };
-    document.getElementById('btnCloseAdd').onclick = () => { document.getElementById('modalAdd').style.display = 'none'; };
-    document.getElementById('formAddLiterature').onsubmit = submitAddLiterature;
-    document.getElementById('btnUploadFile').onclick = () => { document.getElementById('modalUpload').style.display = 'flex'; };
-    document.getElementById('btnCloseUpload').onclick = () => { document.getElementById('modalUpload').style.display = 'none'; };
-    document.getElementById('formUploadFile').onsubmit = submitUploadFile;
-    document.getElementById('btnCloseLink').onclick = () => { document.getElementById('modalLink').style.display = 'none'; };
-    document.getElementById('btnSaveLink').onclick = saveLink;
-    document.getElementById('btnCloseDownload').onclick = () => { document.getElementById('modalDownload').style.display = 'none'; };
-    document.getElementById('btnDoDownload').onclick = doDownload;
-    document.getElementById('btnClosePreview').onclick = closePreviewModal;
-    document.getElementById('modalPreview').onclick = (e) => { if (e.target.id === 'modalPreview') closePreviewModal(); };
-});
+(function initLiterature() {
+    window.__litItemsMap = window.__litItemsMap || {};
+    function parseLitData(raw) {
+        if (!raw) return null;
+        try { return JSON.parse(raw); } catch (e1) {}
+        try { return JSON.parse(String(raw).replace(/&quot;/g, '"')); } catch (e2) {}
+        return null;
+    }
+    window.openLitPreviewById = function(litId, evt) {
+        if (evt) evt.preventDefault();
+        var item = (window.__litItemsMap && litId) ? window.__litItemsMap[litId] : null;
+        if (!item) return false;
+        if (window.openLiteraturePreview) {
+            window.openLiteraturePreview(item);
+            return false;
+        }
+        var fallbackUrl = item.local_path ? ('/library/' + encodeURIComponent((item.local_path || '').split('/').pop() || '')) : (item.url || '');
+        if (fallbackUrl) window.open(fallbackUrl, '_blank', 'noopener');
+        return false;
+    };
+    window.openLitPreviewFromElement = function(el, evt) {
+        if (evt) evt.preventDefault();
+        if (!el || !window.openLiteraturePreview) return false;
+        var payload = parseLitData(el.dataset ? el.dataset.lit : '');
+        if (payload) window.openLiteraturePreview(payload);
+        return false;
+    };
+    function setModalVisibleById(modalId, isVisible) {
+        var m = document.getElementById(modalId);
+        if (!m) return;
+        m.classList.toggle('is-hidden', !isVisible);
+        m.style.display = isVisible ? 'flex' : 'none';
+    }
+    window.setLitModalVisibleById = setModalVisibleById;
+    function setup() {
+        var listEl = document.getElementById('literatureList');
+        if (listEl) listEl.addEventListener('click', function(e) {
+            var t = e.target.closest('.literature-preview-trigger, .lit-preview-btn');
+            if (t && t.dataset.id) {
+                e.preventDefault();
+                window.openLitPreviewById(t.dataset.id);
+            }
+        });
+        var btnAdd = document.getElementById('btnAddLiterature');
+        if (btnAdd) btnAdd.onclick = function() { setModalVisibleById('modalAdd', true); };
+        var btnCloseAdd = document.getElementById('btnCloseAdd');
+        if (btnCloseAdd) btnCloseAdd.onclick = function() { setModalVisibleById('modalAdd', false); };
+        var formAdd = document.getElementById('formAddLiterature');
+        if (formAdd) formAdd.onsubmit = submitAddLiterature;
+        var btnCloseEdit = document.getElementById('btnCloseEdit');
+        if (btnCloseEdit) btnCloseEdit.onclick = function() { setModalVisibleById('modalEdit', false); };
+        var formEdit = document.getElementById('formEditLiterature');
+        if (formEdit) formEdit.onsubmit = submitEditLiterature;
+        var btnUpload = document.getElementById('btnUploadFile');
+        if (btnUpload) btnUpload.onclick = function() { setModalVisibleById('modalUpload', true); };
+        var btnCloseUpload = document.getElementById('btnCloseUpload');
+        if (btnCloseUpload) btnCloseUpload.onclick = function() { setModalVisibleById('modalUpload', false); };
+        var formUpload = document.getElementById('formUploadFile');
+        if (formUpload) formUpload.onsubmit = submitUploadFile;
+        var btnCloseDownload = document.getElementById('btnCloseDownload');
+        if (btnCloseDownload) btnCloseDownload.onclick = function() { setModalVisibleById('modalDownload', false); };
+        var btnDoDownload = document.getElementById('btnDoDownload');
+        if (btnDoDownload) btnDoDownload.onclick = doDownload;
+        var btnClosePreview = document.getElementById('btnClosePreview');
+        if (btnClosePreview) btnClosePreview.onclick = closePreviewModal;
+        var modalPreview = document.getElementById('modalPreview');
+        if (modalPreview) modalPreview.onclick = function(e) { if (e.target.id === 'modalPreview') closePreviewModal(); };
+        renderLiteratureSkeleton();
+        loadLiterature();
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setup);
+    } else {
+        setup();
+    }
+})();
+function renderLiteratureSkeleton() {
+    var el = document.getElementById('literatureList');
+    if (!el) return;
+    var block = '';
+    for (var i = 0; i < 4; i++) {
+        block += `
+        <div class="skeleton-card lit-skeleton-wrap">
+            <span class="skeleton skeleton-line w-60"></span>
+            <span class="skeleton skeleton-line w-40 skeleton-gap-8"></span>
+            <span class="skeleton skeleton-line w-80 skeleton-gap-10"></span>
+            <span class="skeleton skeleton-line w-60"></span>
+        </div>`;
+    }
+    el.innerHTML = block;
+}
 function closePreviewModal() {
-    document.getElementById('modalPreview').style.display = 'none';
+    if (window.setLitModalVisibleById) window.setLitModalVisibleById('modalPreview', false);
     document.getElementById('previewIframe').src = 'about:blank';
+}
+
+function openEditModal(data) {
+    if (typeof data === 'string') data = { id: data };
+    document.getElementById('editLitId').value = data.id || '';
+    document.getElementById('editTitle').value = data.title || '';
+    document.getElementById('editChapter').value = data.chapter || '';
+    document.getElementById('editPages').value = data.pages || '';
+    document.getElementById('editUrl').value = data.url || '';
+    document.getElementById('editDescription').value = data.description || '';
+    if (window.setLitModalVisibleById) window.setLitModalVisibleById('modalEdit', true);
+}
+
+async function submitEditLiterature(e) {
+    e.preventDefault();
+    const id = document.getElementById('editLitId').value;
+    const data = {
+        title: document.getElementById('editTitle').value.trim(),
+        chapter: document.getElementById('editChapter').value.trim(),
+        pages: document.getElementById('editPages').value.trim(),
+        url: document.getElementById('editUrl').value.trim(),
+        description: document.getElementById('editDescription').value.trim()
+    };
+    try {
+        const res = await fetch('/api/literature/' + encodeURIComponent(id), {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        const out = await res.json();
+        if (res.ok) {
+            if (window.setLitModalVisibleById) window.setLitModalVisibleById('modalEdit', false);
+            loadLiterature();
+        } else {
+            alert(out.error || 'Ошибка');
+        }
+    } catch (err) {
+        alert('Ошибка сети');
+    }
 }
 
 function openDownloadModal(litId, currentUrl) {
     document.getElementById('downloadLitId').value = litId;
     document.getElementById('downloadUrl').value = currentUrl || '';
-    document.getElementById('modalDownload').style.display = 'flex';
+    if (window.setLitModalVisibleById) window.setLitModalVisibleById('modalDownload', true);
 }
 
 async function doDownload() {
@@ -168,16 +321,16 @@ async function doDownload() {
         });
         const out = await res.json();
         if (res.ok) {
-            document.getElementById('modalDownload').style.display = 'none';
+            if (window.setLitModalVisibleById) window.setLitModalVisibleById('modalDownload', false);
             loadLiterature();
             alert('Сохранено: ' + (out.local_path || ''));
         } else if (out.preview_url) {
-            document.getElementById('modalDownload').style.display = 'none';
+            if (window.setLitModalVisibleById) window.setLitModalVisibleById('modalDownload', false);
             document.getElementById('previewMessage').textContent = out.error || 'Файлов для скачивания не найдено.';
             document.getElementById('previewIframe').src = out.preview_url;
             const openLink = document.getElementById('previewOpenLink');
             openLink.href = out.preview_url;
-            document.getElementById('modalPreview').style.display = 'flex';
+            if (window.setLitModalVisibleById) window.setLitModalVisibleById('modalPreview', true);
         } else {
             alert(out.error || 'Ошибка');
         }
@@ -187,31 +340,62 @@ async function doDownload() {
 }
 
 async function loadLiterature() {
+    var el = document.getElementById('literatureList');
+    if (!el) return;
     try {
         const res = await fetch('/api/literature');
+        if (!res.ok) {
+            el.innerHTML = '<p class="error">Ошибка загрузки: ' + res.status + '</p>';
+            return;
+        }
         const list = await res.json();
-        const el = document.getElementById('literatureList');
+        if (!Array.isArray(list)) {
+            el.innerHTML = '<p class="error">Ошибка формата данных</p>';
+            return;
+        }
         if (list.length === 0) {
             el.innerHTML = '<p>Нет записей. Нажмите «Добавить литературу».</p>';
             return;
         }
-        el.innerHTML = list.map(item => `
-            <div class="lit-card" data-id="${item.id}">
-                <h4>${escapeHtml(item.title)}</h4>
+        window.__litItemsMap = {};
+        list.forEach(function(it) { if (it && it.id) window.__litItemsMap[it.id] = it; });
+        el.innerHTML = list.map(item => {
+            var litData = JSON.stringify({title: item.title, chapter: item.chapter, pages: item.pages, url: item.url, local_path: item.local_path, description: item.description}).replace(/"/g, '&quot;');
+            var editData = JSON.stringify({id: item.id, title: item.title || '', chapter: item.chapter || '', pages: item.pages || '', url: item.url || '', description: item.description || ''}).replace(/"/g, '&quot;');
+            return `
+            <div class="lit-card" data-id="${item.id}" data-lit="${litData}" data-edit="${editData}">
+                <h4><a href="#" class="literature-preview-trigger" data-id="${item.id}" onclick="return openLitPreviewById(this.dataset.id, event)">${escapeHtml(item.title)}</a> <i class="fas fa-eye lit-preview-btn lit-preview-icon" title="Предпросмотр" data-id="${item.id}" onclick="event.stopPropagation(); return openLitPreviewById(this.dataset.id, event)"></i></h4>
                 <div class="lit-meta">${item.chapter ? escapeHtml(item.chapter) : ''} ${item.pages ? ' · ' + escapeHtml(item.pages) : ''}</div>
-                ${item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener">Ссылка</a>` : ''}
-                ${item.description ? `<p style="margin:8px 0 0 0;font-size:0.9em;">${escapeHtml(item.description)}</p>` : ''}
-                <div class="lit-linked">Привязка: ${item.linked_templates.length ? item.linked_templates.map(t => escapeHtml(t.name)).join('; ') : '—'}</div>
+                ${item.url || item.local_path ? `<a href="#" class="literature-preview-trigger" data-id="${item.id}" onclick="return openLitPreviewById(this.dataset.id, event)">Предпросмотр</a>` : ''}
+                ${item.description ? `<p class="lit-description">${escapeHtml(item.description)}</p>` : ''}
+                <div class="lit-linked">Привязка: ${(item.linked_templates || []).length ? (item.linked_templates || []).map(t => escapeHtml(t.name)).join('; ') : '—'}</div>
                 <div class="lit-actions">
-                    <button type="button" class="btn btn-sm btn-info" onclick="openLinkModal('${item.id}', '${escapeHtml(item.title).replace(/'/g, "\\'")}')">
+                    <button type="button" class="btn btn-sm btn-info lit-btn-link" data-id="${item.id}" onclick="event.preventDefault(); event.stopPropagation(); if (window.openLiteratureLinkModal) { window.openLiteratureLinkModal(this.dataset.id); } else { alert('Модуль привязки литературы не инициализирован'); }">
                         <i class="fas fa-link"></i> Привязать к листам
                     </button>
-                    <button type="button" class="btn btn-sm btn-success" onclick="openDownloadModal('${item.id}', '${escapeHtml((item.url || "").replace(/'/g, "\\'"))}')" title="Скачать в каталог data/library">
+                    <button type="button" class="btn btn-sm btn-secondary lit-btn-edit" data-edit="${editData}">
+                        <i class="fas fa-edit"></i> Редактировать
+                    </button>
+                    <button type="button" class="btn btn-sm btn-success lit-btn-download" data-id="${item.id}" data-url="${escapeHtml((item.url || ""))}">
                         <i class="fas fa-download"></i> Скачать в каталог
+                    </button>
+                    <button type="button" class="btn btn-sm btn-danger lit-btn-delete" data-id="${item.id}" data-title="${escapeHtml(item.title || item.id)}">
+                        <i class="fas fa-trash"></i> Удалить
                     </button>
                 </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
+        el.querySelectorAll('.lit-btn-link').forEach(btn => btn.addEventListener('click', function() { window.openLiteratureLinkModal && window.openLiteratureLinkModal(this.dataset.id); }));
+        el.querySelectorAll('.lit-btn-edit').forEach(btn => btn.addEventListener('click', function() {
+            try {
+                var raw = (this.dataset.edit || '').replace(/&quot;/g, '"');
+                var d = JSON.parse(raw);
+                openEditModal(d);
+            } catch (e) { console.warn('Edit data parse error', e); }
+        }));
+        el.querySelectorAll('.lit-btn-download').forEach(btn => btn.addEventListener('click', function() { openDownloadModal(this.dataset.id, this.dataset.url || ''); }));
+        el.querySelectorAll('.lit-btn-delete').forEach(btn => btn.addEventListener('click', function() { deleteLiterature(this.dataset.id, this.dataset.title || this.dataset.id); }));
     } catch (e) {
         document.getElementById('literatureList').innerHTML = '<p class="error">Ошибка загрузки</p>';
     }
@@ -237,10 +421,26 @@ async function submitUploadFile(e) {
         const res = await fetch('/api/literature/upload', { method: 'POST', body: fd });
         const out = await res.json();
         if (res.ok) {
-            document.getElementById('modalUpload').style.display = 'none';
+            if (window.setLitModalVisibleById) window.setLitModalVisibleById('modalUpload', false);
             form.reset();
             loadLiterature();
+            if (window.openLiteratureLinkModal) window.openLiteratureLinkModal(out.id);
             alert('Загружено: ' + (out.title || '') + (out.local_path ? '\n' + out.local_path : ''));
+        } else {
+            alert(out.error || 'Ошибка');
+        }
+    } catch (err) {
+        alert('Ошибка сети');
+    }
+}
+
+async function deleteLiterature(litId, title) {
+    if (!confirm('Удалить источник «' + (title || litId) + '»? Он будет удалён из каталога и из всех привязок к компетенциям.')) return;
+    try {
+        const res = await fetch('/api/literature/' + encodeURIComponent(litId), { method: 'DELETE' });
+        const out = await res.json();
+        if (res.ok) {
+            loadLiterature();
         } else {
             alert(out.error || 'Ошибка');
         }
@@ -263,7 +463,7 @@ async function submitAddLiterature(e) {
         const res = await fetch('/api/literature', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
         const out = await res.json();
         if (res.ok) {
-            document.getElementById('modalAdd').style.display = 'none';
+            if (window.setLitModalVisibleById) window.setLitModalVisibleById('modalAdd', false);
             form.reset();
             loadLiterature();
         } else {
@@ -274,60 +474,5 @@ async function submitAddLiterature(e) {
     }
 }
 
-let currentLinkLitId = null;
-async function openLinkModal(litId, title) {
-    currentLinkLitId = litId;
-    document.getElementById('modalLinkTitle').textContent = 'Источник: ' + title;
-    const res = await fetch('/api/leaves?hierarchy=1');
-    const leaves = await res.json();
-    const litRes = await fetch('/api/literature');
-    const litList = await litRes.json();
-    const current = (litList.find(l => l.id === litId) || {}).linked_templates || [];
-    const linkedTemplateIds = new Set(current.map(t => t.template_id));
-    const byDomain = {};
-    leaves.forEach(l => {
-        const domainName = (l.breadcrumb || '').split(' → ')[0] || 'Без домена';
-        if (!byDomain[domainName]) byDomain[domainName] = [];
-        byDomain[domainName].push(l);
-    });
-    let html = '';
-    for (const [domain, items] of Object.entries(byDomain).sort()) {
-        html += `<div class="link-domain-group"><strong>${escapeHtml(domain)}</strong></div>`;
-        items.forEach(l => {
-            const pathStr = l.path.join('/');
-            const checked = l.template_id && linkedTemplateIds.has(l.template_id) ? ' checked' : '';
-            const bc = l.breadcrumb ? ` <small class="link-breadcrumb">(${escapeHtml(l.breadcrumb)})</small>` : '';
-            html += `<label class="link-leaf"><input type="checkbox" data-path="${pathStr}"${checked}> ${escapeHtml(l.name)}${bc}</label>`;
-        });
-    }
-    document.getElementById('leavesCheckboxes').innerHTML = html || leaves.map(l => {
-        const pathStr = l.path.join('/');
-        const checked = l.template_id && linkedTemplateIds.has(l.template_id) ? ' checked' : '';
-        return `<label><input type="checkbox" data-path="${pathStr}"${checked}> ${escapeHtml(l.name)}</label>`;
-    }).join('');
-    document.getElementById('modalLink').style.display = 'flex';
-}
-
-async function saveLink() {
-    if (!currentLinkLitId) return;
-    const checkboxes = document.querySelectorAll('#leavesCheckboxes input:checked');
-    const leaf_paths = Array.from(checkboxes).map(cb => cb.dataset.path);
-    try {
-        const res = await fetch(`/api/literature/${currentLinkLitId}/link`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ leaf_paths })
-        });
-        const out = await res.json();
-        if (res.ok) {
-            document.getElementById('modalLink').style.display = 'none';
-            loadLiterature();
-        } else {
-            alert(out.error || 'Ошибка');
-        }
-    } catch (err) {
-        alert('Ошибка сети');
-    }
-}
 </script>
 {% endblock %}

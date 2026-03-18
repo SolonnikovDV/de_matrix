@@ -37,7 +37,7 @@
                             <i class="fas fa-{{ skill_icon }}" style="color: {{ skill_color }}"></i>
                             {{ skill.name }}
                         </h3>
-                        <i class="fas fa-chevron-down toggle-icon" style="font-size: 0.9em; color: #95a5a6;"></i>
+                        <i class="fas fa-chevron-down toggle-icon skill-toggle-icon"></i>
                     </div>
                     <div class="skill-description">{{ skill.description }}</div>
                     <div class="skill-actions">
@@ -61,7 +61,9 @@
                                             data-sub-idx="{{ loop.index0 }}"
                                             data-leaf-path="{{ domain_loop.index0 }}/{{ skill_loop.index0 }}/{{ action_loop.index0 }}/{{ loop.index0 }}">
                                             <i class="fas fa-angle-right" style="color: {{ skill_color }}"></i>
-                                            {{ sub.text }}
+                                            <span class="leaf-text">{{ sub.text }}</span>
+                                            <span class="leaf-lit-badges"></span>
+                                            <i class="fas fa-link leaf-bind-btn" title="Привязать литературу" data-leaf-path="{{ domain_loop.index0 }}/{{ skill_loop.index0 }}/{{ action_loop.index0 }}/{{ loop.index0 }}"></i>
                                         </li>
                                     {% endfor %}
                                         </ul>
@@ -74,7 +76,9 @@
                                         data-action-idx="{{ action_loop.index0 }}"
                                         data-leaf-path="{{ domain_loop.index0 }}/{{ skill_loop.index0 }}/{{ action_loop.index0 }}">
                                         <i class="fas fa-check-circle" style="color: {{ domain_color }}"></i>
-                                        {{ action.text }}
+                                        <span class="leaf-text">{{ action.text }}</span>
+                                        <span class="leaf-lit-badges"></span>
+                                        <i class="fas fa-link leaf-bind-btn" title="Привязать литературу" data-leaf-path="{{ domain_loop.index0 }}/{{ skill_loop.index0 }}/{{ action_loop.index0 }}"></i>
                                     </li>
                                 {% endif %}
                             {% endfor %}
@@ -90,14 +94,40 @@
 
 <!-- Сообщение об ошибке, если нет доменов -->
 {% if not domains %}
-<div style="text-align: center; padding: 50px;">
-    <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: #f39c12;"></i>
+<div class="matrix-empty-state">
+    <i class="fas fa-exclamation-triangle matrix-empty-icon"></i>
     <h2>Данные не загружены</h2>
-    <p>Проверьте файл data/matrix_data.json</p>
+    <p>Проверьте файл data/sources/matrix.json или выберите источник в настройках</p>
 </div>
 {% endif %}
 {% endblock %}
 
+{% block extra_css %}
+<style>
+.leaf-bind-btn { margin-left: 8px; opacity: 0.6; cursor: pointer; font-size: 0.85em; }
+.leaf-bind-btn { transition: opacity 0.2s ease, color 0.2s ease; }
+.leaf-bind-btn:hover { opacity: 1; color: #3f6fd8; }
+.leaf-lit-badges { margin-left: 6px; }
+.lit-badge { font-size: 0.75em; color: #27ae60; margin-right: 4px; }
+.skill-toggle-icon { font-size: 0.9em; color: #95a5a6; }
+.matrix-empty-state { text-align: center; padding: 50px; }
+.matrix-empty-icon { font-size: 48px; color: #f39c12; }
+.leaf-lit-badges.loading::before {
+    content: "";
+    display: inline-block;
+    width: 26px;
+    height: 10px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #e9eef9 0%, #f7f9ff 50%, #e9eef9 100%);
+    background-size: 200% 100%;
+    animation: leafBadgePulse 1.2s ease-in-out infinite;
+}
+@keyframes leafBadgePulse {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+</style>
+{% endblock %}
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -179,6 +209,31 @@ function initMatrixHandlers() {
             domainCards[0].classList.add('expanded');
         }, 500);
     }
+    
+    document.querySelectorAll('.leaf-lit-badges').forEach(function(b) { b.classList.add('loading'); });
+    fetch('/api/leaf-literature').then(r => r.json()).then(function(map) {
+        document.querySelectorAll('.leaf-item').forEach(function(li) {
+            var path = li.dataset.leafPath;
+            var badges = li.querySelector('.leaf-lit-badges');
+            if (badges && map[path] && map[path].length) {
+                badges.innerHTML = map[path].map(function(t) {
+                    return '<span class="lit-badge" title="' + t.replace(/"/g, '&quot;') + '"><i class="fas fa-book"></i></span>';
+                }).join('');
+            }
+        });
+    }).catch(function(err) {
+        console.warn('Leaf literature map load failed', err);
+    }).finally(function() {
+        document.querySelectorAll('.leaf-lit-badges.loading').forEach(function(b) { b.classList.remove('loading'); });
+    });
+    
+    document.querySelectorAll('.leaf-bind-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            if (window.openLiteratureLinkModal) window.openLiteratureLinkModal(null, btn.dataset.leafPath);
+        });
+    });
 }
 
 function handleDomainClick(e) {

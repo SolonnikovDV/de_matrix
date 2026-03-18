@@ -6,6 +6,58 @@
     <title>{% block title %}Матрица компетенций Data Engineer{% endblock %}</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+    .lit-link-domain, .lit-link-skill { margin: 4px 0; }
+    .lit-link-domain-header, .lit-link-skill-header { cursor: pointer; padding: 6px 8px; border-radius: 6px; }
+    .lit-link-domain-header:hover, .lit-link-skill-header:hover { background: #f5f5f5; }
+    .lit-link-domain-header i, .lit-link-skill-header i { transition: transform 0.2s; margin-right: 6px; }
+    .lit-link-domain.expanded > .lit-link-domain-header i, .lit-link-skill.expanded > .lit-link-skill-header i { transform: rotate(90deg); }
+    .lit-link-domain-body, .lit-link-skill-body { display: none; margin-left: 16px; padding-left: 8px; border-left: 2px solid #eee; }
+    .lit-link-domain.expanded > .lit-link-domain-body, .lit-link-skill.expanded > .lit-link-skill-body { display: block; }
+    .lit-link-leaf { display: flex; align-items: center; gap: 8px; margin: 4px 0; cursor: pointer; font-weight: normal; }
+    .is-hidden { display: none; }
+    .lit-link-modal { max-width: 560px !important; }
+    .lit-link-section { margin-bottom: 12px; }
+    .lit-link-select { width: 100%; padding: 8px; }
+    .lit-link-tree-title { margin-bottom: 8px; font-weight: 600; }
+    .lit-link-tree {
+        max-height: 350px;
+        overflow-y: auto;
+        border: 1px solid #e5ebf7;
+        border-radius: 8px;
+        padding: 10px;
+        background: #fbfdff;
+    }
+    .lit-link-actions { margin-top: 15px; }
+    .literature-preview-modal { max-width: 900px; }
+    .lit-preview-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 12px;
+    }
+    .lit-preview-title { margin: 0 0 6px 0; }
+    .lit-preview-meta { margin: 0; font-size: 0.9em; color: #7f8c8d; }
+    .lit-preview-content { min-height: 400px; }
+    .lit-preview-iframe {
+        width: 100%;
+        height: 70vh;
+        border: 1px solid #d8e2f3;
+        border-radius: 8px;
+        background: #fff;
+    }
+    .lit-preview-link { margin-top: 10px; }
+    .lit-preview-note { margin-top: 8px; color: #7f8c8d; font-size: 0.9em; }
+    .footer-sep { margin: 0 8px; }
+    .footer-inline-link {
+        color: inherit;
+        text-decoration: underline;
+    }
+    .footer-inline-icon-link {
+        color: inherit;
+        text-decoration: none;
+    }
+    </style>
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -48,6 +100,10 @@
                 <a href="/settings" class="sidebar-nav-item {% if request.path == '/settings' %}active{% endif %}">
                     <i class="fas fa-cog"></i>
                     <span>Настройки</span>
+                </a>
+                <a href="/about" class="sidebar-nav-item {% if request.path == '/about' %}active{% endif %}">
+                    <i class="fas fa-circle-info"></i>
+                    <span>О приложении</span>
                 </a>
             </div>
             <div class="sidebar-section">
@@ -96,11 +152,183 @@
         <footer class="footer">
             <i class="fas fa-copyright"></i> Матрица навыков для оценки Middle Data Engineer • 
             <i class="fas fa-mouse-pointer"></i> {% block footer_hint %}Кликните на любой элемент для раскрытия{% endblock %}
+            <span class="footer-sep">•</span>
+            <a href="/about" class="footer-inline-link">О приложении</a>
+            <span class="footer-sep">•</span>
+            <a href="/about#author" class="footer-inline-link">Об авторе</a>
+            <span class="footer-sep">•</span>
+            <a href="{{ author_telegram }}" target="_blank" rel="noopener" aria-label="Telegram автора" title="Контакты автора (Telegram)" class="footer-inline-icon-link">
+                <i class="fab fa-telegram-plane" aria-hidden="true"></i>
+            </a>
         </footer>
     </div>
     </div>
     
+    <!-- Модал привязки литературы к дереву (ступенчатое дерево, мульти-выбор) -->
+    <div class="modal-overlay is-hidden" id="literatureLinkModal" aria-hidden="true">
+        <div class="modal-box lit-link-modal">
+            <h3>Привязать к компетенциям</h3>
+            <div class="lit-link-section">
+                <label>Литература</label>
+                <select id="litLinkLiteratureSelect" class="lit-link-select"></select>
+            </div>
+            <div class="lit-link-tree-title">Элементы дерева (отметьте нужные):</div>
+            <div id="litLinkTree" class="lit-link-tree"></div>
+            <div class="modal-actions lit-link-actions">
+                <button type="button" class="btn btn-primary" id="litLinkSave">Сохранить привязку</button>
+                <button type="button" class="btn btn-secondary" id="litLinkClose">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модал предпросмотра литературы (доступен во всех вьюхах) -->
+    <div class="modal-overlay is-hidden" id="literaturePreviewModal" aria-hidden="true">
+        <div class="modal-box literature-preview-modal">
+            <div class="lit-preview-header">
+                <div>
+                    <h3 id="litPreviewTitle" class="lit-preview-title"></h3>
+                    <p id="litPreviewMeta" class="lit-preview-meta"></p>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" id="litPreviewClose" aria-label="Закрыть">&times;</button>
+            </div>
+            <div id="litPreviewContent" class="lit-preview-content">
+                <iframe id="litPreviewIframe" class="lit-preview-iframe" title="Предпросмотр"></iframe>
+                <p id="litPreviewLink" class="lit-preview-link"></p>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/js/matrix.js"></script>
+    <script>
+    function setGlobalModalVisible(modalEl, isVisible) {
+        if (!modalEl) return;
+        modalEl.classList.toggle('is-hidden', !isVisible);
+        modalEl.style.display = isVisible ? 'flex' : 'none';
+        if (modalEl.hasAttribute('aria-hidden')) {
+            modalEl.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
+        }
+    }
+    (function() {
+        var modal = document.getElementById('literaturePreviewModal');
+        var closeBtn = document.getElementById('litPreviewClose');
+        var iframe = document.getElementById('litPreviewIframe');
+        var titleEl = document.getElementById('litPreviewTitle');
+        var metaEl = document.getElementById('litPreviewMeta');
+        var linkEl = document.getElementById('litPreviewLink');
+        window.openLiteraturePreview = function(item) {
+            if (!modal) return;
+            titleEl.textContent = item.title || '';
+            metaEl.textContent = [item.chapter, item.pages].filter(Boolean).join(' · ') || '';
+            var filename = (item.local_path || '').split('/').pop() || '';
+            var ext = filename.split('.').pop().toLowerCase();
+            var linkHtml = '';
+            var url = item.url || '';
+            if (item.local_path && filename) {
+                var libUrl = '/library/' + encodeURIComponent(filename);
+                // Локальные файлы пробуем показывать в iframe (как раньше), чтобы не терять предпросмотр.
+                // Если формат не поддерживается браузером, пользователь все равно сможет открыть файл кнопкой.
+                iframe.style.display = 'block';
+                iframe.src = libUrl;
+                if (ext !== 'pdf') {
+                    linkHtml = '<a href="' + libUrl + '" target="_blank" class="btn btn-primary"><i class="fas fa-external-link-alt"></i> Открыть файл</a>';
+                }
+            } else if (url) {
+                // Пробуем предпросмотр для всех внешних ссылок (как в предыдущем поведении).
+                // Если сайт блокирует встраивание (X-Frame-Options/CSP), останется кнопка открытия в новой вкладке.
+                var lowerUrl = url.toLowerCase().split('?')[0].split('#')[0];
+                iframe.style.display = 'block';
+                iframe.src = url;
+                linkHtml = '<a href="' + url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener" class="btn btn-primary"><i class="fas fa-external-link-alt"></i> Открыть источник</a>';
+                if (!lowerUrl.endsWith('.pdf')) linkHtml += '<div class="lit-preview-note">Если сайт запрещает встраивание, используйте "Открыть источник".</div>';
+            } else {
+                iframe.style.display = 'none';
+            }
+            linkEl.innerHTML = linkHtml;
+            setGlobalModalVisible(modal, true);
+        };
+        function closeLitPreview() {
+            setGlobalModalVisible(modal, false);
+            if (iframe) iframe.src = 'about:blank';
+        }
+        if (closeBtn) closeBtn.onclick = closeLitPreview;
+        if (modal) modal.onclick = function(e) { if (e.target === modal) closeLitPreview(); };
+        document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeLitPreview(); });
+    })();
+    (function() {
+        var linkModal = document.getElementById('literatureLinkModal');
+        var litSelect = document.getElementById('litLinkLiteratureSelect');
+        var treeEl = document.getElementById('litLinkTree');
+        var saveBtn = document.getElementById('litLinkSave');
+        var closeBtn = document.getElementById('litLinkClose');
+        var linkedTemplates = {};
+        window.openLiteratureLinkModal = function(preselectLitId, preselectPath) {
+            if (!linkModal) return;
+            fetch('/api/literature').then(r=>r.json()).then(function(list) {
+                litSelect.innerHTML = '<option value="">— Выберите литературу —</option>' + list.map(function(l) {
+                    return '<option value="'+l.id+'"'+(preselectLitId===l.id?' selected':'')+'>'+ (l.title||l.id) +'</option>';
+                }).join('');
+            }).catch(function(err) {
+                console.warn('Failed to load literature list for link modal', err);
+            });
+            fetch('/api/tree-for-link').then(r=>r.json()).then(function(tree) {
+                fetch('/api/literature').then(r=>r.json()).then(function(litList) {
+                    linkedTemplates = {};
+                    litList.forEach(function(l) {
+                        (l.linked_templates||[]).forEach(function(t) {
+                            if (!linkedTemplates[l.id]) linkedTemplates[l.id] = new Set();
+                            linkedTemplates[l.id].add(t.template_id);
+                        });
+                    });
+                    var html = '';
+                    tree.forEach(function(dom, di) {
+                        var domExp = preselectPath && dom.skills.some(function(s) {
+                            return s.actions.some(function(a) { return a.path_str === preselectPath; });
+                        });
+                        html += '<div class="lit-link-domain'+(domExp?' expanded':'')+'"><div class="lit-link-domain-header" onclick="this.parentElement.classList.toggle(\'expanded\')"><i class="fas fa-chevron-right"></i> <strong>'+dom.name+'</strong></div><div class="lit-link-domain-body">';
+                        dom.skills.forEach(function(skill) {
+                            var skillExp = preselectPath && skill.actions.some(function(a) { return a.path_str === preselectPath; });
+                            html += '<div class="lit-link-skill'+(skillExp?' expanded':'')+'"><div class="lit-link-skill-header" onclick="this.parentElement.classList.toggle(\'expanded\')"><i class="fas fa-chevron-right"></i> '+skill.name+'</div><div class="lit-link-skill-body">';
+                            skill.actions.forEach(function(act) {
+                                var checked = preselectPath && act.path_str === preselectPath ? ' checked' : '';
+                                html += '<label class="lit-link-leaf"><input type="checkbox" data-path="'+act.path_str+'" data-tid="'+act.template_id+'"'+checked+'> '+act.name+'</label>';
+                            });
+                            html += '</div></div>';
+                        });
+                        html += '</div></div>';
+                    });
+                    treeEl.innerHTML = html;
+                }).catch(function(err) {
+                    console.warn('Failed to load literature linkage map', err);
+                    treeEl.innerHTML = '<p class="empty-message">Не удалось загрузить связки литературы.</p>';
+                });
+            }).catch(function(err) {
+                console.warn('Failed to load tree for link modal', err);
+                treeEl.innerHTML = '<p class="empty-message">Не удалось загрузить дерево компетенций.</p>';
+            });
+            setGlobalModalVisible(linkModal, true);
+        };
+        function closeLinkModal() {
+            setGlobalModalVisible(linkModal, false);
+        }
+        if (closeBtn) closeBtn.onclick = closeLinkModal;
+        if (linkModal) linkModal.onclick = function(e) { if (e.target === linkModal) closeLinkModal(); };
+        if (saveBtn) saveBtn.onclick = function() {
+            var litId = litSelect && litSelect.value;
+            if (!litId) { alert('Выберите литературу'); return; }
+            var checkboxes = treeEl.querySelectorAll('input:checked');
+            var paths = Array.from(checkboxes).map(function(cb) { return cb.dataset.path; });
+            if (!paths.length) { alert('Выберите элементы дерева'); return; }
+            fetch('/api/literature/'+litId+'/link', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({leaf_paths: paths})
+            }).then(function(r) { return r.json(); }).then(function(out) {
+                if (out.error) alert(out.error);
+                else { closeLinkModal(); if (window.loadLiterature) window.loadLiterature(); }
+            });
+        };
+    })();
+    </script>
     <script>
     (function() {
         var sidebar = document.getElementById('sidebar');

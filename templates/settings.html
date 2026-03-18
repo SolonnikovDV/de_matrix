@@ -97,6 +97,27 @@
         background: #f8f9fa;
         border-radius: 6px;
     }
+    .settings-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+    }
+    .stable-badge {
+        display: inline-block;
+        margin-left: 8px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        color: #0b6b3a;
+        background: #e8f7ef;
+        border: 1px solid #c9ebd8;
+    }
+    .backup-version {
+        font-weight: 700;
+        margin-right: 8px;
+        color: #3f6fd8;
+    }
 </style>
 {% endblock %}
 
@@ -108,6 +129,14 @@
             Бэкап создаётся при каждой перезагрузке данных (<code>/api/reload</code>) и при переключении источника.
             В бэкап входят: config (metadata.yaml, metadata.json, settings.yaml) и текущий файл-источник.
         </p>
+        <div class="settings-actions">
+            <button class="restore-btn" id="btnRollbackLast">
+                <i class="fas fa-history"></i> Откатить последнее изменение
+            </button>
+            <button class="restore-btn" id="btnRollbackStable" style="background:#27ae60;">
+                <i class="fas fa-shield-alt"></i> Откат к stable
+            </button>
+        </div>
         <ul class="backup-list" id="backupList">
             <li class="backup-empty" id="backupEmpty">Загрузка списка бэкапов...</li>
         </ul>
@@ -118,6 +147,8 @@
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', loadBackups);
+document.getElementById('btnRollbackLast')?.addEventListener('click', rollbackLastChange);
+document.getElementById('btnRollbackStable')?.addEventListener('click', rollbackStable);
 
 async function loadBackups() {
     try {
@@ -135,16 +166,33 @@ async function loadBackups() {
             const li = document.createElement('li');
             li.className = 'backup-item';
             const schemaInfo = b.schema_version != null ? ` • схема v${b.schema_version}` : '';
+            const changeInfo = b.change_type ? ` • ${escapeHtml(b.change_type)}` : '';
+            const noteInfo = b.note ? ` • ${escapeHtml(b.note)}` : '';
+            const stableBadge = b.stable ? '<span class="stable-badge">stable</span>' : '';
             li.innerHTML = `
                 <div class="backup-info">
-                    <span class="backup-id">${escapeHtml(b.id)}</span>
-                    <div class="backup-meta">${b.source_file ? 'Источник: ' + escapeHtml(b.source_file) : ''} ${b.created ? ' • ' + escapeHtml(b.created) : ''}${schemaInfo}</div>
+                    <span class="backup-id"><span class="backup-version">v${b.version || '?'}</span>${escapeHtml(b.id)} ${stableBadge}</span>
+                    <div class="backup-meta">${b.source_file ? 'Источник: ' + escapeHtml(b.source_file) : ''} ${b.created ? ' • ' + escapeHtml(b.created) : ''}${schemaInfo}${changeInfo}${noteInfo}</div>
                 </div>
-                <button class="restore-btn" data-backup-id="${escapeHtml(b.id)}" title="Восстановить конфиг и источник">
-                    <i class="fas fa-undo-alt"></i> Восстановить
-                </button>
+                <div style="display:flex; gap:8px;">
+                    <button class="restore-btn mark-stable-btn" data-backup-id="${escapeHtml(b.id)}" title="Сделать стабильным" style="background:#27ae60;">
+                        <i class="fas fa-star"></i> Stable
+                    </button>
+                    <button class="restore-btn restore-backup-btn" data-backup-id="${escapeHtml(b.id)}" title="Восстановить конфиг и источник">
+                        <i class="fas fa-undo-alt"></i> Восстановить
+                    </button>
+                </div>
             `;
-            li.querySelector('.restore-btn').addEventListener('click', function() { restoreBackup(b.id, this); });
+            li.querySelector('.restore-backup-btn').addEventListener('click', function() { restoreBackup(b.id, this); });
+            const stableBtn = li.querySelector('.mark-stable-btn');
+            if (stableBtn) {
+                if (b.stable) {
+                    stableBtn.disabled = true;
+                    stableBtn.textContent = 'Stable';
+                } else {
+                    stableBtn.addEventListener('click', function() { markStable(b.id, this); });
+                }
+            }
             list.appendChild(li);
         });
     } catch (e) {
@@ -193,6 +241,87 @@ async function restoreBackup(backupId, btn) {
         alert('Ошибка: ' + e.message);
     } finally {
         if (btn) btn.disabled = false;
+    }
+}
+
+async function markStable(backupId, btn) {
+    if (!confirm('Сделать этот бэкап стабильным состоянием?')) return;
+    if (btn) btn.disabled = true;
+    try {
+        const r = await fetch('/api/backups/' + encodeURIComponent(backupId) + '/mark-stable', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const data = await r.json();
+        if (data.ok) {
+            alert('Stable-состояние обновлено.');
+            window.location.reload();
+        } else {
+            alert('Ошибка: ' + (data.error || 'Unknown'));
+        }
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function rollbackLastChange() {
+    if (!confirm('Откатить последнее изменение?')) return;
+    try {
+        const r = await fetch('/api/restore/last-change', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ force: false })
+        });
+        const data = await r.json();
+        if (r.status === 409 && data.force_required && data.warning) {
+            if (!confirm(data.warning + '\n\nВыполнить принудительный откат?')) return;
+            const rr = await fetch('/api/restore/last-change', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ force: true })
+            });
+            const dd = await rr.json();
+            if (!dd.ok) { alert('Ошибка: ' + (dd.error || 'Unknown')); return; }
+        } else if (!data.ok) {
+            alert('Ошибка: ' + (data.error || 'Unknown'));
+            return;
+        }
+        alert('Откат выполнен. Страница будет перезагружена.');
+        window.location.reload();
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+async function rollbackStable() {
+    if (!confirm('Откатить состояние к stable?')) return;
+    try {
+        const r = await fetch('/api/restore/stable', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ force: false })
+        });
+        const data = await r.json();
+        if (r.status === 409 && data.force_required && data.warning) {
+            if (!confirm(data.warning + '\n\nВыполнить принудительный откат к stable?')) return;
+            const rr = await fetch('/api/restore/stable', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ force: true })
+            });
+            const dd = await rr.json();
+            if (!dd.ok) { alert('Ошибка: ' + (dd.error || 'Unknown')); return; }
+        } else if (!data.ok) {
+            alert('Ошибка: ' + (data.error || 'Unknown'));
+            return;
+        }
+        alert('Откат к stable выполнен. Страница будет перезагружена.');
+        window.location.reload();
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
     }
 }
 </script>
