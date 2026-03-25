@@ -113,6 +113,16 @@
         background: #e8f7ef;
         border: 1px solid #c9ebd8;
     }
+    .autoscale-result {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid #d9e3f7;
+        background: #f8fbff;
+        font-size: 13px;
+        color: #34495e;
+        white-space: pre-wrap;
+    }
     .backup-version {
         font-weight: 700;
         margin-right: 8px;
@@ -136,7 +146,11 @@
             <button class="restore-btn" id="btnRollbackStable" style="background:#27ae60;">
                 <i class="fas fa-shield-alt"></i> Откат к stable
             </button>
+            <button class="restore-btn" id="btnCheckAutoscale" style="background:#8e44ad;">
+                <i class="fas fa-project-diagram"></i> Проверить автоскейл
+            </button>
         </div>
+        <div id="autoscaleResult" class="autoscale-result" style="display:none;"></div>
         <ul class="backup-list" id="backupList">
             <li class="backup-empty" id="backupEmpty">Загрузка списка бэкапов...</li>
         </ul>
@@ -149,6 +163,7 @@
 document.addEventListener('DOMContentLoaded', loadBackups);
 document.getElementById('btnRollbackLast')?.addEventListener('click', rollbackLastChange);
 document.getElementById('btnRollbackStable')?.addEventListener('click', rollbackStable);
+document.getElementById('btnCheckAutoscale')?.addEventListener('click', checkAutoscale);
 
 async function loadBackups() {
     try {
@@ -322,6 +337,36 @@ async function rollbackStable() {
         window.location.reload();
     } catch (e) {
         alert('Ошибка: ' + e.message);
+    }
+}
+
+async function checkAutoscale() {
+    const out = document.getElementById('autoscaleResult');
+    if (out) {
+        out.style.display = 'block';
+        out.textContent = 'Проверка...';
+    }
+    try {
+        const r = await fetch('/api/autoscale/check');
+        const data = await r.json();
+        if (!data || data.ok === undefined) throw new Error('Некорректный ответ API');
+        const status = data.ok ? 'OK' : 'Есть расхождения';
+        const lines = [
+            `Статус: ${status}`,
+            `Ожидаемые leaf: ${data.expected_leaf_count}`,
+            `Фактические leaf: ${data.actual_leaf_count}`,
+            `Отсутствуют в tree: ${data.missing_in_tree_count}`,
+            `Лишние в tree: ${data.extra_in_tree_count}`,
+        ];
+        if (data.missing_in_tree_sample && data.missing_in_tree_sample.length) {
+            lines.push('Примеры missing: ' + data.missing_in_tree_sample.join(', '));
+        }
+        if (data.extra_in_tree_sample && data.extra_in_tree_sample.length) {
+            lines.push('Примеры extra: ' + data.extra_in_tree_sample.join(', '));
+        }
+        if (out) out.textContent = lines.join('\n');
+    } catch (e) {
+        if (out) out.textContent = 'Ошибка проверки: ' + e.message;
     }
 }
 </script>

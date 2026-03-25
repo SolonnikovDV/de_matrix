@@ -97,6 +97,28 @@
                     <i class="fas fa-upload"></i>
                     <span>Импорт</span>
                 </a>
+                <a href="/changes" class="sidebar-nav-item {% if request.path == '/changes' %}active{% endif %}">
+                    <i class="fas fa-clipboard-check"></i>
+                    <span>Изменения</span>
+                </a>
+                {% if current_role == 'admin' %}
+                <a href="/admin/users" class="sidebar-nav-item {% if request.path.startswith('/admin/users') %}active{% endif %}">
+                    <i class="fas fa-user-shield"></i>
+                    <span>Админка пользователей</span>
+                </a>
+                <a href="/admin/sql-console" class="sidebar-nav-item {% if request.path.startswith('/admin/sql-console') %}active{% endif %}">
+                    <i class="fas fa-code"></i>
+                    <span>SQL консоль БД</span>
+                </a>
+                <a href="/admin/tree-editor" class="sidebar-nav-item {% if request.path.startswith('/admin/tree-editor') %}active{% endif %}">
+                    <i class="fas fa-sitemap"></i>
+                    <span>Редактор дерева</span>
+                </a>
+                <a href="/admin/notifications" class="sidebar-nav-item {% if request.path.startswith('/admin/notifications') %}active{% endif %}">
+                    <i class="fas fa-envelope-open-text"></i>
+                    <span>Уведомления</span>
+                </a>
+                {% endif %}
                 <a href="/settings" class="sidebar-nav-item {% if request.path == '/settings' %}active{% endif %}">
                     <i class="fas fa-cog"></i>
                     <span>Настройки</span>
@@ -105,6 +127,23 @@
                     <i class="fas fa-circle-info"></i>
                     <span>О приложении</span>
                 </a>
+                {% if is_authenticated %}
+                <a href="/account" class="sidebar-nav-item {% if request.path.startswith('/account') %}active{% endif %}">
+                    <i class="fas fa-user"></i>
+                    <span>Личный кабинет</span>
+                </a>
+                {% endif %}
+                {% if is_authenticated %}
+                <a href="/logout" class="sidebar-nav-item">
+                    <i class="fas fa-right-from-bracket"></i>
+                    <span>Выйти ({{ current_actor }}, {{ current_role }})</span>
+                </a>
+                {% else %}
+                <a href="/login?next={{ request.path }}" class="sidebar-nav-item {% if request.path == '/login' %}active{% endif %}">
+                    <i class="fas fa-right-to-bracket"></i>
+                    <span>Вход</span>
+                </a>
+                {% endif %}
             </div>
             <div class="sidebar-section">
                 <div class="sidebar-section-label">Домены</div>

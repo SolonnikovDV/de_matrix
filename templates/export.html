@@ -396,6 +396,8 @@
                 <tr>
                     <th>Домен / Навык / Действие</th>
                     <th>Описание</th>
+                    <th>Уровень</th>
+                    <th>Проверочные вопросы</th>
                     <th>Минимальные требования</th>
                     <th>Антипаттерны</th>
                     <th>Стек</th>
@@ -407,19 +409,23 @@
                 <tr class="skeleton-table-row">
                     <td><span class="skeleton skeleton-line w-80"></span></td>
                     <td><span class="skeleton skeleton-line w-60"></span></td>
+                    <td><span class="skeleton skeleton-line w-40"></span></td>
                     <td><span class="skeleton skeleton-line w-80"></span></td>
                     <td><span class="skeleton skeleton-line w-60"></span></td>
                     <td><span class="skeleton skeleton-line w-40"></span></td>
                     <td><span class="skeleton skeleton-line w-40"></span></td>
+                    <td><span class="skeleton skeleton-line w-60"></span></td>
                     <td><span class="skeleton skeleton-line w-60"></span></td>
                 </tr>
                 <tr class="skeleton-table-row">
                     <td><span class="skeleton skeleton-line w-60"></span></td>
                     <td><span class="skeleton skeleton-line w-80"></span></td>
-                    <td><span class="skeleton skeleton-line w-60"></span></td>
+                    <td><span class="skeleton skeleton-line w-40"></span></td>
                     <td><span class="skeleton skeleton-line w-80"></span></td>
+                    <td><span class="skeleton skeleton-line w-60"></span></td>
                     <td><span class="skeleton skeleton-line w-40"></span></td>
                     <td><span class="skeleton skeleton-line w-40"></span></td>
+                    <td><span class="skeleton skeleton-line w-60"></span></td>
                     <td><span class="skeleton skeleton-line w-60"></span></td>
                 </tr>
             </tbody>
@@ -550,19 +556,23 @@ async function loadMatrixData() {
         <tr class="skeleton-table-row">
             <td><span class="skeleton skeleton-line w-80"></span></td>
             <td><span class="skeleton skeleton-line w-60"></span></td>
+            <td><span class="skeleton skeleton-line w-40"></span></td>
             <td><span class="skeleton skeleton-line w-80"></span></td>
             <td><span class="skeleton skeleton-line w-60"></span></td>
             <td><span class="skeleton skeleton-line w-40"></span></td>
             <td><span class="skeleton skeleton-line w-40"></span></td>
+            <td><span class="skeleton skeleton-line w-60"></span></td>
             <td><span class="skeleton skeleton-line w-60"></span></td>
         </tr>
         <tr class="skeleton-table-row">
             <td><span class="skeleton skeleton-line w-60"></span></td>
             <td><span class="skeleton skeleton-line w-80"></span></td>
-            <td><span class="skeleton skeleton-line w-60"></span></td>
+            <td><span class="skeleton skeleton-line w-40"></span></td>
             <td><span class="skeleton skeleton-line w-80"></span></td>
+            <td><span class="skeleton skeleton-line w-60"></span></td>
             <td><span class="skeleton skeleton-line w-40"></span></td>
             <td><span class="skeleton skeleton-line w-40"></span></td>
+            <td><span class="skeleton skeleton-line w-60"></span></td>
             <td><span class="skeleton skeleton-line w-60"></span></td>
         </tr>`;
     try {
@@ -585,7 +595,7 @@ async function loadMatrixData() {
         console.error('Error loading matrix data:', error);
         document.getElementById('tableBody').innerHTML = `
             <tr>
-                <td colspan="7" style="text-align: center; padding: 50px; color: #e74c3c;">
+                <td colspan="9" style="text-align: center; padding: 50px; color: #e74c3c;">
                     <i class="fas fa-exclamation-triangle fa-2x"></i>
                     <p>Ошибка загрузки данных</p>
                 </td>
@@ -610,7 +620,7 @@ function renderTable(domains, meta) {
                         ${domain.name}
                     </div>
                 </td>
-                <td colspan="6"></td>
+                <td colspan="8"></td>
             </tr>
         `;
         
@@ -627,7 +637,7 @@ function renderTable(domains, meta) {
                         </div>
                         ${skill.description ? `<div class="skill-description">${skill.description}</div>` : ''}
                     </td>
-                    <td colspan="6"></td>
+                    <td colspan="8"></td>
                 </tr>
             `;
             
@@ -647,6 +657,8 @@ function renderTable(domains, meta) {
                             <span class="template-badge">${template.name || 'Без шаблона'}</span>
                         </td>
                         <td>${skill.description || ''}</td>
+                        <td>${action.level_tag ? escapeHtml(String(action.level_tag).toUpperCase()) : '<span style="color: #95a5a6;">—</span>'}</td>
+                        <td>${(action.review_questions || []).length ? `<div class="requirements-preview">${(action.review_questions || []).map(escapeHtml).join('<br>')}</div>` : '<span style="color: #95a5a6;">—</span>'}</td>
                         <td>${renderRequirements(template.minimal_requirements)}</td>
                         <td>${renderAntipatterns(template.antipatterns)}</td>
                         <td>${renderStack(stackLabels)}</td>
@@ -672,6 +684,8 @@ function renderTable(domains, meta) {
                                     <span class="template-badge">${subTemplate.name || 'Без шаблона'}</span>
                                 </td>
                                 <td>${skill.description || ''}</td>
+                                <td>${sub.level_tag ? escapeHtml(String(sub.level_tag).toUpperCase()) : '<span style="color: #95a5a6;">—</span>'}</td>
+                                <td>${(sub.review_questions || []).length ? `<div class="requirements-preview">${(sub.review_questions || []).map(escapeHtml).join('<br>')}</div>` : '<span style="color: #95a5a6;">—</span>'}</td>
                                 <td>${renderRequirements(subTemplate.minimal_requirements)}</td>
                                 <td>${renderAntipatterns(subTemplate.antipatterns)}</td>
                                 <td>${renderStack(subStack)}</td>
@@ -690,15 +704,27 @@ function renderTable(domains, meta) {
 
 function resolveLiterature(resourceIds, literature) {
     if (!resourceIds || !literature) return [];
-    return resourceIds.map(rid => literature[rid]).filter(Boolean);
+    return resourceIds.map(rid => literature[rid] ? ({ id: rid, ...literature[rid] }) : null).filter(Boolean);
+}
+
+function openLitPreviewFromData(raw, evt) {
+    if (evt) evt.preventDefault();
+    if (!raw || !window.openLiteraturePreview) return false;
+    let data = null;
+    try { data = JSON.parse(raw); } catch (e) {}
+    if (!data) {
+        try { data = JSON.parse(String(raw).replace(/&quot;/g, '"')); } catch (e) {}
+    }
+    if (data) window.openLiteraturePreview(data);
+    return false;
 }
 
 function renderLiterature(items) {
     if (!items || items.length === 0) return '<span style="color: #95a5a6;">—</span>';
     const parts = items.map(item => {
         const title = escapeHtml(item.title || '');
-        const litData = JSON.stringify({title: item.title, chapter: item.chapter, pages: item.pages, url: item.url, local_path: item.local_path, description: item.description}).replace(/"/g, '&quot;');
-        return `<a href="#" class="literature-preview-trigger" data-lit="${litData}" onclick="event.preventDefault(); window.openLiteraturePreview && window.openLiteraturePreview(JSON.parse(this.dataset.lit.replace(/&quot;/g, '\"')));">${title}</a>`;
+        const litData = JSON.stringify({id: item.id || '', title: item.title, chapter: item.chapter, pages: item.pages, url: item.url, local_path: item.local_path, description: item.description}).replace(/"/g, '&quot;');
+        return `<a href="#" class="literature-preview-trigger" data-lit="${litData}" onclick="return openLitPreviewFromData(this.dataset.lit, event)">${title}</a>`;
     });
     return `<div class="literature-preview">${parts.join('<br>')}</div>`;
 }
@@ -853,8 +879,8 @@ function exportToExcel() {
         });
         return out.join(', ');
     };
-    // Единый формат для экспорта и импорта: Domain, Skill, Action, Subaction, Description, Template ID
-    const matrixRows = [['Domain', 'Skill', 'Action', 'Subaction', 'Description', 'Template ID']];
+    // Единый формат для экспорта и импорта: Domain, Skill, Action, Subaction, Description, Template ID, Level Tag, Review Questions
+    const matrixRows = [['Domain', 'Skill', 'Action', 'Subaction', 'Description', 'Template ID', 'Level Tag', 'Review Questions']];
     domains.forEach(domain => {
         domain.skills.forEach(skill => {
             skill.actions.forEach(action => {
@@ -866,7 +892,9 @@ function exportToExcel() {
                             action.text,
                             sub.text,
                             skill.description || '',
-                            sub.template_id || ''
+                            sub.template_id || '',
+                            sub.level_tag || '',
+                            (sub.review_questions || []).join('; ')
                         ]);
                     });
                 } else {
@@ -876,14 +904,16 @@ function exportToExcel() {
                         action.text,
                         '',
                         skill.description || '',
-                        action.template_id || ''
+                            action.template_id || '',
+                            action.level_tag || '',
+                            (action.review_questions || []).join('; ')
                     ]);
                 }
             });
         });
     });
     const ws = XLSX.utils.aoa_to_sheet(matrixRows);
-    ws['!cols'] = [{ wch: 30 }, { wch: 25 }, { wch: 50 }, { wch: 50 }, { wch: 40 }, { wch: 25 }];
+    ws['!cols'] = [{ wch: 30 }, { wch: 25 }, { wch: 50 }, { wch: 50 }, { wch: 40 }, { wch: 25 }, { wch: 14 }, { wch: 42 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Матрица навыков');
 
     const litIds = Object.keys(lit);
@@ -924,7 +954,7 @@ function exportToCSV() {
         return;
     }
     const rows = [];
-    rows.push(['Домен', 'Навык', 'Действие', 'Поддействие', 'Описание навыка', 'Минимальные требования', 'Антипаттерны', 'Стек', 'Инструменты', 'Литература']);
+    rows.push(['Домен', 'Навык', 'Действие', 'Поддействие', 'Описание навыка', 'Уровень', 'Проверочные вопросы', 'Минимальные требования', 'Антипаттерны', 'Стек', 'Инструменты', 'Литература']);
     
     const tbody = document.getElementById('tableBody');
     let currentDomain = '';
@@ -941,22 +971,26 @@ function exportToCSV() {
             const cells = row.querySelectorAll('td');
             currentAction = cells[0].querySelector('.action-text').textContent.trim();
             const skillDesc = cells[1].textContent.replace(/\s+/g, ' ').trim();
-            const requirements = cells[2].textContent.replace('РазвернутьСвернуть', '').replace(/\s+/g, ' ').trim();
-            const antipatterns = cells[3].textContent.replace('РазвернутьСвернуть', '').replace(/\s+/g, ' ').trim();
-            const stack = cells[4].textContent.replace(/\s+/g, ' ').trim();
-            const tools = cells[5].textContent.replace(/\s+/g, ' ').trim();
-            const literature = cells[6] ? cells[6].textContent.replace(/\s+/g, ' ').trim() : '';
-            rows.push([currentDomain, currentSkill, currentAction, '', skillDesc, requirements, antipatterns, stack, tools, literature]);
+            const levelTag = cells[2].textContent.replace(/\s+/g, ' ').trim();
+            const questions = cells[3].textContent.replace(/\s+/g, ' ').trim();
+            const requirements = cells[4].textContent.replace('РазвернутьСвернуть', '').replace(/\s+/g, ' ').trim();
+            const antipatterns = cells[5].textContent.replace('РазвернутьСвернуть', '').replace(/\s+/g, ' ').trim();
+            const stack = cells[6].textContent.replace(/\s+/g, ' ').trim();
+            const tools = cells[7].textContent.replace(/\s+/g, ' ').trim();
+            const literature = cells[8] ? cells[8].textContent.replace(/\s+/g, ' ').trim() : '';
+            rows.push([currentDomain, currentSkill, currentAction, '', skillDesc, levelTag, questions, requirements, antipatterns, stack, tools, literature]);
         } else if (row.classList.contains('subaction-row')) {
             const cells = row.querySelectorAll('td');
             const subactionText = cells[0].querySelector('.subaction-text').textContent.replace('↳', '').trim();
             const skillDesc = cells[1].textContent.replace(/\s+/g, ' ').trim();
-            const requirements = cells[2].textContent.replace('РазвернутьСвернуть', '').replace(/\s+/g, ' ').trim();
-            const antipatterns = cells[3].textContent.replace('РазвернутьСвернуть', '').replace(/\s+/g, ' ').trim();
-            const stack = cells[4].textContent.replace(/\s+/g, ' ').trim();
-            const tools = cells[5].textContent.replace(/\s+/g, ' ').trim();
-            const literature = cells[6] ? cells[6].textContent.replace(/\s+/g, ' ').trim() : '';
-            rows.push([currentDomain, currentSkill, currentAction, subactionText, skillDesc, requirements, antipatterns, stack, tools, literature]);
+            const levelTag = cells[2].textContent.replace(/\s+/g, ' ').trim();
+            const questions = cells[3].textContent.replace(/\s+/g, ' ').trim();
+            const requirements = cells[4].textContent.replace('РазвернутьСвернуть', '').replace(/\s+/g, ' ').trim();
+            const antipatterns = cells[5].textContent.replace('РазвернутьСвернуть', '').replace(/\s+/g, ' ').trim();
+            const stack = cells[6].textContent.replace(/\s+/g, ' ').trim();
+            const tools = cells[7].textContent.replace(/\s+/g, ' ').trim();
+            const literature = cells[8] ? cells[8].textContent.replace(/\s+/g, ' ').trim() : '';
+            rows.push([currentDomain, currentSkill, currentAction, subactionText, skillDesc, levelTag, questions, requirements, antipatterns, stack, tools, literature]);
         }
     });
     

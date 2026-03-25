@@ -203,6 +203,7 @@
     .graph-tree-item { padding: 4px 0; font-size: 0.9em; }
     .graph-tree-item[data-depth="0"] { font-weight: 600; color: #2c3e50; }
     .graph-tree-type { font-size: 0.8em; color: #7f8c8d; margin-right: 6px; }
+    .graph-tree-level { font-size: 0.75em; color: #2f4f98; margin-left: 4px; }
     .graph-tree-desc { color: #95a5a6; font-size: 0.85em; }
     .graph-tree-leaf-link { color: #3498db; margin-left: 6px; }
     
@@ -348,7 +349,8 @@ class MatrixGraph {
                 leaf_path: node.leaf_path,
                 full_name: node.full_name || node.name,
                 type: node.type,
-                description: node.description
+                description: node.description,
+                level_tag: node.level_tag
             };
             
             switch(node.type) {
@@ -502,7 +504,7 @@ class MatrixGraph {
                 } else if (node.type === 'domain') {
                     const match = node.id.match(/^d(\d+)$/);
                     if (match) {
-                        window.location.href = `/domain-graph/${match[1]}`;
+                        window.location.href = `/domain/${match[1]}`;
                     }
                 }
             }
@@ -532,8 +534,8 @@ class MatrixGraph {
         html += '<div class="graph-tree">' + (subtree ? this.renderTreeHtml(subtree) : '') + '</div></div>';
         switch(node.type) {
             case 'domain':
-                linkHref = `/domain-graph/${node.id.replace(/^d/, '')}`;
-                linkText = 'Открыть граф домена';
+                linkHref = `/domain/${node.id.replace(/^d/, '')}`;
+                linkText = 'Открыть домен';
                 break;
             case 'action':
             case 'subaction':
@@ -584,7 +586,17 @@ class MatrixGraph {
                 desc = div.textContent || div.innerText || '';
             }
             if (desc.length > 400) desc = desc.substring(0, 397) + '…';
-            bodyEl.innerHTML = desc ? `<div class="section-content">${desc.replace(/\n/g, '<br>')}</div>` : '<p>Нет краткого описания.</p>';
+            let extra = '';
+            if (data.level_tag) {
+                extra += `<p><strong>Уровень:</strong> ${String(data.level_tag).toUpperCase()}</p>`;
+            }
+            if (data.literature && data.literature.length) {
+                const titles = data.literature.map(l => l.title || l.id || '').filter(Boolean);
+                if (titles.length) {
+                    extra += `<p><strong>Литература:</strong> ${titles.join('; ')}</p>`;
+                }
+            }
+            bodyEl.innerHTML = desc ? `<div class="section-content">${desc.replace(/\n/g, '<br>')}</div>${extra}` : `<p>Нет краткого описания.</p>${extra}`;
         } catch (e) {
             bodyEl.innerHTML = '<p class="error-message">Не удалось загрузить описание.</p>';
         }
@@ -621,6 +633,7 @@ class MatrixGraph {
         const isLeaf = node.leaf_path && children.length === 0;
         let html = `<div class="graph-tree-item" style="margin-left: ${indent}px;" data-depth="${depth}">`;
         html += `<span class="graph-tree-node"><span class="graph-tree-type">${typeLabel}</span> ${node.label || node.full_name || ''}`;
+        if (node.level_tag) html += ` <span class="graph-tree-level">[${String(node.level_tag).toUpperCase()}]</span>`;
         if (node.description) html += ` <span class="graph-tree-desc">— ${node.description.substring(0, 80)}${node.description.length > 80 ? '…' : ''}</span>`;
         if (isLeaf) html += ` <a href="/leaf/${node.leaf_path}" class="graph-tree-leaf-link" target="_blank"><i class="fas fa-external-link-alt"></i></a>`;
         html += `</span>`;

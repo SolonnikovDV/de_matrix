@@ -33,7 +33,7 @@ def _normalize_children(
         node_id = f"{id_prefix}{i}" if id_prefix else "n_" + "_".join(str(p) for p in path)
         if subactions:
             child_nodes = _normalize_children(subactions, path, node_id + "_", level + 1)
-            out.append({
+            node = {
                 "id": node_id,
                 "name": text,
                 "path": path,
@@ -41,9 +41,14 @@ def _normalize_children(
                 "children": child_nodes,
                 "level": level,
                 "is_leaf": False,
-            })
+            }
+            if item.get("level_tag"):
+                node["level_tag"] = item.get("level_tag")
+            if item.get("review_questions"):
+                node["review_questions"] = item.get("review_questions")
+            out.append(node)
         else:
-            out.append({
+            node = {
                 "id": node_id,
                 "name": text,
                 "path": path,
@@ -51,7 +56,12 @@ def _normalize_children(
                 "children": [],
                 "level": level,
                 "is_leaf": True,
-            })
+            }
+            if item.get("level_tag"):
+                node["level_tag"] = item.get("level_tag")
+            if item.get("review_questions"):
+                node["review_questions"] = item.get("review_questions")
+            out.append(node)
     return out
 
 

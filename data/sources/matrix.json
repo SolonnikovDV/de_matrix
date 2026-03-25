@@ -468,6 +468,13 @@
       "url": "https://git-scm.com/book/ru/v2",
       "description": "Основы Git, работа с ветками, разрешение конфликтов"
     },
+    "khorikov_unit_testing": {
+      "title": "Хориков В. «Принципы юнит-тестирования» (издательство «Питер», 2021)",
+      "chapter": "Главы 2-6: изоляция, анатомия теста, качество тестов, моки, стили тестирования",
+      "pages": "С. 41-47, 58-60, 64-88, 90-115, 111-113, 117-156",
+      "url": "https://codelibs.ru/principy-yunit-testirovaniya/",
+      "description": "Практические рекомендации по AAA, граничным сценариям, изоляции и интеграции тестов в процессы разработки"
+    },
     "markdown_guide": {
       "title": "Шпаргалка по синтаксису Markdown",
       "chapter": "Базовый синтаксис: заголовки, списки, код, таблицы",
@@ -905,7 +912,8 @@
       "tools_refs": [],
       "examples_refs": [],
       "resource_ids": [
-        "git_pro"
+        "git_pro",
+        "khorikov_unit_testing"
       ]
     },
     "liquibase": {
@@ -1454,7 +1462,8 @@
         "unit_test_chispa"
       ],
       "resource_ids": [
-        "git_pro"
+        "git_pro",
+        "khorikov_unit_testing"
       ]
     },
     "unit_test_technologies": {
@@ -1481,7 +1490,8 @@
         "unit_test_chispa"
       ],
       "resource_ids": [
-        "git_pro"
+        "git_pro",
+        "khorikov_unit_testing"
       ]
     },
     "unit_test_edge_cases": {
@@ -1504,7 +1514,8 @@
       "tools_refs": [],
       "examples_refs": [],
       "resource_ids": [
-        "git_pro"
+        "git_pro",
+        "khorikov_unit_testing"
       ]
     },
     "unit_test_isolation": {
@@ -1529,7 +1540,8 @@
       ],
       "examples_refs": [],
       "resource_ids": [
-        "git_pro"
+        "git_pro",
+        "khorikov_unit_testing"
       ]
     },
     "unit_test_integration": {

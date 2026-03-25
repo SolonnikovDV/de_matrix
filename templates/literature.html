@@ -466,6 +466,8 @@ async function submitAddLiterature(e) {
             if (window.setLitModalVisibleById) window.setLitModalVisibleById('modalAdd', false);
             form.reset();
             loadLiterature();
+            // Сразу открываем выбор привязок из дерева для нового источника.
+            if (window.openLiteratureLinkModal) window.openLiteratureLinkModal(out.id);
         } else {
             alert(out.error || 'Ошибка');
         }

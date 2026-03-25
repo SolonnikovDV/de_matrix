@@ -263,6 +263,7 @@
 .graph-tree-item { padding: 4px 0; font-size: 0.9em; }
 .graph-tree-item[data-depth="0"] { font-weight: 600; color: #2c3e50; }
 .graph-tree-type { font-size: 0.8em; color: #7f8c8d; margin-right: 6px; }
+.graph-tree-level { font-size: 0.75em; color: #2f4f98; margin-left: 4px; }
 .graph-tree-desc { color: #95a5a6; font-size: 0.85em; }
 .graph-tree-leaf-link { color: #3498db; margin-left: 6px; }
 .graph-tree-stack-badge { display: inline-block; padding: 3px 10px; border-radius: 6px; color: white; font-size: 0.9em; }
@@ -349,7 +350,8 @@ class DomainGraph {
                 type: node.type,
                 description: node.description,
                 icon: node.icon,
-                color: node.color
+                color: node.color,
+                level_tag: node.level_tag
             };
             
             switch(node.type) {
@@ -608,6 +610,7 @@ class DomainGraph {
         } else {
             html += (node.label || node.full_name || '');
         }
+        if (node.level_tag) html += ` <span class="graph-tree-level">[${String(node.level_tag).toUpperCase()}]</span>`;
         if (node.description && node.type !== 'stack') html += ` <span class="graph-tree-desc">— ${node.description.substring(0, 80)}${node.description.length > 80 ? '…' : ''}</span>`;
         if (isLeaf) html += ` <a href="/leaf/${node.leaf_path}" class="graph-tree-leaf-link" target="_blank"><i class="fas fa-external-link-alt"></i></a>`;
         html += `</span>`;
@@ -646,7 +649,17 @@ class DomainGraph {
                 desc = div.textContent || div.innerText || '';
             }
             if (desc.length > 400) desc = desc.substring(0, 397) + '…';
-            bodyEl.innerHTML = desc ? desc.replace(/\n/g, '<br>') : '<p>Нет краткого описания.</p>';
+            let extra = '';
+            if (data.level_tag) {
+                extra += `<p><strong>Уровень:</strong> ${String(data.level_tag).toUpperCase()}</p>`;
+            }
+            if (data.literature && data.literature.length) {
+                const titles = data.literature.map(l => l.title || l.id || '').filter(Boolean);
+                if (titles.length) {
+                    extra += `<p><strong>Литература:</strong> ${titles.join('; ')}</p>`;
+                }
+            }
+            bodyEl.innerHTML = desc ? `${desc.replace(/\n/g, '<br>')}${extra}` : `<p>Нет краткого описания.</p>${extra}`;
         } catch (e) {
             bodyEl.innerHTML = '<p class="error-message">Не удалось загрузить описание.</p>';
         }

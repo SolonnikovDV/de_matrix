@@ -25,7 +25,7 @@
 
 {% block content %}
 <p class="domain-breadcrumbs">
-    <a href="/"><i class="fas fa-home"></i> Главная</a>
+    <a href="/matrix"><i class="fas fa-th-large"></i> Матрица</a>
     {% if focus_skill and domain.skills %}
     <span class="sep"> → </span>
     <a href="/domain/{{ domain.index }}">{{ domain.name }}</a>
@@ -108,7 +108,8 @@ window.DOMAIN_FOCUS_SKILL = {{ 'true' if focus_skill else 'false' }};
             div.dataset.hasSubactions = (a.subactions && a.subactions.length) ? '1' : '0';
             if (a.leaf_path) div.dataset.leafPath = a.leaf_path;
             var countHtml = (a.subactions && a.subactions.length) ? '<span class="tree-node-count">' + a.subactions.length + '</span>' : '';
-            div.innerHTML = '<i class="fas fa-' + (a.subactions && a.subactions.length ? 'folder' : 'check-circle') + '"></i><span class="tree-node-label">' + escapeHtml(a.text) + '</span>' + countHtml;
+            var levelHtml = a.level_tag ? '<span class="tree-node-level-badge">' + escapeHtml(String(a.level_tag).toUpperCase()) + '</span>' : '';
+            div.innerHTML = '<i class="fas fa-' + (a.subactions && a.subactions.length ? 'folder' : 'check-circle') + '"></i><span class="tree-node-label">' + escapeHtml(a.text) + '</span>' + levelHtml + countHtml;
             div.addEventListener('click', function() {
                 if (a.subactions && a.subactions.length) {
                     renderSubactions(a);
@@ -133,7 +134,8 @@ window.DOMAIN_FOCUS_SKILL = {{ 'true' if focus_skill else 'false' }};
             var div = document.createElement('div');
             div.className = 'tree-node tree-subaction-node';
             div.dataset.leafPath = s.leaf_path;
-            div.innerHTML = '<i class="fas fa-angle-right"></i><span>' + escapeHtml(s.text) + '</span>';
+            var levelHtml = s.level_tag ? '<span class="tree-node-level-badge">' + escapeHtml(String(s.level_tag).toUpperCase()) + '</span>' : '';
+            div.innerHTML = '<i class="fas fa-angle-right"></i><span>' + escapeHtml(s.text) + '</span>' + levelHtml;
             div.addEventListener('click', function(e) {
                 e.stopPropagation();
                 window.location.href = '/leaf/' + s.leaf_path;

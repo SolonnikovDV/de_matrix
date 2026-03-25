@@ -1,235 +1,393 @@
 # Data Engineer Matrix (`de_matrix`)
 
-Веб-приложение на Flask для ведения и визуализации матрицы компетенций Data Engineer:
-- структура доменов/навыков/действий;
-- графы и дерево компетенций;
-- каталог литературы и привязки к листам;
-- импорт/экспорт данных;
-- бэкапы и восстановление источника.
+[![CI](https://github.com/SolonnikovDV/de_matrix/actions/workflows/ci.yml/badge.svg)](https://github.com/SolonnikovDV/de_matrix/actions/workflows/ci.yml)
 
-## Что актуально сейчас
+Веб-приложение для управления матрицей компетенций Data Engineer с процессом согласования изменений, RBAC, обсуждениями CR, уведомлениями и production-ready инфраструктурой на Docker Compose.
 
-- Источник данных **единый**: `data/sources/matrix.json` (или другой файл из `source_dir`).
-- `matrix_data.json` в runtime не используется.
-- Импорт и экспорт выровнены по единому Excel-формату.
-- Для литературы есть CRUD, привязка к листам, предпросмотр и загрузка в `data/library`.
-- Есть страница `О приложении`, MIT License и конфигурируемые данные автора/репозитория.
+---
 
-## Основной функционал
+## Оглавление
 
-### UI-страницы
+- [1. Назначение приложения](#1-назначение-приложения)
+- [2. Ключевые функциональности](#2-ключевые-функциональности)
+- [3. Архитектура приложения](#3-архитектура-приложения)
+- [4. Инфраструктура и компоненты окружения](#4-инфраструктура-и-компоненты-окружения)
+- [5. Быстрый старт (администратор)](#5-быстрый-старт-администратор)
+- [6. Инструкция для пользователя](#6-инструкция-для-пользователя)
+- [7. Инструкция для разработчика](#7-инструкция-для-разработчика)
+- [8. Развертывание на голой машине](#8-развертывание-на-голой-машине)
+- [9. Поддержка и дебаг проблем](#9-поддержка-и-дебаг-проблем)
+- [10. API и служебные маршруты](#10-api-и-служебные-маршруты)
+- [11. Лицензия](#11-лицензия)
 
-| Страница | Маршрут | Назначение |
-|---|---|---|
-| Главная | `/` | Краткая статистика и навигация |
-| Матрица | `/matrix` | Карточки доменов и навыков |
-| Домен | `/domain/<domain_idx>` | Дерево: домен → навыки → действия → поддействия |
-| Навык домена | `/domain/<domain_idx>/skill/<skill_idx>` | Дерево с фокусом на один навык |
-| Глобальный граф | `/graph` | Иерархический граф всей матрицы |
-| Граф домена | `/domain-graph/<domain_idx>` | Граф конкретного домена |
-| Экспорт | `/export` | Табличный просмотр + XLSX/CSV |
-| Импорт | `/import` | Валидация и загрузка JSON/XLSX |
-| Литература | `/literature` | Каталог источников и привязки |
-| Настройки | `/settings` | Работа с бэкапами и источниками |
-| О приложении | `/about` | Инфо о проекте/авторе/лицензии |
+---
 
-### Импорт/экспорт
+## 1. Назначение приложения
 
-- Поддержка JSON/YAML/XLSX/XLS.
-- Preview + validation перед применением.
-- Merge-режимы загрузки:
+`de_matrix` нужен для централизованного управления матрицей компетенций:
+
+- хранение и отображение доменов, навыков, действий и поддействий;
+- формализация изменений через Change Requests (CR), ревизии, approval и apply;
+- совместная работа через обсуждения, `@mentions` и timeline событий;
+- аудит изменений и уведомлений;
+- безопасная публикация приложения через HTTPS proxy.
+
+Приложение работает в **DB-first** режиме: основной runtime идет через PostgreSQL + MongoDB.
+
+---
+
+## 2. Ключевые функциональности
+
+### Матрица и визуализация
+
+- страницы матрицы (`/matrix`, `/domain/...`);
+- графы (`/graph`, `/domain-graph/...`);
+- детали действий/поддействий, level tags, review questions;
+- автоскейл дерева и согласованность структуры.
+
+### Импорт/экспорт и merge-режимы
+
+- импорт JSON/XLSX/XLS с превью и валидацией;
+- merge-режимы:
   - `append`
   - `append_to_domain`
   - `append_to_skill`
   - `replace_all`
-- Автобэкап перед изменениями источника.
-- Шаблон импорта: `GET /api/import/template`.
-- Единый Excel-формат:
-  - `Domain`, `Skill`, `Action`, `Subaction`, `Description`, `Template ID`
-  - также принимаются русские заголовки.
+- экспорт и шаблон импорта;
+- staging batch + diff (`json_patch`, structural diff, upsert-plan).
+
+### Governance и безопасность изменений
+
+- CR workflow: `draft -> submitted -> in_review -> approved/rejected -> applied`;
+- обсуждения CR, обязательные треды, блокировка apply при нерешенных критичных вопросах;
+- timeline CR;
+- RBAC (роли `user` / `admin`);
+- сессионная авторизация, смена временного пароля при первом входе.
 
 ### Литература
 
-- Добавление, редактирование и удаление источников.
-- Привязка литературы к листам (`leaf`) матрицы.
-- Загрузка файла в `data/library`.
-- Загрузка по URL с определением контента.
-- Предпросмотр:
-  - для доступных ресурсов — в модальном iframe;
-  - fallback-кнопка открытия источника в новой вкладке.
+- CRUD литературы;
+- загрузка файлов и URL-источников;
+- привязка к листам матрицы;
+- предпросмотр и открытие внешнего источника.
 
-## Архитектура данных
+### Уведомления
 
-### Единый источник
+- SMTP-интеграция (Mailpit в окружении);
+- события для авторов CR, админов и `@mention`;
+- журнал отправок `notification_logs` + retry из admin UI.
 
-Основной файл (`matrix.json`) содержит:
-- `domains` (структура матрицы),
-- `action_templates`,
-- `literature`,
-- `action_examples`,
-- `ui_config`.
+---
 
-### Конфигурация и кэш
+## 3. Архитектура приложения
 
-- `config/settings.yaml` — пути и runtime-настройки.
-- `config/metadata.yaml` / `config/metadata.json` — метаданные для UI/инструментов.
-- `data/checkpoint.yaml` — чекпоинт со сверкой по хэшу источника.
-- `data/backups/` — бэкапы источника.
+### 3.1 Контейнерная схема
 
-## Структура проекта
+```mermaid
+flowchart LR
+  U[User Browser] --> P[NGINX Proxy]
+  A[Admin Browser via SSH tunnel] --> AD[Portainer Admin UI]
+
+  P --> APP[Flask App]
+  APP --> PG[(PostgreSQL)]
+  APP --> MG[(MongoDB)]
+  APP --> SMTP[Mailpit SMTP]
+
+  P --> LGR[Proxy Logs]
+  LGR --> F2B[Fail2ban]
+  LGR --> LOGR[Logrotate]
+```
+
+### 3.2 Поток изменения данных (upload -> approve -> apply)
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant App
+  participant PG as PostgreSQL
+
+  User->>App: Upload file (merge mode)
+  App->>PG: Save staging batch
+  App->>PG: Create CR + revision payload (diff/patch/upsert-plan)
+  App-->>User: queued_for_approval
+
+  participant Admin
+  Admin->>App: Review CR, set status approved
+  App->>PG: Persist decision
+  Admin->>App: Apply CR
+  App->>PG: Upsert from approved revision
+  App-->>Admin: applied=true
+```
+
+### 3.3 Логическая схема модулей
+
+```mermaid
+graph TD
+  UI[Templates + JS UI] --> API[Flask Routes in app.py]
+  API --> CORE[core/*\nvalidation, merge, diff, tree]
+  API --> STORAGE[storage/*\nrepo/runtime/db]
+  STORAGE --> PG[(PostgreSQL)]
+  STORAGE --> MG[(MongoDB)]
+  API --> SMTP[Notification sender]
+```
+
+---
+
+## 4. Инфраструктура и компоненты окружения
+
+### 4.1 Сервисы Compose и назначение
+
+| Компонент | Где объявлен | Назначение |
+|---|---|---|
+| `proxy` | `docker-compose.yml` | HTTPS termination, reverse proxy, security headers, rate/conn limits |
+| `app` | `docker-compose.yml` | Flask-приложение, API и UI |
+| `postgres` | `docker-compose.yml` | Основное хранилище матрицы, approvals, users, notifications |
+| `mongo` | `docker-compose.yml` | Хранилище литературы и связанных данных |
+| `smtp` (Mailpit) | `docker-compose.yml` | Локальный SMTP + UI для проверки писем |
+| `fail2ban` | `docker-compose.prod.yml` | Бан IP по правилам из proxy логов |
+| `logrotate` | `docker-compose.prod.yml` | Ротация логов proxy |
+| `admin` (Portainer) | `docker-compose.prod.yml` | Локальная админка контейнеров |
+
+### 4.2 Скрипты управления
+
+| Скрипт | Назначение |
+|---|---|
+| `scripts/up.sh` | Единый запуск **всего** стека (base + prod override) |
+| `scripts/prod_status.sh` | Статус сервисов и ключевые URL |
+| `scripts/prod_down.sh` | Остановка стека |
+| `scripts/smoke_all.sh` | Комплексный smoke/e2e прогон |
+| `scripts/db_backup.sh` | Backup PostgreSQL/Mongo |
+| `scripts/db_restore.sh` | Restore PostgreSQL/Mongo |
+
+### 4.3 Ключевые переменные окружения
+
+| Переменная | Назначение |
+|---|---|
+| `DE_MATRIX_SECRET_KEY` | Подпись Flask session |
+| `DE_MATRIX_ADMIN_USERNAME` / `DE_MATRIX_ADMIN_PASSWORD` | Bootstrap-admin |
+| `DE_MATRIX_AUTH_REQUIRED` | Требовать логин для UI/API |
+| `DE_MATRIX_DB_URL` | Подключение PostgreSQL |
+| `DE_MATRIX_MONGO_URI` / `DE_MATRIX_MONGO_DB` | Подключение MongoDB |
+| `DE_MATRIX_DOMAIN` | Публичный домен (выводится как URL для внешних пользователей) |
+| `DE_MATRIX_PROXY_HTTP_PORT` / `DE_MATRIX_PROXY_HTTPS_PORT` | Порты proxy |
+| `DE_MATRIX_TLS_MODE` | `selfsigned` / `provided` |
+| `DE_MATRIX_NOTIFICATIONS_ENABLED` | Вкл/выкл отправку уведомлений |
+| `DE_MATRIX_SMTP_HOST` / `DE_MATRIX_SMTP_PORT` / `DE_MATRIX_SMTP_FROM` | SMTP настройки |
+| `DE_MATRIX_ADMIN_UI_PORT` | Порт Portainer (localhost only) |
+| `DE_MATRIX_MAIL_UI_PORT` / `DE_MATRIX_MAIL_SMTP_PORT` | UI/SMTP порты Mailpit на хосте |
+| `DE_MATRIX_PROXY_RATE_LIMIT_*`, `DE_MATRIX_PROXY_CONN_LIMIT_PER_IP` | Лимиты proxy |
+| `DE_MATRIX_PROXY_IP_WHITELIST`, `DE_MATRIX_PROXY_IP_BLACKLIST` | Списки IP правил |
+
+### 4.4 Структура репозитория (актуальная)
+
+Ниже укороченная структура (сверена с `tig_snapshot_de_matrix.md`):
 
 ```text
 de_matrix/
-├── app.py
-├── core/
-│   ├── backup.py
-│   ├── checkpoint.py
-│   ├── config_loader.py
-│   ├── loaders.py
-│   ├── schema.py
-│   ├── tools_matcher.py
-│   ├── tree.py
-│   └── upload_merge.py
+├── .github/workflows/
 ├── config/
-│   ├── settings.yaml
-│   ├── metadata.yaml
-│   └── metadata.json
-├── data/
-│   ├── sources/
-│   │   └── matrix.json
-│   ├── checkpoint.yaml
-│   ├── backups/
-│   └── library/
-├── static/
-│   ├── css/style.css
-│   └── js/matrix.js
-├── templates/
-│   ├── base.html
-│   ├── home.html
-│   ├── matrix.html
-│   ├── domain_view.html
-│   ├── graph.html
-│   ├── domain_graph.html
-│   ├── export.html
-│   ├── import.html
-│   ├── literature.html
-│   ├── settings.html
-│   ├── about.html
-│   ├── action_detail.html
-│   ├── 404.html
-│   └── 500.html
+├── core/
+├── migrations/
+├── proxy/
 ├── scripts/
+├── security/
+├── static/
+├── storage/
+├── templates/
+├── utils/
+├── app.py
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── Dockerfile
 ├── requirements.txt
-├── LICENSE
 └── README.md
 ```
 
-## Требования
+---
 
-- Python 3.8+
-- pip
+## 5. Быстрый старт (администратор)
 
-`requirements.txt`:
-- Flask, Jinja2, Werkzeug
-- PyYAML
-- pandas
-- openpyxl
-- certifi
+### 5.1 Первый запуск
 
-## Быстрый старт
+```bash
+chmod +x ./scripts/*.sh
+bash ./scripts/up.sh
+```
+
+Проверка:
+
+```bash
+bash ./scripts/prod_status.sh
+```
+
+### 5.2 Вход в приложение
+
+- локально: `https://localhost` (или порт из `.env`);
+- вход по `DE_MATRIX_ADMIN_USERNAME` / `DE_MATRIX_ADMIN_PASSWORD`;
+- при первом входе смените пароль на `/account/password`.
+
+### 5.3 Админ-разделы
+
+- пользователи: `/admin/users`
+- SQL console: `/admin/sql-console`
+- tree editor: `/admin/tree-editor`
+- журнал уведомлений: `/admin/notifications`
+- CR review: `/changes`
+
+---
+
+## 6. Инструкция для пользователя
+
+1. Откройте URL приложения, который выдал администратор (обычно `https://<domain>`).
+2. Войдите под своим логином/паролем.
+3. Рабочие разделы:
+   - просмотр матрицы и графов;
+   - просмотр деталей action/subaction;
+   - импорт данных (создает CR для согласования);
+   - литература и привязка к листам.
+4. Следите за статусом своих CR на `/changes`.
+5. Если админ запросил доработки в discussion (`needs_author_response`), обновите CR и отправьте повторно.
+
+---
+
+## 7. Инструкция для разработчика
+
+### 7.1 Подготовка локальной среды
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
-python app.py
 ```
 
-По умолчанию запуск на порту `5001`.
-
-Параметры запуска:
+### 7.2 Подъем окружения
 
 ```bash
-python app.py --port 5001
-python app.py --auto-port
-python app.py --debug
+bash ./scripts/up.sh
 ```
 
-## Конфигурация
+### 7.3 Базовые проверки
 
-`config/settings.yaml`:
-
-```yaml
-source_dir: data/sources
-checkpoint_file: data/checkpoint.yaml
-default_source: matrix.json
-literature_dir: data/library
-ssl_verify: false
-flexible: true
+```bash
+docker compose exec -T app python scripts/db_init.py
+docker compose exec -T app python scripts/db_smoke_check.py
+docker compose exec -T app python scripts/autoscale_regression_check.py
+docker compose exec -T app python scripts/e2e_merge_modes_check.py
 ```
 
-Переменные окружения:
+### 7.4 Полный регрессионный прогон
 
-- `DE_MATRIX_AUTHOR_NAME`
-- `DE_MATRIX_AUTHOR_TELEGRAM`
-- `DE_MATRIX_REPO_URL`
-- `DE_MATRIX_SSL_VERIFY` (`0/1`)
+```bash
+bash ./scripts/smoke_all.sh --rollback
+```
 
-## API (актуальный набор)
+### 7.5 Где смотреть код
 
-### Данные и дерево
+- backend/API: `app.py`
+- доменная логика: `core/`
+- persistence/repositories: `storage/`
+- шаблоны UI: `templates/`
+- инфраструктура: `docker-compose*.yml`, `proxy/`, `scripts/`
+- сервисные миграционные утилиты: `scripts/migrate_file_to_db.py`, `scripts/merge_to_unified_source.py`, `scripts/turn_to_base_config.py`
 
-- `GET /api/matrix`
-- `GET /api/tree`
-- `GET /api/tree-for-link`
-- `GET /api/leaves`
-- `GET /api/leaf-literature`
-- `GET /api/meta`
+---
 
-### Листья/действия/графы
+## 8. Развертывание на голой машине
 
-- `GET /api/leaf/<path>`
-- `GET /api/action/<di>/<si>/<ai>`
-- `GET /api/subaction/<di>/<si>/<ai>/<sub_idx>`
-- `GET /api/graph-data`
-- `GET /api/domain-graph/<domain_idx>`
+### 8.1 Предпосылки
 
-### Источники и импорт
+- Linux host (рекомендуется для полного fail2ban поведения);
+- Docker Engine + Docker Compose plugin;
+- открытые внешние порты для proxy (`80/443` или ваши кастомные);
+- DNS/A-record на сервер (для production-домена).
 
-- `GET /api/sources`
-- `POST /api/source/load`
-- `POST /api/source/upload/preview`
-- `POST /api/source/upload`
-- `GET /api/import/template`
-- `GET /api/schema`
-- `POST /api/validate`
+### 8.2 Шаги
 
-### Литература
+1. Скопируйте проект на сервер.
+2. Настройте `.env`:
+   - `DE_MATRIX_DOMAIN=<your-domain>`
+   - production-секреты (`DE_MATRIX_SECRET_KEY`, admin password, SMTP и т.д.).
+3. Для production TLS:
+   - `DE_MATRIX_DEPLOY_TARGET=production`
+   - `DE_MATRIX_TLS_MODE=provided`
+   - положите:
+     - `proxy/certs/provided/fullchain.pem`
+     - `proxy/certs/provided/privkey.pem`
+4. Поднимите стек:
 
-- `GET /api/literature`
-- `POST /api/literature`
-- `POST /api/literature/upload`
-- `PATCH /api/literature/<lit_id>`
-- `DELETE /api/literature/<lit_id>`
-- `POST /api/literature/<lit_id>/link`
-- `POST /api/literature/<lit_id>/download`
+```bash
+bash ./scripts/up.sh
+```
 
-### Домены/бэкапы/служебные
+5. Проверьте:
+   - `bash ./scripts/prod_status.sh`
+   - `https://<your-domain>/proxy-health`
+   - вход в `https://<your-domain>`.
 
-- `GET /api/domains`
-- `GET /api/domain/<domain_idx>`
-- `GET /api/backups`
-- `GET /api/backups/<backup_id>/compatibility`
-- `POST /api/restore`
-- `GET /api/reload`
-- `GET /debug`
+### 8.3 Доступ к Portainer только через SSH tunnel
 
-## Заметки по предпросмотру литературы
+```bash
+ssh -L 19000:127.0.0.1:19000 <user>@<host>
+```
 
-- Если ресурс в iframe не отображается, чаще всего причина на стороне внешнего сайта (`X-Frame-Options`/`CSP`).
-- В модале всегда доступна кнопка открытия источника в новой вкладке.
-- Для локальных файлов предпросмотр идет через `/library/<filename>`.
+Затем открыть локально: `http://127.0.0.1:19000`.
 
-## Лицензия
+---
 
-MIT, см. файл `LICENSE`.
+## 9. Поддержка и дебаг проблем
+
+### 9.1 Быстрая диагностика
+
+```bash
+bash ./scripts/prod_status.sh
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=200 app
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=200 proxy
+```
+
+### 9.2 Частые проблемы
+
+| Симптом | Причина | Решение |
+|---|---|---|
+| `permission denied: ./scripts/up.sh` | Нет execute-bit | `chmod +x ./scripts/*.sh` или запуск `bash ./scripts/up.sh` |
+| `401 Authentication required` в API | Нет валидной сессии | Выполнить login, проверить cookie и `DE_MATRIX_AUTH_REQUIRED` |
+| `Password change required` | Временный пароль | Завершить смену пароля на `/account/password` |
+| `app restarting` | рассинхрон схемы БД/моделей | применить миграции и перезапустить app |
+| e2e/smoke fail после rollback | Изменилось состояние БД | повторить `db_init`, проверить пользователей и CR |
+
+### 9.3 Backup/restore и восстановление
+
+```bash
+bash ./scripts/db_backup.sh
+bash ./scripts/db_restore.sh <backup_dir>
+```
+
+После восстановления:
+
+```bash
+docker compose restart app
+bash ./scripts/prod_status.sh
+```
+
+---
+
+## 10. API и служебные маршруты
+
+### Core API
+
+- `GET /api/matrix`, `GET /api/tree`, `GET /api/meta`
+- `POST /api/source/upload/preview`, `POST /api/source/upload`
+- `GET /api/changes`, `GET /api/changes/<id>`, status/apply/discussion/timeline endpoints
+- `GET /api/literature`, CRUD/link/upload/download
+- `GET /api/admin/notifications`, `POST /api/admin/notifications/<id>/retry`
+
+### Служебные
+
+- `GET /api/schema` — схема и версия
+- `GET /proxy-health` — health proxy
+- `GET /debug` — отладочная информация
+
+---
+
+## 11. Лицензия
+
+MIT, см. `LICENSE`.

@@ -1,0 +1,156 @@
+name: de_matrix Deploy Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollback_ref:
+        description: "Git tag/SHA/branch for rollback"
+        required: true
+        type: string
+      create_pre_rollback_backup:
+        description: "Create DB backup before rollback"
+        required: true
+        type: boolean
+        default: true
+      smoke_mode:
+        description: "Post-rollback smoke mode"
+        required: true
+        type: choice
+        default: strict
+        options:
+          - strict
+          - proxy-only
+
+permissions:
+  contents: read
+
+concurrency:
+  group: de-matrix-prod-rollback
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    name: Rollback Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+    steps:
+      - name: Validate required production secrets
+        env:
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          PROD_APP_DIR: ${{ secrets.PROD_APP_DIR }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+        run: |
+          missing=0
+          for key in PROD_SSH_HOST PROD_SSH_USER PROD_SSH_PRIVATE_KEY PROD_APP_DIR; do
+            value="$(printenv "$key" || true)"
+            if [ -z "$value" ]; then
+              echo "::error::Missing required secret: $key"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          if [ -z "${PROD_SSH_PORT}" ]; then
+            echo "PROD_SSH_PORT is empty, defaulting to 22"
+          fi
+
+      - name: Configure SSH key and known_hosts
+        env:
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${PROD_SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${PROD_SSH_HOST}" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Rollback on remote host
+        env:
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_APP_DIR: ${{ secrets.PROD_APP_DIR }}
+          ROLLBACK_REF: ${{ inputs.rollback_ref }}
+          CREATE_BACKUP: ${{ inputs.create_pre_rollback_backup }}
+          SMOKE_MODE: ${{ inputs.smoke_mode }}
+        run: |
+          SSH_PORT="${PROD_SSH_PORT:-22}"
+          echo "Rollback ref: ${ROLLBACK_REF}"
+          echo "Smoke mode: ${SMOKE_MODE}"
+          ssh -p "${SSH_PORT}" "${PROD_SSH_USER}@${PROD_SSH_HOST}" bash -s -- "${PROD_APP_DIR}" "${ROLLBACK_REF}" "${CREATE_BACKUP}" "${SMOKE_MODE}" <<'EOF'
+          set -euo pipefail
+          APP_DIR="$1"
+          ROLLBACK_REF="$2"
+          CREATE_BACKUP="$3"
+          SMOKE_MODE="$4"
+
+          cd "${APP_DIR}"
+          chmod +x scripts/*.sh
+
+          if [ "${CREATE_BACKUP}" = "true" ]; then
+            echo "[rollback] creating pre-rollback backup"
+            ./scripts/db_backup.sh "./data/db_backups/pre-rollback"
+          fi
+
+          git fetch --all --tags
+          git checkout --force "${ROLLBACK_REF}"
+
+          ./scripts/prod_up.sh
+          ./scripts/prod_status.sh
+
+          HTTP_PORT="$(awk -F= '/^DE_MATRIX_PROXY_HTTP_PORT=/{print $2}' .env | tail -n1)"
+          HTTPS_PORT="$(awk -F= '/^DE_MATRIX_PROXY_HTTPS_PORT=/{print $2}' .env | tail -n1)"
+          HTTP_PORT="${HTTP_PORT:-80}"
+          HTTPS_PORT="${HTTPS_PORT:-443}"
+
+          if ! command -v curl >/dev/null 2>&1; then
+            echo "[rollback] curl is required for post-rollback smoke checks"
+            exit 1
+          fi
+
+          smoke_ok=0
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            echo "[rollback] smoke attempt ${attempt}/10"
+            case "${SMOKE_MODE}" in
+              strict)
+                if curl -fsS "http://localhost:${HTTP_PORT}/proxy-health" >/dev/null \
+                  && curl -kfsS "https://localhost:${HTTPS_PORT}/proxy-health" >/dev/null \
+                  && curl -kfsS "https://localhost:${HTTPS_PORT}/api/health" >/dev/null; then
+                  smoke_ok=1
+                  break
+                fi
+                ;;
+              proxy-only)
+                if curl -fsS "http://localhost:${HTTP_PORT}/proxy-health" >/dev/null \
+                  && curl -kfsS "https://localhost:${HTTPS_PORT}/proxy-health" >/dev/null; then
+                  smoke_ok=1
+                  break
+                fi
+                ;;
+              *)
+                echo "[rollback] unsupported smoke mode: ${SMOKE_MODE}"
+                exit 1
+                ;;
+            esac
+            sleep 3
+          done
+
+          if [ "${smoke_ok}" -ne 1 ]; then
+            echo "[rollback] post-rollback smoke check failed"
+            exit 1
+          fi
+          EOF
+
+      - name: Post-rollback summary
+        run: |
+          echo "Rollback completed."
+          echo "Ref: ${{ inputs.rollback_ref }}"
+          echo "Smoke mode: ${{ inputs.smoke_mode }}"
+          echo "Post-rollback smoke check: PASSED"

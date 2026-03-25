@@ -1,0 +1,108 @@
+name: de_matrix Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to deploy (branch, tag, or SHA)"
+        required: true
+        default: "main"
+        type: string
+  workflow_run:
+    workflows:
+      - de_matrix Release Gate
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: de-matrix-prod-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Production Host
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      }}
+    environment:
+      name: production
+    steps:
+      - name: Resolve deploy ref
+        id: resolve-ref
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "ref=${{ inputs.ref }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate required production secrets
+        env:
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          PROD_APP_DIR: ${{ secrets.PROD_APP_DIR }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+        run: |
+          missing=0
+          for key in PROD_SSH_HOST PROD_SSH_USER PROD_SSH_PRIVATE_KEY PROD_APP_DIR; do
+            value="$(printenv "$key" || true)"
+            if [ -z "$value" ]; then
+              echo "::error::Missing required secret: $key"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          if [ -z "${PROD_SSH_PORT}" ]; then
+            echo "PROD_SSH_PORT is empty, defaulting to 22"
+          fi
+
+      - name: Configure SSH key and known_hosts
+        env:
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${PROD_SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${PROD_SSH_HOST}" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy on remote host
+        env:
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_APP_DIR: ${{ secrets.PROD_APP_DIR }}
+          DEPLOY_REF: ${{ steps.resolve-ref.outputs.ref }}
+        run: |
+          SSH_PORT="${PROD_SSH_PORT:-22}"
+          echo "Deploy ref: ${DEPLOY_REF}"
+          ssh -p "${SSH_PORT}" "${PROD_SSH_USER}@${PROD_SSH_HOST}" bash -s -- "${PROD_APP_DIR}" "${DEPLOY_REF}" <<'EOF'
+          set -euo pipefail
+          APP_DIR="$1"
+          DEPLOY_REF="$2"
+
+          cd "${APP_DIR}"
+          git fetch --all --tags
+          git checkout --force "${DEPLOY_REF}"
+          chmod +x scripts/*.sh
+          ./scripts/prod_up.sh
+          ./scripts/prod_status.sh
+          docker compose exec -T app python scripts/notify_release.py --ref "${DEPLOY_REF}" || true
+          EOF
+
+      - name: Post-deploy summary
+        run: |
+          echo "Production deployment completed."
+          echo "Ref: ${{ steps.resolve-ref.outputs.ref }}"

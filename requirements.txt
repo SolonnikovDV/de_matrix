@@ -9,3 +9,6 @@ MarkupSafe
 PyYAML
 pandas
 openpyxl
+SQLAlchemy
+psycopg[binary]
+pymongo

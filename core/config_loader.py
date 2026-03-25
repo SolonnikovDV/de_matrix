@@ -14,6 +14,8 @@ CONFIG_DIR = BASE_DIR / "config"
 DEFAULT_SOURCE_DIR = "data/sources"
 DEFAULT_CHECKPOINT_FILE = "data/checkpoint.yaml"
 DEFAULT_LIBRARY_DIR = "data/library"
+DEFAULT_STORAGE_MODE = "file"
+DEFAULT_APPROVAL_REQUIRED = True
 
 _metadata_cache: Optional[Dict] = None
 
@@ -90,6 +92,8 @@ def load_app_config() -> Dict[str, Any]:
     cfg.setdefault("default_source", None)
     cfg.setdefault("literature_dir", cfg.get("library_dir", DEFAULT_LIBRARY_DIR))
     cfg.setdefault("flexible", True)
+    cfg.setdefault("storage_mode", DEFAULT_STORAGE_MODE)
+    cfg.setdefault("approval_required", DEFAULT_APPROVAL_REQUIRED)
     return cfg
 
 

@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}Журнал уведомлений{% endblock %}
+{% block header_title %}Журнал уведомлений{% endblock %}
+{% block footer_hint %}Только для admin: аудит и повторная отправка уведомлений{% endblock %}
+
+{% block content %}
+<div class="import-container">
+    <div class="import-section">
+        <h2><i class="fas fa-envelope-open-text"></i> Notification logs</h2>
+        <p class="reload-hint">История отправок email с фильтрацией по статусу и retry failed/skipped событий.</p>
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap: wrap;">
+            <label for="statusFilter">Статус:</label>
+            <select id="statusFilter" class="form-input" style="max-width:220px;">
+                <option value="">all</option>
+                <option value="pending">pending</option>
+                <option value="sent">sent</option>
+                <option value="failed">failed</option>
+                <option value="skipped">skipped</option>
+            </select>
+            <label for="searchInput">Поиск:</label>
+            <input id="searchInput" class="form-input" type="text" placeholder="event/recipient/error/created_by" style="min-width:280px;">
+            <label style="display:flex; align-items:center; gap:6px;">
+                <input id="onlyFailedInput" type="checkbox">
+                Only failed/skipped
+            </label>
+            <label for="limitInput">Limit:</label>
+            <input id="limitInput" class="form-input" type="number" min="1" max="500" value="100" style="max-width:110px;">
+            <label style="display:flex; align-items:center; gap:6px;">
+                <input id="autoRefreshInput" type="checkbox" checked>
+                Auto refresh
+            </label>
+            <select id="refreshSecInput" class="form-input" style="max-width:110px;">
+                <option value="5">5s</option>
+                <option value="10" selected>10s</option>
+                <option value="20">20s</option>
+                <option value="30">30s</option>
+            </select>
+            <button class="btn btn-primary" onclick="loadNotifications()"><i class="fas fa-sync"></i> Обновить</button>
+        </div>
+        <div id="notificationsList"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function esc(s) {
+    return String(s || '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
+let refreshTimer = null;
+let notifDebounce = null;
+
+function restartAutoRefresh() {
+    if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+    }
+    const enabled = document.getElementById('autoRefreshInput').checked;
+    if (!enabled) return;
+    let sec = Number.parseInt(document.getElementById('refreshSecInput').value || '10', 10);
+    if (Number.isNaN(sec) || sec < 3) sec = 10;
+    refreshTimer = setInterval(() => {
+        loadNotifications();
+    }, sec * 1000);
+}
+
+async function loadNotifications() {
+    const container = document.getElementById('notificationsList');
+    container.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i><p>Загрузка...</p></div>';
+    const status = (document.getElementById('statusFilter').value || '').trim();
+    const q = (document.getElementById('searchInput').value || '').trim();
+    const onlyFailed = document.getElementById('onlyFailedInput').checked;
+    let limit = Number.parseInt(document.getElementById('limitInput').value || '100', 10);
+    if (Number.isNaN(limit) || limit < 1) limit = 100;
+    if (limit > 500) limit = 500;
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (q) params.set('q', q);
+    if (onlyFailed) params.set('only_failed', '1');
+    params.set('limit', String(limit));
+    const r = await fetch(`/api/admin/notifications?${params.toString()}`);
+    const data = await r.json();
+    if (!data.ok) {
+        container.innerHTML = `<div class="error-message">${esc(data.error || 'Ошибка')}</div>`;
+        return;
+    }
+    const items = data.items || [];
+    if (!items.length) {
+        container.innerHTML = '<p>Нет записей уведомлений.</p>';
+        return;
+    }
+    let html = '<table class="preview-table"><thead><tr><th>ID</th><th>Event</th><th>Status</th><th>Recipients</th><th>Attempts</th><th>Error</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
+    for (const n of items) {
+        const recipients = Array.isArray(n.recipients) ? n.recipients.join(', ') : '';
+        const canRetry = n.status === 'failed' || n.status === 'skipped';
+        html += `<tr>
+            <td>${n.id}</td>
+            <td>${esc(n.event_type)}</td>
+            <td>${esc(n.status)}</td>
+            <td>${esc(recipients)}</td>
+            <td>${n.attempts || 0}</td>
+            <td>${esc(n.error || '')}</td>
+            <td>${esc(n.created_at || '')}</td>
+            <td>
+                ${canRetry ? `<button class="btn btn-sm btn-warning" onclick="retryNotification(${n.id})">Retry</button>` : ''}
+                <button class="btn btn-sm btn-secondary" onclick="showDetailsFromEncoded('${encodeURIComponent(JSON.stringify(n))}')">Details</button>
+            </td>
+        </tr>`;
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+async function retryNotification(id) {
+    const r = await fetch(`/api/admin/notifications/${id}/retry`, { method: 'POST' });
+    const data = await r.json();
+    if (data.ok) {
+        alert(`Retry status: ${data.status}`);
+    } else {
+        alert(data.error || 'Retry failed');
+    }
+    await loadNotifications();
+}
+
+function showDetails(item) {
+    const text = [
+        `ID: ${item.id}`,
+        `Event: ${item.event_type}`,
+        `Status: ${item.status}`,
+        `Subject: ${item.subject || ''}`,
+        `Recipients: ${(item.recipients || []).join(', ')}`,
+        `Attempts: ${item.attempts || 0}`,
+        `Error: ${item.error || '-'}`,
+        `Context: ${JSON.stringify(item.context || {}, null, 2)}`,
+    ].join('\n');
+    alert(text);
+}
+
+function showDetailsFromEncoded(encoded) {
+    try {
+        showDetails(JSON.parse(decodeURIComponent(encoded)));
+    } catch (e) {
+        alert(`Не удалось открыть детали: ${e.message}`);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('statusFilter').addEventListener('change', loadNotifications);
+    document.getElementById('searchInput').addEventListener('input', () => {
+        if (notifDebounce) clearTimeout(notifDebounce);
+        notifDebounce = setTimeout(loadNotifications, 300);
+    });
+    document.getElementById('onlyFailedInput').addEventListener('change', loadNotifications);
+    document.getElementById('autoRefreshInput').addEventListener('change', restartAutoRefresh);
+    document.getElementById('refreshSecInput').addEventListener('change', restartAutoRefresh);
+    loadNotifications();
+    restartAutoRefresh();
+});
+</script>
+{% endblock %}

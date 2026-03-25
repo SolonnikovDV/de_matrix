@@ -62,6 +62,9 @@
                                             data-leaf-path="{{ domain_loop.index0 }}/{{ skill_loop.index0 }}/{{ action_loop.index0 }}/{{ loop.index0 }}">
                                             <i class="fas fa-angle-right" style="color: {{ skill_color }}"></i>
                                             <span class="leaf-text">{{ sub.text }}</span>
+                                            {% if sub.level_tag %}
+                                            <span class="leaf-level-badge">{{ sub.level_tag|upper }}</span>
+                                            {% endif %}
                                             <span class="leaf-lit-badges"></span>
                                             <i class="fas fa-link leaf-bind-btn" title="Привязать литературу" data-leaf-path="{{ domain_loop.index0 }}/{{ skill_loop.index0 }}/{{ action_loop.index0 }}/{{ loop.index0 }}"></i>
                                         </li>
@@ -77,6 +80,9 @@
                                         data-leaf-path="{{ domain_loop.index0 }}/{{ skill_loop.index0 }}/{{ action_loop.index0 }}">
                                         <i class="fas fa-check-circle" style="color: {{ domain_color }}"></i>
                                         <span class="leaf-text">{{ action.text }}</span>
+                                        {% if action.level_tag %}
+                                        <span class="leaf-level-badge">{{ action.level_tag|upper }}</span>
+                                        {% endif %}
                                         <span class="leaf-lit-badges"></span>
                                         <i class="fas fa-link leaf-bind-btn" title="Привязать литературу" data-leaf-path="{{ domain_loop.index0 }}/{{ skill_loop.index0 }}/{{ action_loop.index0 }}"></i>
                                     </li>
@@ -104,8 +110,7 @@
 
 {% block extra_css %}
 <style>
-.leaf-bind-btn { margin-left: 8px; opacity: 0.6; cursor: pointer; font-size: 0.85em; }
-.leaf-bind-btn { transition: opacity 0.2s ease, color 0.2s ease; }
+.leaf-bind-btn { margin-left: 8px; opacity: 0.6; cursor: pointer; font-size: 0.85em; transition: opacity 0.2s ease, color 0.2s ease; }
 .leaf-bind-btn:hover { opacity: 1; color: #3f6fd8; }
 .leaf-lit-badges { margin-left: 6px; }
 .lit-badge { font-size: 0.75em; color: #27ae60; margin-right: 4px; }
@@ -121,6 +126,17 @@
     background: linear-gradient(90deg, #e9eef9 0%, #f7f9ff 50%, #e9eef9 100%);
     background-size: 200% 100%;
     animation: leafBadgePulse 1.2s ease-in-out infinite;
+}
+.leaf-level-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.7em;
+    letter-spacing: 0.04em;
+    color: #2f4f98;
+    background: #eaf1ff;
+    border: 1px solid #cfdcff;
 }
 @keyframes leafBadgePulse {
     0% { background-position: 200% 0; }

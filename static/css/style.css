@@ -634,6 +634,17 @@ body {
     text-align: center;
 }
 
+.tree-node-level-badge {
+    flex: 0 0 auto;
+    font-size: 0.68em;
+    letter-spacing: 0.04em;
+    color: #2f4f98;
+    background: #eaf1ff;
+    border: 1px solid #cfdcff;
+    padding: 2px 7px;
+    border-radius: 999px;
+}
+
 .tree-node.active .tree-node-count {
     background: rgba(52, 152, 219, 0.2);
     color: #2980b9;
@@ -1157,6 +1168,21 @@ body {
     color: white;
     font-size: 0.9em;
     font-weight: 500;
+}
+
+.level-badge {
+    background: #eaf1ff;
+    color: #2f4f98;
+    border: 1px solid #cfdcff;
+}
+
+.review-questions-list {
+    margin: 0;
+    padding-left: 22px;
+}
+
+.review-questions-list li {
+    margin-bottom: 8px;
 }
 
 .skill-badge {

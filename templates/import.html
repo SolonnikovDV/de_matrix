@@ -4,7 +4,7 @@
 
 {% block header_title %}Догрузка данных{% endblock %}
 
-{% block footer_hint %}JSON или Excel. Формат: Domain, Skill, Action, Subaction, Description, Template ID{% endblock %}
+{% block footer_hint %}JSON или Excel. Формат: Domain, Skill, Action, Subaction, Description, Template ID, Level Tag, Review Questions{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -64,7 +64,7 @@
         <h2><i class="fas fa-upload"></i> Догрузка данных</h2>
         <div class="template-block">
             <strong>Единый шаблон Excel:</strong>
-            <code class="template-code-start">Domain</code>, <code>Skill</code>, <code>Action</code>, <code>Subaction</code>, <code>Description</code>, <code>Template ID</code>
+            <code class="template-code-start">Domain</code>, <code>Skill</code>, <code>Action</code>, <code>Subaction</code>, <code>Description</code>, <code>Template ID</code>, <code>Level Tag</code>, <code>Review Questions</code>
             <a href="/api/import/template" class="btn btn-sm template-download-link">
                 <i class="fas fa-download"></i> Скачать шаблон
             </a>
@@ -292,11 +292,11 @@ function renderPreview(data) {
     let html = '';
     if (data.preview && data.preview.length) {
         html += `<p>Доменов: ${data.domains_count || 0}, записей: ${data.preview.length}</p>`;
-        html += `<table class="preview-table"><thead><tr><th>Домен</th><th>Навык</th><th>Действие</th><th>Поддействие</th><th>Template ID</th></tr></thead><tbody>`;
+        html += `<table class="preview-table"><thead><tr><th>Домен</th><th>Навык</th><th>Действие</th><th>Поддействие</th><th>Template ID</th><th>Уровень</th><th>Проверочные вопросы</th></tr></thead><tbody>`;
         data.preview.slice(0, 50).forEach(row => {
-            html += `<tr><td>${escapeHtml(row.domain)}</td><td>${escapeHtml(row.skill)}</td><td>${escapeHtml(row.action)}</td><td>${escapeHtml(row.subaction)}</td><td>${escapeHtml(row.template_id || '')}</td></tr>`;
+            html += `<tr><td>${escapeHtml(row.domain)}</td><td>${escapeHtml(row.skill)}</td><td>${escapeHtml(row.action)}</td><td>${escapeHtml(row.subaction)}</td><td>${escapeHtml(row.template_id || '')}</td><td>${escapeHtml(row.level_tag || '')}</td><td>${escapeHtml(row.review_questions || '')}</td></tr>`;
         });
-        if (data.preview.length > 50) html += `<tr><td colspan="5">... и ещё ${data.preview.length - 50} записей</td></tr>`;
+        if (data.preview.length > 50) html += `<tr><td colspan="7">... и ещё ${data.preview.length - 50} записей</td></tr>`;
         html += '</tbody></table>';
     } else if (v.ok) {
         html = '<p>Файл успешно прочитан, но данных для догрузки пока нет (пустой шаблон).</p>';
@@ -356,9 +356,15 @@ async function doUpload() {
         const r = await fetch('/api/source/upload', { method: 'POST', body: formData });
         const data = await r.json();
         if (data.ok) {
-            alert('Данные загружены. Страница будет перезагружена.');
+            if (data.queued_for_approval) {
+                const idPart = data.change_id ? ` CR #${data.change_id}.` : '';
+                const batchPart = data.staging_batch_id ? ` Batch #${data.staging_batch_id}.` : '';
+                alert(`Изменения отправлены на апрув${idPart}${batchPart} Пока не применены к матрице.`);
+            } else {
+                alert('Данные загружены.');
+            }
             closeUploadModal();
-            window.location.reload();
+            window.location.href = '/changes';
         } else {
             alert('Ошибка: ' + (data.error || 'Unknown'));
         }

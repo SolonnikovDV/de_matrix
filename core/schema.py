@@ -17,12 +17,14 @@ DOMAIN_KEYS = {"name", "skills"}
 SKILL_KEYS = {"name", "description", "actions"}
 
 # Допустимые ключи в action (стандартный формат)
-ACTION_KEYS = {"text", "template_id", "subactions"}
+ACTION_KEYS = {"text", "template_id", "subactions", "level_tag", "review_questions"}
 # Допустимые ключи в action (формат группы: type="group")
 ACTION_GROUP_KEYS = {"type", "name", "items"}
 
 # Допустимые ключи в subaction
-SUBACTION_KEYS = {"text", "template_id"}
+SUBACTION_KEYS = {"text", "template_id", "level_tag", "review_questions"}
+
+ALLOWED_LEVEL_TAGS = {"junior", "middle", "senior"}
 
 
 @dataclass
@@ -46,6 +48,32 @@ class ValidationResult:
 
 def _path_str(path: List[str]) -> str:
     return " → ".join(path) if path else "корень"
+
+
+def _validate_leaf_meta(path: List[str], node: Dict[str, Any], result: ValidationResult) -> None:
+    """Проверяет level_tag и review_questions для листового элемента."""
+    level_tag = node.get("level_tag")
+    if level_tag not in (None, ""):
+        level_value = str(level_tag).strip().lower()
+        if level_value not in ALLOWED_LEVEL_TAGS:
+            result.errors.append(
+                f"{_path_str(path)}: level_tag должен быть одним из {', '.join(sorted(ALLOWED_LEVEL_TAGS))}"
+            )
+            result.ok = False
+
+    review_questions = node.get("review_questions")
+    if review_questions in (None, ""):
+        return
+    if not isinstance(review_questions, list):
+        result.errors.append(f"{_path_str(path)}: review_questions должен быть массивом строк")
+        result.ok = False
+        return
+    for qi, question in enumerate(review_questions):
+        if not isinstance(question, str) or not question.strip():
+            result.errors.append(
+                f"{_path_str(path + [f'review_questions[{qi}]'])}: вопрос должен быть непустой строкой"
+            )
+            result.ok = False
 
 
 def validate_source(data: Any) -> ValidationResult:
@@ -176,6 +204,7 @@ def validate_source(data: Any) -> ValidationResult:
                             f"{_path_str(apath)}: template_id '{tpl_id}' не найден в action_templates. "
                             "Добавьте шаблон или оставьте template_id пустым."
                         )
+                    _validate_leaf_meta(apath, action, result)
 
                 if unknown_a:
                     result.warnings.append(f"{_path_str(apath)}: неизвестные ключи: {', '.join(sorted(unknown_a))}")
@@ -204,6 +233,7 @@ def validate_source(data: Any) -> ValidationResult:
                                 result.recommendations.append(
                                     f"{_path_str(subpath)}: template_id '{sub_tpl}' не найден в action_templates."
                                 )
+                            _validate_leaf_meta(subpath, sub, result)
                             unknown_sub = set(sub.keys()) - SUBACTION_KEYS
                             if unknown_sub:
                                 result.warnings.append(
@@ -225,7 +255,7 @@ def get_schema_info() -> Dict[str, Any]:
         "structure": {
             "domain": {"required": ["name", "skills"], "optional": []},
             "skill": {"required": ["name", "actions"], "optional": ["description"]},
-            "action": {"required": ["text"], "optional": ["template_id", "subactions"]},
-            "subaction": {"required": ["text"], "optional": ["template_id"]},
+            "action": {"required": ["text"], "optional": ["template_id", "subactions", "level_tag", "review_questions"]},
+            "subaction": {"required": ["text"], "optional": ["template_id", "level_tag", "review_questions"]},
         },
     }

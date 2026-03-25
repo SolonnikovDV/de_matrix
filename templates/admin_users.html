@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}Администрирование пользователей{% endblock %}
+{% block header_title %}Администрирование пользователей{% endblock %}
+{% block footer_hint %}Только для роли admin: CRUD пользователей и ролей{% endblock %}
+
+{% block content %}
+<div class="import-container">
+    <div class="import-section">
+        <h2><i class="fas fa-user-shield"></i> Пользователи и роли</h2>
+        <p class="reload-hint">Управление учетными записями: добавить, изменить роль, переименовать, удалить.</p>
+        <div style="display:flex; gap:10px; margin-bottom:14px;">
+            <button class="btn btn-primary" onclick="createUser()"><i class="fas fa-user-plus"></i> Добавить</button>
+            <button class="btn btn-secondary" onclick="loadUsers()"><i class="fas fa-sync"></i> Обновить</button>
+        </div>
+        <div id="usersList"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function loadUsers() {
+    const el = document.getElementById('usersList');
+    el.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i><p>Загрузка...</p></div>';
+    const r = await fetch('/api/admin/users');
+    const data = await r.json();
+    if (!data.ok) {
+        el.innerHTML = `<div class="error-message">${data.error || 'Ошибка'}</div>`;
+        return;
+    }
+    const items = data.items || [];
+    if (!items.length) {
+        el.innerHTML = '<p>Пользователей пока нет.</p>';
+        return;
+    }
+    let html = '<table class="preview-table"><thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Имя</th><th>Email</th><th>Активен</th><th>Смена пароля</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
+    for (const u of items) {
+        html += `<tr>
+            <td>${u.id}</td>
+            <td>${u.username}</td>
+            <td>${u.role}</td>
+            <td>${u.full_name || ''}</td>
+            <td>${u.email || ''}</td>
+            <td>${u.is_active ? 'yes' : 'no'}</td>
+            <td>${u.must_change_password ? 'required' : 'ok'}</td>
+            <td>${u.created_at || ''}</td>
+            <td>
+                <button class="btn btn-sm btn-info" onclick='editUser(${JSON.stringify(u)})'>Edit</button>
+                <button class="btn btn-sm btn-warning" onclick='resetTempPassword(${u.id}, ${JSON.stringify(u.username)})'>Reset password</button>
+                <button class="btn btn-sm btn-danger" onclick='deleteUser(${u.id}, ${JSON.stringify(u.username)})'>Delete</button>
+            </td>
+        </tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+}
+
+async function createUser() {
+    const username = (prompt('Username:', '') || '').trim();
+    if (!username) return;
+    const full_name = (prompt('Full name:', '') || '').trim();
+    const email = (prompt('Email:', '') || '').trim();
+    const role = ((prompt('Role (user/admin):', 'user') || 'user').trim().toLowerCase());
+    const temp_password = (prompt('Temporary password (min 10 chars):', '') || '').trim();
+    if (temp_password.length < 10) {
+        alert('Temporary password must be at least 10 characters');
+        return;
+    }
+    const r = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ username, role, full_name, email, temp_password }),
+    });
+    const data = await r.json();
+    if (data.ok) alert('Пользователь создан. Временный пароль выдан, обязательна смена при первом входе.');
+    else alert(data.error || 'Ошибка создания');
+    await loadUsers();
+}
+
+async function editUser(current) {
+    const username = prompt('New username:', current.username || '');
+    if (username === null) return;
+    const role = prompt('New role (user/admin):', current.role || 'user');
+    if (role === null) return;
+    const full_name = prompt('Full name:', current.full_name || '');
+    if (full_name === null) return;
+    const email = prompt('Email:', current.email || '');
+    if (email === null) return;
+    const is_active = confirm('Аккаунт активен? OK=yes, Cancel=no');
+    const r = await fetch(`/api/admin/users/${current.id}`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            username: username.trim(),
+            role: role.trim().toLowerCase(),
+            full_name: full_name.trim(),
+            email: email.trim(),
+            is_active,
+        }),
+    });
+    const data = await r.json();
+    if (!data.ok) alert(data.error || 'Ошибка обновления');
+    await loadUsers();
+}
+
+async function resetTempPassword(id, username) {
+    const reset_temp_password = (prompt(`Новый временный пароль для ${username}:`, '') || '').trim();
+    if (!reset_temp_password) return;
+    const r = await fetch(`/api/admin/users/${id}`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ reset_temp_password }),
+    });
+    const data = await r.json();
+    if (data.ok) alert('Временный пароль установлен. При следующем входе пользователь обязан сменить пароль.');
+    else alert(data.error || 'Ошибка сброса пароля');
+    await loadUsers();
+}
+
+async function deleteUser(id, username) {
+    if (!confirm(`Удалить пользователя ${username}?`)) return;
+    const r = await fetch(`/api/admin/users/${id}`, {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({}),
+    });
+    const data = await r.json();
+    if (!data.ok) alert(data.error || 'Ошибка удаления');
+    await loadUsers();
+}
+
+document.addEventListener('DOMContentLoaded', loadUsers);
+</script>
+{% endblock %}

@@ -1,0 +1,58 @@
+name: de_matrix Nightly
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: de-matrix-nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DE_MATRIX_PROXY_HTTP_PORT: "18080"
+      DE_MATRIX_PROXY_HTTPS_PORT: "18443"
+      DE_MATRIX_MAIL_UI_PORT: "18025"
+      DE_MATRIX_MAIL_SMTP_PORT: "11025"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate compose (base/prod)
+        run: |
+          docker compose config >/tmp/de_matrix_compose_base.yaml
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config >/tmp/de_matrix_compose_prod.yaml
+
+      - name: Full smoke/e2e with rollback
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/smoke_all.sh --rollback
+
+      - name: Verify hardened proxy health
+        run: |
+          ./scripts/fail2ban_prepare.sh
+          DE_MATRIX_PROXY_HTTP_PORT=18080 DE_MATRIX_PROXY_HTTPS_PORT=18443 \
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d proxy
+          curl -fSs http://localhost:18080/proxy-health
+          curl -fkSs https://localhost:18443/proxy-health
+
+      - name: Verify mail service and notification smoke
+        run: |
+          curl -fSs http://127.0.0.1:18025
+          docker compose exec -T app python scripts/notification_smoke_check.py
+
+      - name: Dump docker status on failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --no-color --tail=200
+
+      - name: Tear down stacks
+        if: always()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v || true
+          docker compose down -v || true

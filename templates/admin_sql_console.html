@@ -1,0 +1,404 @@
+{% extends "base.html" %}
+
+{% block title %}SQL консоль администратора{% endblock %}
+{% block header_title %}SQL консоль матрицы (admin){% endblock %}
+{% block footer_hint %}Только для роли admin: SQL, сканер объектов, DDL/data, ER-диаграмма{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
+<style>
+    .sql-grid { display: grid; grid-template-columns: 320px 1fr; gap: 16px; }
+    .sql-panel { background: #fff; border: 1px solid #e6edf7; border-radius: 12px; padding: 14px; }
+    .sql-panel h3 { margin: 0 0 10px 0; }
+    .sql-actions { display: flex; gap: 10px; margin: 10px 0 12px; flex-wrap: wrap; }
+    .sql-actions .inline-toggle { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #e6edf7; border-radius: 8px; background: #f9fbff; }
+    .sql-objects { max-height: 480px; overflow: auto; border: 1px solid #ecf0f6; border-radius: 8px; padding: 8px; }
+    .sql-object-item { padding: 6px 8px; border-radius: 6px; cursor: pointer; font-family: monospace; }
+    .sql-object-item:hover { background: #f5f8ff; }
+    .sql-object-type { color: #7d8ca3; font-size: 12px; margin-right: 8px; text-transform: uppercase; }
+    .sql-console-wrap { border: 1px solid #e6edf7; border-radius: 10px; overflow: hidden; }
+    .CodeMirror { height: 320px; font-size: 14px; }
+    .sql-output { margin-top: 12px; border: 1px solid #ecf0f6; border-radius: 8px; padding: 10px; max-height: 320px; overflow: auto; }
+    .sql-output.error { background: #fff1f1; border-color: #f2b8b8; color: #912626; }
+    .ddl-box { background: #0f172a; color: #dbeafe; padding: 10px; border-radius: 8px; white-space: pre-wrap; font-family: monospace; }
+    .diagram-wrap { border: 1px solid #ecf0f6; border-radius: 8px; padding: 10px; overflow: auto; background: #fff; }
+    .history-list { border: 1px solid #ecf0f6; border-radius: 8px; max-height: 180px; overflow: auto; margin-top: 10px; }
+    .history-item { padding: 8px 10px; border-bottom: 1px solid #eef2f9; cursor: pointer; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .history-item:last-child { border-bottom: none; }
+    .history-item:hover { background: #f5f8ff; }
+    .table-preview { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+    .table-preview th, .table-preview td { border: 1px solid #e5ebf7; padding: 6px 8px; text-align: left; }
+    .table-preview th { background: #f3f7ff; }
+    @media (max-width: 1100px) { .sql-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="import-container">
+    <div class="sql-grid">
+        <section class="sql-panel">
+            <h3><i class="fas fa-database"></i> Сканер объектов БД</h3>
+            <p class="reload-hint">Показывает таблицы, view, sequence, функции. Клик по объекту открывает DDL и data-preview.</p>
+            <div class="sql-actions">
+                <button class="btn btn-primary" onclick="scanObjects()"><i class="fas fa-sync"></i> Сканировать</button>
+                <button class="btn btn-secondary" onclick="loadDiagram()"><i class="fas fa-project-diagram"></i> Диаграмма</button>
+            </div>
+            <div id="objectsList" class="sql-objects"></div>
+        </section>
+
+        <section class="sql-panel">
+            <h3><i class="fas fa-terminal"></i> SQL консоль</h3>
+            <div class="sql-console-wrap">
+                <textarea id="sqlEditor">SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;</textarea>
+            </div>
+            <div class="sql-actions">
+                <button class="btn btn-success" onclick="runSql()"><i class="fas fa-play"></i> Выполнить SQL</button>
+                <button class="btn btn-secondary" onclick="insertHintSample()"><i class="fas fa-lightbulb"></i> Подсказка</button>
+                <label class="inline-toggle">
+                    <input type="checkbox" id="sqlReadOnlyToggle" onchange="toggleReadOnly(this.checked)">
+                    <span>Read-only режим</span>
+                </label>
+            </div>
+            <div id="sqlOutput" class="sql-output"></div>
+            <h3 style="margin-top:16px;"><i class="fas fa-history"></i> История SQL</h3>
+            <div class="sql-actions">
+                <button class="btn btn-secondary" onclick="clearSqlHistory()"><i class="fas fa-trash"></i> Очистить историю</button>
+            </div>
+            <div id="sqlHistory" class="history-list"></div>
+            <h3 style="margin-top:16px;"><i class="fas fa-diagram-project"></i> Диаграмма связей</h3>
+            <div class="sql-actions">
+                <button class="btn btn-secondary" onclick="exportDiagramSvg()"><i class="fas fa-file-code"></i> SVG</button>
+                <button class="btn btn-secondary" onclick="exportDiagramPng()"><i class="fas fa-file-image"></i> PNG</button>
+            </div>
+            <div id="diagramWrap" class="diagram-wrap"></div>
+        </section>
+    </div>
+</div>
+
+<div class="modal-overlay is-hidden" id="objectModal">
+    <div class="modal-box" style="max-width: 1100px;">
+        <div class="modal-header">
+            <h3 id="objectModalTitle"><i class="fas fa-code"></i> DDL и содержимое объекта</h3>
+        </div>
+        <div class="modal-body">
+            <h4>DDL</h4>
+            <pre id="objectDdl" class="ddl-box"></pre>
+            <h4 style="margin-top:12px;">Data preview</h4>
+            <div id="objectData"></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeObjectModal()">Закрыть</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/sql-hint.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+const ADMIN_ROLE = 'admin';
+const DEFAULT_ACTOR = 'admin';
+let editor = null;
+let dbObjects = [];
+const SQL_HISTORY_KEY = 'de_matrix_admin_sql_history';
+const SQL_HISTORY_LIMIT = 30;
+
+function adminHeaders() {
+    return {'Content-Type': 'application/json', 'X-Role': ADMIN_ROLE, 'X-Actor': DEFAULT_ACTOR};
+}
+
+function setupEditor() {
+    const area = document.getElementById('sqlEditor');
+    editor = CodeMirror.fromTextArea(area, {
+        mode: 'text/x-sql',
+        lineNumbers: true,
+        matchBrackets: true,
+        theme: 'material-darker',
+        extraKeys: {'Ctrl-Space': 'autocomplete'}
+    });
+}
+
+function toggleReadOnly(isReadOnly) {
+    if (!editor) return;
+    editor.setOption('readOnly', !!isReadOnly);
+}
+
+function getSqlHistory() {
+    try {
+        const raw = localStorage.getItem(SQL_HISTORY_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function saveSqlHistory(items) {
+    localStorage.setItem(SQL_HISTORY_KEY, JSON.stringify(items.slice(0, SQL_HISTORY_LIMIT)));
+}
+
+function pushSqlHistory(sql) {
+    const normalized = (sql || '').trim();
+    if (!normalized) return;
+    const history = getSqlHistory().filter(item => item !== normalized);
+    history.unshift(normalized);
+    saveSqlHistory(history);
+    renderSqlHistory();
+}
+
+function renderSqlHistory() {
+    const el = document.getElementById('sqlHistory');
+    if (!el) return;
+    const history = getSqlHistory();
+    if (!history.length) {
+        el.innerHTML = '<div class="history-item">История пуста</div>';
+        return;
+    }
+    el.innerHTML = history
+        .map((sql, idx) => `<div class="history-item" onclick="applyHistory(${idx})" title="${sql.replace(/"/g, '&quot;')}">${sql}</div>`)
+        .join('');
+}
+
+function applyHistory(index) {
+    const history = getSqlHistory();
+    const sql = history[index];
+    if (!sql || !editor) return;
+    editor.setValue(sql);
+    editor.focus();
+}
+
+function clearSqlHistory() {
+    saveSqlHistory([]);
+    renderSqlHistory();
+}
+
+function buildHintTables() {
+    const tables = {};
+    dbObjects.filter(o => o.type === 'table' || o.type === 'view').forEach(o => {
+        tables[`${o.schema}.${o.name}`] = [];
+        tables[o.name] = [];
+    });
+    return tables;
+}
+
+function attachHints() {
+    if (!editor) return;
+    editor.setOption('hintOptions', {tables: buildHintTables()});
+}
+
+function renderObjects() {
+    const el = document.getElementById('objectsList');
+    if (!dbObjects.length) {
+        el.innerHTML = '<p class="empty-message">Объекты не найдены</p>';
+        return;
+    }
+    el.innerHTML = dbObjects.map(o => (
+        `<div class="sql-object-item" onclick='showObjectDetails(${JSON.stringify(o)})'>` +
+        `<span class="sql-object-type">${o.type}</span>${o.qualified_name}</div>`
+    )).join('');
+}
+
+async function scanObjects() {
+    const el = document.getElementById('objectsList');
+    el.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i><p>Сканирование...</p></div>';
+    const r = await fetch('/api/admin/db/objects', {headers: {'X-Role': ADMIN_ROLE, 'X-Actor': DEFAULT_ACTOR}});
+    const data = await r.json();
+    if (!data.ok) {
+        el.innerHTML = `<div class="error-message">${(data.error && data.error.message) || data.error || 'Ошибка'}</div>`;
+        return;
+    }
+    dbObjects = data.items || [];
+    renderObjects();
+    attachHints();
+}
+
+function closeObjectModal() {
+    const modal = document.getElementById('objectModal');
+    if (modal) {
+        modal.classList.add('is-hidden');
+        modal.style.display = 'none';
+    }
+}
+
+function openObjectModal() {
+    const modal = document.getElementById('objectModal');
+    if (modal) {
+        modal.classList.remove('is-hidden');
+        modal.style.display = 'flex';
+    }
+}
+
+function renderTable(columns, rows) {
+    if (!columns || !columns.length) return '<p class="empty-message">Нет tabular data.</p>';
+    let html = '<table class="table-preview"><thead><tr>';
+    html += columns.map(c => `<th>${c}</th>`).join('');
+    html += '</tr></thead><tbody>';
+    if (!rows || !rows.length) {
+        html += `<tr><td colspan="${columns.length}">Нет строк</td></tr>`;
+    } else {
+        rows.forEach(row => {
+            html += '<tr>' + row.map(v => `<td>${v === null ? 'NULL' : String(v)}</td>`).join('') + '</tr>';
+        });
+    }
+    html += '</tbody></table>';
+    return html;
+}
+
+async function showObjectDetails(obj) {
+    const res = await fetch('/api/admin/db/object/details', {
+        method: 'POST',
+        headers: adminHeaders(),
+        body: JSON.stringify({schema: obj.schema, name: obj.name, type: obj.type, row_limit: 50, actor: DEFAULT_ACTOR, role: ADMIN_ROLE})
+    });
+    const data = await res.json();
+    if (!data.ok) {
+        alert((data.error && data.error.message) || data.error || 'Ошибка');
+        return;
+    }
+    document.getElementById('objectModalTitle').textContent = `${obj.type}: ${obj.qualified_name}`;
+    document.getElementById('objectDdl').textContent = data.ddl || '-- DDL not available';
+    document.getElementById('objectData').innerHTML = renderTable(data.columns || [], data.rows || []);
+    openObjectModal();
+}
+
+function renderSqlResult(data) {
+    const out = document.getElementById('sqlOutput');
+    out.classList.remove('error');
+    if (!data.returns_rows) {
+        out.innerHTML = `<p>OK. Затронуто строк: <strong>${data.row_count}</strong></p>`;
+        return;
+    }
+    out.innerHTML = renderTable(data.columns || [], data.rows || []);
+}
+
+function renderSqlError(data) {
+    const err = data.error || {};
+    const out = document.getElementById('sqlOutput');
+    out.classList.add('error');
+    out.innerHTML = `
+        <p><strong>Ошибка компиляции/выполнения SQL</strong></p>
+        <p>Type: ${err.type || 'n/a'}</p>
+        <p>Message: ${err.primary || err.message || 'n/a'}</p>
+        <p>Detail: ${err.detail || 'n/a'}</p>
+        <p>Position: ${err.position || 'n/a'}</p>
+    `;
+}
+
+async function runSql() {
+    if (document.getElementById('sqlReadOnlyToggle')?.checked) {
+        alert('Включен read-only режим. Снимите флаг для выполнения SQL.');
+        return;
+    }
+    const sql = editor ? editor.getValue() : '';
+    const res = await fetch('/api/admin/db/execute', {
+        method: 'POST',
+        headers: adminHeaders(),
+        body: JSON.stringify({sql, actor: DEFAULT_ACTOR, role: ADMIN_ROLE})
+    });
+    const data = await res.json();
+    if (!data.ok) {
+        renderSqlError(data);
+        return;
+    }
+    pushSqlHistory(sql);
+    renderSqlResult(data);
+    scanObjects();
+    loadDiagram();
+}
+
+function insertHintSample() {
+    if (!editor) return;
+    const sample = "-- Пример:\nSELECT * FROM domains d\nJOIN skills s ON s.domain_id = d.id\nLIMIT 20;";
+    editor.setValue(sample);
+    editor.focus();
+}
+
+async function loadDiagram() {
+    const el = document.getElementById('diagramWrap');
+    el.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i><p>Построение диаграммы...</p></div>';
+    const r = await fetch('/api/admin/db/diagram', {headers: {'X-Role': ADMIN_ROLE, 'X-Actor': DEFAULT_ACTOR}});
+    const data = await r.json();
+    if (!data.ok) {
+        el.innerHTML = `<div class="error-message">${(data.error && data.error.message) || data.error || 'Ошибка'}</div>`;
+        return;
+    }
+    const graphId = 'mermaidGraph_' + Date.now();
+    el.innerHTML = `<pre id="${graphId}" class="mermaid">${data.mermaid}</pre>`;
+    mermaid.initialize({startOnLoad: false, securityLevel: 'loose'});
+    await mermaid.run({querySelector: `#${graphId}`});
+}
+
+function _getDiagramSvg() {
+    return document.querySelector('#diagramWrap svg');
+}
+
+function exportDiagramSvg() {
+    const svg = _getDiagramSvg();
+    if (!svg) {
+        alert('Сначала постройте диаграмму.');
+        return;
+    }
+    const serialized = new XMLSerializer().serializeToString(svg);
+    const blob = new Blob([serialized], {type: 'image/svg+xml;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'matrix-relations-diagram.svg';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function exportDiagramPng() {
+    const svg = _getDiagramSvg();
+    if (!svg) {
+        alert('Сначала постройте диаграмму.');
+        return;
+    }
+    const serialized = new XMLSerializer().serializeToString(svg);
+    const svgBlob = new Blob([serialized], {type: 'image/svg+xml;charset=utf-8'});
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    img.onload = function() {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width || 1600;
+        canvas.height = img.height || 900;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(function(blob) {
+            if (!blob) return;
+            const outUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = outUrl;
+            a.download = 'matrix-relations-diagram.png';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(outUrl);
+        }, 'image/png');
+    };
+    img.onerror = function() {
+        URL.revokeObjectURL(url);
+        alert('Не удалось экспортировать PNG.');
+    };
+    img.src = url;
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    setupEditor();
+    renderSqlHistory();
+    await scanObjects();
+    await loadDiagram();
+});
+</script>
+{% endblock %}

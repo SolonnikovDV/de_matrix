@@ -11,16 +11,12 @@
     <nav class="breadcrumb">
         <a href="/matrix"><i class="fas fa-th-large"></i> Матрица</a>
         <i class="fas fa-chevron-right separator"></i>
-        <a href="/#{{ domain.name|slugify }}">{{ domain.name }}</a>
+        <a href="/domain/{{ di }}">{{ domain.name }}</a>
         <i class="fas fa-chevron-right separator"></i>
-        <a href="/#{{ skill.name|slugify }}">{{ skill.name }}</a>
+        <a href="/domain/{{ di }}/skill/{{ si }}">{{ skill.name }}</a>
         {% if sub_idx is defined and parent_action_text is defined %}
             <i class="fas fa-chevron-right separator"></i>
-            {% if leaf_path is defined %}
-                <a href="/leaf/{{ di }}/{{ si }}/{{ ai }}">{{ parent_action_text }}</a>
-            {% else %}
-                <a href="/action/{{ di }}/{{ si }}/{{ ai }}">{{ parent_action_text }}</a>
-            {% endif %}
+            <a href="/action/{{ di }}/{{ si }}/{{ ai }}">{{ parent_action_text }}</a>
         {% endif %}
         <i class="fas fa-chevron-right separator"></i>
         <span>{{ action.text }}</span>
@@ -35,6 +31,9 @@
             <div class="action-meta">
                 <span class="badge" style="background: {{ domain_color }}">{{ domain.name }}</span>
                 <span class="badge skill-badge" style="background: {{ skill_color }}">{{ skill.name }}</span>
+                {% if action.level_tag %}
+                <span class="badge level-badge">{{ action.level_tag|upper }}</span>
+                {% endif %}
             </div>
         </div>
         
@@ -104,6 +103,30 @@ function loadActionDetails() {
                             <div class="section-content">${data.description}</div>
                         </section>
                     `;
+                }
+
+                if (data.level_tag) {
+                    html += `
+                        <section class="action-section">
+                            <h2><i class="fas fa-layer-group"></i> Уровень компетенции</h2>
+                            <div class="section-content">
+                                <span class="badge level-badge">${String(data.level_tag).toUpperCase()}</span>
+                            </div>
+                        </section>
+                    `;
+                }
+
+                if (data.review_questions && data.review_questions.length) {
+                    html += `
+                        <section class="action-section">
+                            <h2><i class="fas fa-question-circle"></i> Проверочные вопросы</h2>
+                            <div class="section-content">
+                                <ul class="review-questions-list">
+                    `;
+                    data.review_questions.forEach(q => {
+                        html += `<li>${(q || '').replace(/</g, '&lt;')}</li>`;
+                    });
+                    html += `</ul></div></section>`;
                 }
                 
                 if (data.examples && data.examples.length) {
@@ -228,7 +251,7 @@ function copyToClipboard() {
 // Клавиша ESC для возврата
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
-        window.location.href = '/';
+        window.location.href = '/matrix';
     }
 });
 </script>

@@ -1,0 +1,17 @@
+[DEFAULT]
+bantime = ${DE_MATRIX_FAIL2BAN_BANTIME}
+findtime = ${DE_MATRIX_FAIL2BAN_FINDTIME}
+maxretry = ${DE_MATRIX_FAIL2BAN_MAXRETRY}
+backend = auto
+usedns = no
+banaction = iptables-multiport
+ignoreip = 127.0.0.1/8 ::1
+
+[de-matrix-nginx-waf]
+enabled = true
+filter = de-matrix-nginx-waf
+port = http,https
+logpath = /var/log/nginx/access.log
+maxretry = ${DE_MATRIX_FAIL2BAN_MAXRETRY}
+findtime = ${DE_MATRIX_FAIL2BAN_FINDTIME}
+bantime = ${DE_MATRIX_FAIL2BAN_BANTIME}

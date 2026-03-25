@@ -1,0 +1,101 @@
+name: de_matrix CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify Python syntax
+        run: |
+          python -m py_compile app.py
+          python -m py_compile storage/models.py
+          python -m py_compile storage/postgres_repo.py
+          python -m py_compile storage/staging_repo.py
+          python -m py_compile storage/approval_repo.py
+          python -m py_compile core/diff_engine.py
+          python -m py_compile scripts/db_init.py
+          python -m py_compile scripts/db_smoke_check.py
+          python -m py_compile scripts/migrate_file_to_db.py
+          python -m py_compile scripts/e2e_merge_modes_check.py
+          python -m py_compile scripts/notification_smoke_check.py
+          python -m py_compile scripts/notify_release.py
+
+      - name: Validate compose (base)
+        run: docker compose config >/tmp/de_matrix_compose_base.yaml
+
+      - name: Validate compose (prod override)
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml config >/tmp/de_matrix_compose_prod.yaml
+
+      - name: Ensure smtp service is present in base compose
+        run: |
+          if ! awk '
+            /^services:/ { in_services=1; next }
+            in_services && /^[^[:space:]]/ { in_services=0 }
+            in_services && /^[[:space:]]{2}smtp:/ { found=1 }
+            END { exit(found ? 0 : 1) }
+          ' /tmp/de_matrix_compose_base.yaml; then
+            echo "::error::Expected services.smtp in base compose config"
+            exit 1
+          fi
+
+      - name: Ensure admin service is present in prod compose
+        run: |
+          if ! awk '
+            /^services:/ { in_services=1; next }
+            in_services && /^[^[:space:]]/ { in_services=0 }
+            in_services && /^[[:space:]]{2}admin:/ { found=1 }
+            END { exit(found ? 0 : 1) }
+          ' /tmp/de_matrix_compose_prod.yaml; then
+            echo "::error::Expected services.admin in merged prod compose config"
+            exit 1
+          fi
+
+  integration-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DE_MATRIX_PROXY_HTTP_PORT: "18080"
+      DE_MATRIX_PROXY_HTTPS_PORT: "18443"
+      DE_MATRIX_MAIL_UI_PORT: "18025"
+      DE_MATRIX_MAIL_SMTP_PORT: "11025"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start smoke/e2e suite with rollback
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/smoke_all.sh --rollback
+
+      - name: Verify proxy endpoints
+        run: |
+          curl -fSs http://localhost:18080/proxy-health
+          curl -fkSs https://localhost:18443/proxy-health
+
+      - name: Verify smtp/mail endpoints and notification smoke
+        run: |
+          curl -fSs http://127.0.0.1:18025
+          docker compose exec -T app python scripts/notification_smoke_check.py
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v

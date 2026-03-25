@@ -22,6 +22,44 @@ META_KEYS = (
 )
 
 
+def _parse_level_tag(value: Any) -> Optional[str]:
+    """Нормализует уровень компетенции."""
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    aliases = {
+        "junior": "junior",
+        "jr": "junior",
+        "middle": "middle",
+        "mid": "middle",
+        "senior": "senior",
+        "sr": "senior",
+        "джуниор": "junior",
+        "мидл": "middle",
+        "сеньор": "senior",
+    }
+    return aliases.get(text, text)
+
+
+def _parse_review_questions(value: Any) -> List[str]:
+    """Парсит строку/массив проверочных вопросов в список строк."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    text = str(value).strip()
+    if not text:
+        return []
+    text = text.replace("\r\n", "\n")
+    if ";" in text:
+        parts = [p.strip() for p in text.split(";")]
+    else:
+        parts = [p.strip() for p in text.split("\n")]
+    return [p for p in parts if p]
+
+
 def load_json(path: str) -> Dict:
     """Загружает JSON-файл."""
     with open(path, "r", encoding="utf-8") as f:
@@ -111,7 +149,7 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
         finally:
             wb.close()
 
-    # Единый формат: Domain/Домен, Skill/Навык, Action/Действие, Subaction/Поддействие, Description/Описание, Template ID
+    # Единый формат: Domain/Домен, Skill/Навык, Action/Действие, Subaction/Поддействие, Description/Описание, Template ID, Level Tag, Review Questions
     def _col(cols, *candidates):
         for c in candidates:
             if c in cols:
@@ -124,6 +162,8 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
     sub_col = _col(columns, "Subaction", "subaction", "Поддействие")
     desc_col = _col(columns, "Description", "description", "Описание навыка", "Описание")
     tpl_col = _col(columns, "Template ID", "template_id", "Template_ID")
+    level_col = _col(columns, "Level Tag", "level_tag", "Level", "Уровень")
+    questions_col = _col(columns, "Review Questions", "review_questions", "Проверочные вопросы", "Вопросы")
 
     if domain_col and skill_col and action_col:
         domains_map: Dict[str, Dict] = {}
@@ -134,6 +174,8 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
             sub_name = (row.get(sub_col) or "").strip() if sub_col else ""
             desc = (row.get(desc_col) or "").strip() if desc_col else ""
             tpl = (row.get(tpl_col) or "").strip() or None if tpl_col else None
+            level_tag = _parse_level_tag(row.get(level_col)) if level_col else None
+            review_questions = _parse_review_questions(row.get(questions_col)) if questions_col else []
 
             if not d_name and not s_name and not a_name:
                 continue
@@ -153,10 +195,25 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
             if sub_name:
                 actions = skills[s_name]["actions"]
                 if not actions or "subactions" not in actions[-1]:
-                    actions.append({"text": a_name, "template_id": tpl, "subactions": []})
-                actions[-1]["subactions"].append({"text": sub_name, "template_id": tpl})
+                    action_item = {"text": a_name, "template_id": tpl, "subactions": []}
+                    if level_tag:
+                        action_item["level_tag"] = level_tag
+                    if review_questions:
+                        action_item["review_questions"] = review_questions
+                    actions.append(action_item)
+                sub_item = {"text": sub_name, "template_id": tpl}
+                if level_tag:
+                    sub_item["level_tag"] = level_tag
+                if review_questions:
+                    sub_item["review_questions"] = review_questions
+                actions[-1]["subactions"].append(sub_item)
             else:
-                skills[s_name]["actions"].append({"text": a_name, "template_id": tpl})
+                action_item = {"text": a_name, "template_id": tpl}
+                if level_tag:
+                    action_item["level_tag"] = level_tag
+                if review_questions:
+                    action_item["review_questions"] = review_questions
+                skills[s_name]["actions"].append(action_item)
 
         domains_list = []
         for d in domains_map.values():
@@ -171,6 +228,8 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
         name_col = "Name" if "Name" in columns else "name"
         desc_col = "Description" if "Description" in columns else ("description" if "description" in columns else None)
         tpl_col = "Template ID" if "Template ID" in columns else ("template_id" if "template_id" in columns else None)
+        level_col = "Level Tag" if "Level Tag" in columns else ("level_tag" if "level_tag" in columns else None)
+        questions_col = "Review Questions" if "Review Questions" in columns else ("review_questions" if "review_questions" in columns else None)
 
         def parse_level(s):
             try:
@@ -186,10 +245,16 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
             name = (row.get(name_col) or "").strip()
             desc = (row.get(desc_col) or "").strip() if desc_col else ""
             tpl = (row.get(tpl_col) or "").strip() or None if tpl_col else None
+            level_tag = _parse_level_tag(row.get(level_col)) if level_col else None
+            review_questions = _parse_review_questions(row.get(questions_col)) if questions_col else []
             if not name:
                 continue
 
             node = {"name": name, "description": desc, "template_id": tpl, "children": []}
+            if level_tag:
+                node["level_tag"] = level_tag
+            if review_questions:
+                node["review_questions"] = review_questions
             while len(current) > level:
                 current.pop()
             parent = current[-1]
@@ -216,14 +281,28 @@ def _children_to_domains(children: List[Dict]) -> Dict:
             for a in s.get("children", []):
                 if a.get("children"):
                     action = {"text": a.get("name", ""), "template_id": a.get("template_id"), "subactions": []}
+                    if a.get("level_tag"):
+                        action["level_tag"] = a.get("level_tag")
+                    if a.get("review_questions"):
+                        action["review_questions"] = a.get("review_questions")
                     for sub in a["children"]:
-                        action["subactions"].append({
+                        sub_item = {
                             "text": sub.get("name", ""),
                             "template_id": sub.get("template_id"),
-                        })
+                        }
+                        if sub.get("level_tag"):
+                            sub_item["level_tag"] = sub.get("level_tag")
+                        if sub.get("review_questions"):
+                            sub_item["review_questions"] = sub.get("review_questions")
+                        action["subactions"].append(sub_item)
                     skill["actions"].append(action)
                 else:
-                    skill["actions"].append({"text": a.get("name", ""), "template_id": a.get("template_id")})
+                    action_item = {"text": a.get("name", ""), "template_id": a.get("template_id")}
+                    if a.get("level_tag"):
+                        action_item["level_tag"] = a.get("level_tag")
+                    if a.get("review_questions"):
+                        action_item["review_questions"] = a.get("review_questions")
+                    skill["actions"].append(action_item)
             domain["skills"].append(skill)
         domains.append(domain)
     return {"domains": domains}
@@ -250,15 +329,31 @@ def _normalize_action(a: Dict) -> Dict:
             "subactions": [_normalize_subaction(s) for s in (a.get("items") or [])],
         }
     subactions = a.get("subactions")
+    normalized_level = _parse_level_tag(a.get("level_tag"))
+    normalized_questions = _parse_review_questions(a.get("review_questions"))
     if subactions:
-        return {**a, "subactions": [_normalize_subaction(s) for s in subactions]}
-    return dict(a)
+        out = {**a, "subactions": [_normalize_subaction(s) for s in subactions]}
+    else:
+        out = dict(a)
+    if normalized_level:
+        out["level_tag"] = normalized_level
+    if normalized_questions:
+        out["review_questions"] = normalized_questions
+    elif "review_questions" in out and not out["review_questions"]:
+        out.pop("review_questions", None)
+    return out
 
 
 def _normalize_subaction(s: Dict) -> Dict:
-    """Приводит поддействие к формату {text, template_id?}."""
+    """Приводит поддействие к формату {text, template_id?, level_tag?, review_questions?}."""
     if isinstance(s, dict):
-        return {"text": s.get("text", s.get("name", "")), "template_id": s.get("template_id")}
+        out = {"text": s.get("text", s.get("name", "")), "template_id": s.get("template_id")}
+        if s.get("level_tag"):
+            out["level_tag"] = _parse_level_tag(s.get("level_tag"))
+        questions = _parse_review_questions(s.get("review_questions"))
+        if questions:
+            out["review_questions"] = questions
+        return out
     return {"text": str(s), "template_id": None}
 
 

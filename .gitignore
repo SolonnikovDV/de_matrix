@@ -1,24 +1,52 @@
-.gigaide
-.venv
-__pycache__
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.env.development
-.env.test
-.env.production
-.env.local
-.env.development.local
-.env.test.local
-*.zip
-# Скачанные материалы литературы (каталог создаётся автоматически)
-data/library/*
-!data/library/.gitkeep
-# Автобэкапы (можно включить при необходимости)
-data/backups/
+# ----------------------------
+# IDE / local tooling artifacts
+# ----------------------------
+.idea/
+.vscode/
+.gigaide/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
 *.pyc
-.pytest_cache
 .coverage
 htmlcov/
+
+# ----------------------------
+# Local env/secrets (production-safe)
+# ----------------------------
+.env.local
+
+# ----------------------------
+# Local docs/snapshots generated in sessions
+# ----------------------------
+TODO.md
+tig_app_ru.py
+tig_snapshot_de_matrix.md
+
+# ----------------------------
+# Runtime files and backups
+# ----------------------------
+*.log
+*.zip
+*.tar
+*.tar.gz
+data/backups/
+data/db_backups/
+data/library/*
+!data/library/.gitkeep
+
+# Generated fail2ban local config
+security/fail2ban/jail.local
+
+# ----------------------------
+# TLS cert/key artifacts
+# ----------------------------
+proxy/certs/live/*
+proxy/certs/provided/*
+!proxy/certs/live/.gitkeep
+!proxy/certs/provided/.gitkeep
+
+# macOS
+.DS_Store

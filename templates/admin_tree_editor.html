@@ -1,0 +1,405 @@
+{% extends "base.html" %}
+
+{% block title %}Редактор дерева матрицы{% endblock %}
+{% block header_title %}Графический редактор дерева (admin){% endblock %}
+{% block footer_hint %}Изменения идут через CR + diff + approval workflow{% endblock %}
+
+{% block extra_css %}
+<style>
+    .tree-editor-layout { display: grid; grid-template-columns: 1fr 420px; gap: 14px; }
+    .tree-panel { background: #fff; border: 1px solid #e6edf7; border-radius: 12px; padding: 12px; }
+    .tree-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+    .node-card { border: 1px solid #e8eef8; border-radius: 10px; padding: 10px; margin-bottom: 8px; background: #fcfdff; }
+    .node-card.draggable { cursor: move; }
+    .node-card.drop-target { border-color: #2d9cdb; box-shadow: 0 0 0 2px rgba(45, 156, 219, 0.15); }
+    .node-header { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .node-header input, .node-header textarea { flex: 1; min-width: 0; }
+    .node-children { margin-left: 20px; }
+    .label-badge { font-size: 12px; color: #5f6f86; width: 90px; }
+    .small-btn { padding: 6px 10px; font-size: 12px; border: none; border-radius: 8px; cursor: pointer; }
+    .small-btn.add { background: #2d9cdb; color: #fff; }
+    .small-btn.del { background: #d9534f; color: #fff; }
+    .input { width: 100%; padding: 7px 8px; border: 1px solid #dce5f2; border-radius: 8px; }
+    .warning-box { background: #fff9e8; border: 1px solid #f2d58b; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+    .diff-box { max-height: 420px; overflow: auto; border: 1px solid #e6edf7; border-radius: 8px; padding: 10px; }
+    .split-view { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .split-col { border: 1px solid #e6edf7; border-radius: 8px; padding: 8px; background: #fbfdff; }
+    .split-col h4 { margin: 0 0 8px 0; font-size: 13px; color: #384a63; }
+    .tree-outline { max-height: 260px; overflow: auto; border: 1px dashed #d8e3f4; border-radius: 8px; padding: 8px; background: #fff; font-family: monospace; white-space: pre-wrap; font-size: 12px; }
+    .mono { font-family: monospace; white-space: pre-wrap; }
+    .modal-overlay .confirm-body { padding: 10px 0; }
+    @media (max-width: 1180px) { .tree-editor-layout { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="import-container">
+    <div class="tree-editor-layout">
+        <section class="tree-panel">
+            <h2><i class="fas fa-sitemap"></i> Интерактивное редактирование дерева</h2>
+            <p class="reload-hint">Добавляйте/редактируйте/удаляйте домены, навыки, действия и поддействия. Прямого применения нет: только через CR.</p>
+            <div class="tree-actions">
+                <button class="btn btn-primary" onclick="addDomain()"><i class="fas fa-plus"></i> Домен</button>
+                <button class="btn btn-secondary" onclick="reloadData()"><i class="fas fa-sync"></i> Перезагрузить</button>
+                <button class="btn btn-secondary" onclick="resetToBaseline()"><i class="fas fa-undo"></i> Сбросить</button>
+            </div>
+            <div id="treeRoot"></div>
+        </section>
+
+        <aside class="tree-panel">
+            <h3><i class="fas fa-shield-alt"></i> Анализ связей и дифф</h3>
+            <div id="warningsBox"></div>
+            <div class="tree-actions">
+                <button class="btn btn-info" onclick="previewDiff()"><i class="fas fa-search"></i> Preview diff</button>
+                <button class="btn btn-success" onclick="submitForApproval()"><i class="fas fa-paper-plane"></i> Submit for approval</button>
+            </div>
+            <div id="diffBox" class="diff-box"><p class="empty-message">Пока нет preview.</p></div>
+            <div id="splitView" class="split-view"></div>
+        </aside>
+    </div>
+</div>
+
+<div class="modal-overlay is-hidden" id="relationsModal">
+    <div class="modal-box" style="max-width: 700px;">
+        <div class="modal-header"><h3><i class="fas fa-exclamation-triangle"></i> Переопределение реляционных связей</h3></div>
+        <div class="modal-body confirm-body">
+            <div id="relationsModalBody"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-danger" onclick="confirmRelationOverride()">Подтвердить и отправить</button>
+            <button class="btn btn-secondary" onclick="closeRelationsModal()">Отмена</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const ADMIN_ROLE = 'admin';
+const DEFAULT_ACTOR = 'admin';
+let state = {domains: [], templates: {}, literature: {}};
+let baselineDomains = [];
+let lastPreviewWarnings = null;
+let pendingSubmitPayload = null;
+let dragCtx = null;
+
+function adminHeaders() {
+    return {'Content-Type': 'application/json', 'X-Role': ADMIN_ROLE, 'X-Actor': DEFAULT_ACTOR};
+}
+
+function openModal(id) {
+    const m = document.getElementById(id);
+    if (!m) return;
+    m.classList.remove('is-hidden');
+    m.style.display = 'flex';
+}
+function closeModal(id) {
+    const m = document.getElementById(id);
+    if (!m) return;
+    m.classList.add('is-hidden');
+    m.style.display = 'none';
+}
+
+function cloneStateDomains() {
+    return structuredClone(state.domains || []);
+}
+
+function cloneBaselineDomains() {
+    return structuredClone(baselineDomains || []);
+}
+
+function nodeInput(value, placeholder, onChangeExpr) {
+    const safe = (value || '').replaceAll('"', '&quot;');
+    return `<input class="input" value="${safe}" placeholder="${placeholder}" oninput="${onChangeExpr}(this.value)">`;
+}
+
+function dragHandle(level, path) {
+    return `<span title="Перетащите для изменения порядка" style="cursor:grab;color:#7b8da8;"><i class="fas fa-grip-vertical"></i> ${level}#${path}</span>`;
+}
+
+function renderTree() {
+    const root = document.getElementById('treeRoot');
+    if (!root) return;
+    const domains = state.domains || [];
+    if (!domains.length) {
+        root.innerHTML = '<p class="empty-message">Нет доменов. Добавьте первый домен.</p>';
+        return;
+    }
+    let html = '';
+    domains.forEach((d, di) => {
+        html += `<div class="node-card draggable" draggable="true" ondragstart="onNodeDragStart(event, 'domain', '${di}')" ondragover="onNodeDragOver(event)" ondragleave="onNodeDragLeave(event)" ondrop="onNodeDrop(event, 'domain', '${di}')">`;
+        html += `<div class="node-header"><span class="label-badge">Domain</span>${dragHandle('D', di)}${nodeInput(d.name, 'Название домена', `setDomainName.bind(null, ${di})`)}`;
+        html += `<button class="small-btn add" onclick="addSkill(${di})">+ Skill</button><button class="small-btn del" onclick="removeDomain(${di})">Удалить</button></div>`;
+        html += `<div class="node-children">`;
+        (d.skills || []).forEach((s, si) => {
+            html += `<div class="node-card draggable" draggable="true" ondragstart="onNodeDragStart(event, 'skill', '${di},${si}')" ondragover="onNodeDragOver(event)" ondragleave="onNodeDragLeave(event)" ondrop="onNodeDrop(event, 'skill', '${di},${si}')"><div class="node-header"><span class="label-badge">Skill</span>${dragHandle('S', `${di}.${si}`)}${nodeInput(s.name, 'Название навыка', `setSkillName.bind(null, ${di}, ${si})`)}`;
+            html += `<button class="small-btn add" onclick="addAction(${di}, ${si})">+ Action</button><button class="small-btn del" onclick="removeSkill(${di}, ${si})">Удалить</button></div>`;
+            html += `<div class="node-header"><span class="label-badge">Description</span><textarea class="input" rows="2" oninput="setSkillDesc(${di}, ${si}, this.value)">${s.description || ''}</textarea></div>`;
+            html += `<div class="node-children">`;
+            (s.actions || []).forEach((a, ai) => {
+                html += `<div class="node-card draggable" draggable="true" ondragstart="onNodeDragStart(event, 'action', '${di},${si},${ai}')" ondragover="onNodeDragOver(event)" ondragleave="onNodeDragLeave(event)" ondrop="onNodeDrop(event, 'action', '${di},${si},${ai}')"><div class="node-header"><span class="label-badge">Action</span>${dragHandle('A', `${di}.${si}.${ai}`)}${nodeInput(a.text, 'Текст действия', `setActionText.bind(null, ${di}, ${si}, ${ai})`)}`;
+                html += `<button class="small-btn add" onclick="addSubaction(${di}, ${si}, ${ai})">+ Subaction</button><button class="small-btn del" onclick="removeAction(${di}, ${si}, ${ai})">Удалить</button></div>`;
+                html += `<div class="node-header"><span class="label-badge">Template ID</span>${nodeInput(a.template_id || '', 'template_id', `setActionTemplate.bind(null, ${di}, ${si}, ${ai})`)}</div>`;
+                html += `<div class="node-children">`;
+                (a.subactions || []).forEach((sub, subi) => {
+                    html += `<div class="node-card draggable" draggable="true" ondragstart="onNodeDragStart(event, 'subaction', '${di},${si},${ai},${subi}')" ondragover="onNodeDragOver(event)" ondragleave="onNodeDragLeave(event)" ondrop="onNodeDrop(event, 'subaction', '${di},${si},${ai},${subi}')"><div class="node-header"><span class="label-badge">Subaction</span>${dragHandle('SA', `${di}.${si}.${ai}.${subi}`)}${nodeInput(sub.text, 'Текст поддействия', `setSubactionText.bind(null, ${di}, ${si}, ${ai}, ${subi})`)}`;
+                    html += `<button class="small-btn del" onclick="removeSubaction(${di}, ${si}, ${ai}, ${subi})">Удалить</button></div>`;
+                    html += `<div class="node-header"><span class="label-badge">Template ID</span>${nodeInput(sub.template_id || '', 'template_id', `setSubactionTemplate.bind(null, ${di}, ${si}, ${ai}, ${subi})`)}</div></div>`;
+                });
+                html += `</div></div>`;
+            });
+            html += `</div></div>`;
+        });
+        html += `</div></div>`;
+    });
+    root.innerHTML = html;
+}
+
+function _parsePath(pathStr) {
+    return String(pathStr || '')
+        .split(',')
+        .filter(Boolean)
+        .map(Number);
+}
+
+function onNodeDragStart(event, level, pathStr) {
+    dragCtx = {level, path: _parsePath(pathStr)};
+    if (event && event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', JSON.stringify(dragCtx));
+    }
+}
+
+function onNodeDragOver(event) {
+    event.preventDefault();
+    event.currentTarget.classList.add('drop-target');
+}
+
+function onNodeDragLeave(event) {
+    event.currentTarget.classList.remove('drop-target');
+}
+
+function _sameParent(level, fromPath, toPath) {
+    if (level === 'domain') return true;
+    if (level === 'skill') return fromPath[0] === toPath[0];
+    if (level === 'action') return fromPath[0] === toPath[0] && fromPath[1] === toPath[1];
+    if (level === 'subaction') return fromPath[0] === toPath[0] && fromPath[1] === toPath[1] && fromPath[2] === toPath[2];
+    return false;
+}
+
+function _moveInArray(arr, from, to) {
+    if (!Array.isArray(arr) || from === to || from < 0 || to < 0 || from >= arr.length || to >= arr.length) return;
+    const [item] = arr.splice(from, 1);
+    arr.splice(to, 0, item);
+}
+
+function onNodeDrop(event, targetLevel, targetPathStr) {
+    event.preventDefault();
+    event.currentTarget.classList.remove('drop-target');
+    if (!dragCtx) return;
+    const targetPath = _parsePath(targetPathStr);
+    if (dragCtx.level !== targetLevel) return;
+    if (!_sameParent(targetLevel, dragCtx.path, targetPath)) {
+        alert('Перетаскивание разрешено только между соседями одного уровня в одной ветке.');
+        return;
+    }
+    const from = dragCtx.path;
+    const to = targetPath;
+    commit(domains => {
+        if (targetLevel === 'domain') {
+            _moveInArray(domains, from[0], to[0]);
+        } else if (targetLevel === 'skill') {
+            _moveInArray(domains[from[0]].skills, from[1], to[1]);
+        } else if (targetLevel === 'action') {
+            _moveInArray(domains[from[0]].skills[from[1]].actions, from[2], to[2]);
+        } else if (targetLevel === 'subaction') {
+            _moveInArray(domains[from[0]].skills[from[1]].actions[from[2]].subactions, from[3], to[3]);
+        }
+    });
+    dragCtx = null;
+}
+
+function commit(mutator) {
+    const next = cloneStateDomains();
+    mutator(next);
+    state.domains = next;
+    renderTree();
+}
+
+function addDomain() { commit(domains => domains.push({name: 'New Domain', skills: []})); }
+function removeDomain(di) { commit(domains => domains.splice(di, 1)); }
+function setDomainName(di, value) { commit(domains => { domains[di].name = value; }); }
+function addSkill(di) { commit(domains => (domains[di].skills = domains[di].skills || []).push({name: 'New Skill', description: '', actions: []})); }
+function removeSkill(di, si) { commit(domains => domains[di].skills.splice(si, 1)); }
+function setSkillName(di, si, value) { commit(domains => { domains[di].skills[si].name = value; }); }
+function setSkillDesc(di, si, value) { commit(domains => { domains[di].skills[si].description = value; }); }
+function addAction(di, si) { commit(domains => (domains[di].skills[si].actions = domains[di].skills[si].actions || []).push({text: 'New Action', template_id: '', subactions: []})); }
+function removeAction(di, si, ai) { commit(domains => domains[di].skills[si].actions.splice(ai, 1)); }
+function setActionText(di, si, ai, value) { commit(domains => { domains[di].skills[si].actions[ai].text = value; }); }
+function setActionTemplate(di, si, ai, value) { commit(domains => { domains[di].skills[si].actions[ai].template_id = value; }); }
+function addSubaction(di, si, ai) { commit(domains => (domains[di].skills[si].actions[ai].subactions = domains[di].skills[si].actions[ai].subactions || []).push({text: 'New Subaction', template_id: ''})); }
+function removeSubaction(di, si, ai, subi) { commit(domains => domains[di].skills[si].actions[ai].subactions.splice(subi, 1)); }
+function setSubactionText(di, si, ai, subi, value) { commit(domains => { domains[di].skills[si].actions[ai].subactions[subi].text = value; }); }
+function setSubactionTemplate(di, si, ai, subi, value) { commit(domains => { domains[di].skills[si].actions[ai].subactions[subi].template_id = value; }); }
+
+function renderWarnings(warnings) {
+    const box = document.getElementById('warningsBox');
+    if (!box) return;
+    if (!warnings || (!warnings.removed_template_count && !warnings.affected_literature_count)) {
+        box.innerHTML = '<div class="validation-block validation-recommendations"><p>Критичных реляционных рисков не обнаружено.</p></div>';
+        return;
+    }
+    box.innerHTML = `
+        <div class="warning-box">
+            <p><strong>Внимание:</strong> удаляются template bindings: ${warnings.removed_template_count}</p>
+            <p>Template IDs: ${(warnings.removed_template_ids || []).join(', ') || '—'}</p>
+            <p>Затронуто литературы: ${warnings.affected_literature_count}</p>
+            <p>Literature IDs: ${(warnings.affected_literature_ids || []).join(', ') || '—'}</p>
+        </div>
+    `;
+}
+
+function renderDiff(preview) {
+    const box = document.getElementById('diffBox');
+    const diff = preview.diff || {};
+    const summary = diff.summary || {added: 0, updated: 0, removed: 0};
+    box.innerHTML = `
+        <p><strong>Structural diff:</strong> added=${summary.added}, updated=${summary.updated}, removed=${summary.removed}</p>
+        <p><strong>JSON patch ops:</strong> ${preview.json_patch_ops || 0}</p>
+        <p><strong>Upsert plan:</strong></p>
+        <pre class="mono">${JSON.stringify(preview.upsert_plan || {}, null, 2)}</pre>
+    `;
+    renderSplitView();
+}
+
+function _collectCounts(domains) {
+    const d = domains || [];
+    const skills = d.reduce((acc, x) => acc + ((x.skills || []).length), 0);
+    const actions = d.reduce((acc, x) => acc + (x.skills || []).reduce((a, s) => a + ((s.actions || []).length), 0), 0);
+    const subactions = d.reduce(
+        (acc, x) => acc + (x.skills || []).reduce((a, s) => a + (s.actions || []).reduce((b, act) => b + ((act.subactions || []).length), 0), 0),
+        0
+    );
+    return {domains: d.length, skills, actions, subactions};
+}
+
+function _outline(domains) {
+    const lines = [];
+    (domains || []).forEach((d, di) => {
+        lines.push(`D${di + 1}: ${d.name || ''}`);
+        (d.skills || []).forEach((s, si) => {
+            lines.push(`  S${si + 1}: ${s.name || ''}`);
+            (s.actions || []).forEach((a, ai) => {
+                lines.push(`    A${ai + 1}: ${a.text || ''}${a.template_id ? ` [${a.template_id}]` : ''}`);
+                (a.subactions || []).forEach((sub, subi) => {
+                    lines.push(`      SA${subi + 1}: ${sub.text || ''}${sub.template_id ? ` [${sub.template_id}]` : ''}`);
+                });
+            });
+        });
+    });
+    return lines.join('\n') || '(пусто)';
+}
+
+function renderSplitView() {
+    const el = document.getElementById('splitView');
+    if (!el) return;
+    const before = baselineDomains || [];
+    const after = state.domains || [];
+    const c1 = _collectCounts(before);
+    const c2 = _collectCounts(after);
+    el.innerHTML = `
+        <div class="split-col">
+            <h4>До изменений</h4>
+            <p>D=${c1.domains}, S=${c1.skills}, A=${c1.actions}, SA=${c1.subactions}</p>
+            <div class="tree-outline">${_outline(before)}</div>
+        </div>
+        <div class="split-col">
+            <h4>После изменений</h4>
+            <p>D=${c2.domains}, S=${c2.skills}, A=${c2.actions}, SA=${c2.subactions}</p>
+            <div class="tree-outline">${_outline(after)}</div>
+        </div>
+    `;
+}
+
+async function reloadData() {
+    const r = await fetch('/api/admin/tree-editor/data', {headers: {'X-Role': ADMIN_ROLE, 'X-Actor': DEFAULT_ACTOR}});
+    const data = await r.json();
+    if (!data.ok) {
+        alert(data.error || 'Ошибка загрузки данных редактора');
+        return;
+    }
+    state.domains = data.domains || [];
+    baselineDomains = structuredClone(state.domains);
+    state.templates = data.action_templates || {};
+    state.literature = data.literature || {};
+    renderTree();
+    renderSplitView();
+}
+
+function resetToBaseline() {
+    state.domains = cloneBaselineDomains();
+    renderTree();
+    renderSplitView();
+}
+
+async function previewDiff() {
+    const r = await fetch('/api/admin/tree-editor/preview', {
+        method: 'POST',
+        headers: adminHeaders(),
+        body: JSON.stringify({domains: state.domains, actor: DEFAULT_ACTOR, role: ADMIN_ROLE})
+    });
+    const data = await r.json();
+    if (!data.ok) {
+        alert((data.error && data.error.message) || data.error || 'Ошибка preview');
+        return;
+    }
+    lastPreviewWarnings = data.warnings || null;
+    renderWarnings(lastPreviewWarnings);
+    renderDiff(data);
+}
+
+function closeRelationsModal() { closeModal('relationsModal'); }
+
+async function submitForApproval(force = false) {
+    const payload = {
+        title: `Admin tree edit ${new Date().toISOString()}`,
+        domains: state.domains,
+        actor: DEFAULT_ACTOR,
+        role: ADMIN_ROLE,
+        confirm_relations: force
+    };
+    pendingSubmitPayload = payload;
+    const r = await fetch('/api/admin/tree-editor/submit', {
+        method: 'POST',
+        headers: adminHeaders(),
+        body: JSON.stringify(payload)
+    });
+    const data = await r.json();
+    if (r.status === 409 && data.error === 'relations_confirmation_required') {
+        const w = data.warnings || {};
+        document.getElementById('relationsModalBody').innerHTML = `
+            <p>Редактирование удаляет связи шаблонов: <strong>${w.removed_template_count || 0}</strong></p>
+            <p>Template IDs: ${(w.removed_template_ids || []).join(', ') || '—'}</p>
+            <p>Затронуто литературы: <strong>${w.affected_literature_count || 0}</strong></p>
+            <p>Literature IDs: ${(w.affected_literature_ids || []).join(', ') || '—'}</p>
+            <p><strong>Продолжить отправку на апрув?</strong></p>
+        `;
+        openModal('relationsModal');
+        return;
+    }
+    if (!data.ok) {
+        alert((data.error && data.error.message) || data.error || 'Ошибка submit');
+        return;
+    }
+    alert(`Изменения отправлены в approval workflow. CR #${data.change_id}`);
+    globalThis.location.href = '/changes';
+}
+
+function confirmRelationOverride() {
+    closeRelationsModal();
+    submitForApproval(true);
+}
+
+document.addEventListener('DOMContentLoaded', reloadData);
+</script>
+{% endblock %}

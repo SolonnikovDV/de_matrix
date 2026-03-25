@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+
+{% block title %}Изменения{% endblock %}
+{% block header_title %}Изменения и апрув{% endblock %}
+{% block footer_hint %}Полный workflow: draft → submitted → in_review → approved/rejected → applied{% endblock %}
+
+{% block content %}
+<div class="import-container">
+    <div class="import-section">
+        <h2><i class="fas fa-clipboard-check"></i> Очередь изменений</h2>
+        <p class="reload-hint">Здесь отображаются изменения, отправленные на апрув перед применением к матрице.</p>
+        <button class="btn btn-primary" onclick="loadChanges()"><i class="fas fa-sync"></i> Обновить</button>
+        <div id="changesList" style="margin-top: 16px;"></div>
+    </div>
+    <div class="import-section" style="margin-top: 20px;">
+        <h3><i class="fas fa-comments"></i> Диалог по change request</h3>
+        <p class="reload-hint">История комментариев и резолвов как в PR-review. Выберите CR кнопкой <code>Discussion</code>.</p>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+            <label for="discussionStatusFilter">Статус тредов:</label>
+            <select id="discussionStatusFilter" class="form-input" style="max-width:220px;" onchange="reloadCurrentDiscussion()">
+                <option value="all">all</option>
+                <option value="open">open</option>
+                <option value="needs_author_response">needs_author_response</option>
+                <option value="resolved">resolved</option>
+            </select>
+            <label style="display:flex; align-items:center; gap:6px;">
+                <input id="discussionMentionsOnly" type="checkbox" onchange="reloadCurrentDiscussion()">
+                Только где я упомянут / жду ответа
+            </label>
+        </div>
+        <div id="discussionPanel">Треды не выбраны.</div>
+        <div id="timelinePanel" style="margin-top:14px;"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentDiscussionChangeId = null;
+const IS_ADMIN = {{ 'true' if current_role == 'admin' else 'false' }};
+
+function escapeHtml(s) {
+    return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+async function loadChanges() {
+    const list = document.getElementById('changesList');
+    list.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i><p>Загрузка...</p></div>';
+    try {
+        const r = await fetch('/api/changes');
+        const data = await r.json();
+        const items = data.items || [];
+        if (!items.length) {
+            list.innerHTML = '<p>Изменений пока нет.</p>';
+            return;
+        }
+        let html = '<table class="preview-table"><thead><tr><th>ID</th><th>Название</th><th>Автор</th><th>Статус</th><th>Режим</th><th>Threads</th><th>Уведомления</th><th>Действия</th></tr></thead><tbody>';
+        for (const item of items) {
+            html += `<tr>
+                <td>${item.id}</td>
+                <td>${item.title || ''}</td>
+                <td>${item.created_by || 'n/a'}</td>
+                <td>${item.status}</td>
+                <td>${item.merge_mode}</td>
+                <td>${item.threads_blocking || 0}/${item.threads_total || 0}</td>
+                <td>mentions: ${item.my_mentions || 0}, needs-response: ${item.my_needs_response || 0}</td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick="showChange(${item.id})">View</button>
+                    <button class="btn btn-sm btn-warning" onclick="openDiscussion(${item.id})">Discussion</button>
+                    <button class="btn btn-sm btn-info" onclick="setStatus(${item.id}, 'in_review')">In review</button>
+                    <button class="btn btn-sm btn-success" onclick="setStatus(${item.id}, 'approved')">Approve</button>
+                    <button class="btn btn-sm btn-danger" onclick="setStatus(${item.id}, 'rejected')">Reject</button>
+                    <button class="btn btn-sm btn-primary" onclick="applyChange(${item.id})">Apply</button>
+                </td>
+            </tr>`;
+        }
+        html += '</tbody></table>';
+        list.innerHTML = html;
+    } catch (e) {
+        list.innerHTML = `<div class="error-message">Ошибка загрузки: ${e.message}</div>`;
+    }
+}
+
+async function openDiscussion(changeId) {
+    currentDiscussionChangeId = changeId;
+    await loadDiscussion(changeId);
+    await loadTimeline(changeId);
+}
+
+function reloadCurrentDiscussion() {
+    if (currentDiscussionChangeId) openDiscussion(currentDiscussionChangeId);
+}
+
+async function loadDiscussion(changeId) {
+    const panel = document.getElementById('discussionPanel');
+    panel.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i><p>Загрузка диалога...</p></div>';
+    const status = document.getElementById('discussionStatusFilter').value;
+    const mentionsOnly = document.getElementById('discussionMentionsOnly').checked;
+    const params = new URLSearchParams();
+    params.set('status', status || 'all');
+    if (mentionsOnly) params.set('mentions_only', '1');
+    const r = await fetch(`/api/changes/${changeId}/discussion?${params.toString()}`);
+    const data = await r.json();
+    if (!data.ok) {
+        panel.innerHTML = `<div class="error-message">${escapeHtml(data.error || 'Ошибка загрузки диалога')}</div>`;
+        return;
+    }
+    const threads = data.threads || [];
+    let html = `<div style="margin-bottom:12px;">
+        <button class="btn btn-primary btn-sm" onclick="createThread(${changeId})"><i class="fas fa-plus"></i> Новый тред</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadDiscussion(${changeId})"><i class="fas fa-sync"></i> Обновить</button>
+    </div>`;
+    if (!threads.length) {
+        panel.innerHTML = html + '<p>Тредов пока нет.</p>';
+        return;
+    }
+    for (const t of threads) {
+        html += `<div class="import-section" style="margin: 10px 0;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                <strong>#${t.id} ${escapeHtml(t.subject)}</strong>
+                <span class="badge">${escapeHtml(t.status)}${t.requires_resolution ? ' · resolve required' : ''}</span>
+            </div>
+            <div class="reload-hint">Автор: ${escapeHtml(t.created_by)} (${escapeHtml(t.created_role)})${t.mentioned_me ? ' · mentioned me' : ''}${t.needs_my_response ? ' · needs my response' : ''}</div>
+            <div style="margin-top:8px;">`;
+        for (const m of (t.messages || [])) {
+            html += `<div style="padding:8px; border:1px solid #e5ebf7; border-radius:8px; margin-bottom:6px;">
+                <div><strong>${escapeHtml(m.author)}</strong> <span class="reload-hint">(${escapeHtml(m.author_role)} · ${escapeHtml(m.kind)})</span></div>
+                <div style="white-space:pre-wrap;">${escapeHtml(m.body)}</div>
+            </div>`;
+        }
+        html += `</div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+                <button class="btn btn-sm btn-secondary" onclick="replyThread(${changeId}, ${t.id})">Reply</button>
+                ${IS_ADMIN ? `
+                    <button class="btn btn-sm btn-success" onclick="setThreadStatus(${changeId}, ${t.id}, 'accept')">Accept</button>
+                    <button class="btn btn-sm btn-danger" onclick="setThreadStatus(${changeId}, ${t.id}, 'reject')">Reject</button>
+                    <button class="btn btn-sm btn-info" onclick="setThreadStatus(${changeId}, ${t.id}, 'request_info')">Request info</button>
+                    <button class="btn btn-sm btn-warning" onclick="setThreadStatus(${changeId}, ${t.id}, 'reopen')">Reopen</button>
+                ` : ''}
+            </div>
+        </div>`;
+    }
+    panel.innerHTML = html;
+}
+
+async function loadTimeline(changeId) {
+    const panel = document.getElementById('timelinePanel');
+    panel.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i><p>Загрузка timeline...</p></div>';
+    const r = await fetch(`/api/changes/${changeId}/timeline`);
+    const data = await r.json();
+    if (!data.ok) {
+        panel.innerHTML = `<div class="error-message">${escapeHtml(data.error || 'Ошибка загрузки timeline')}</div>`;
+        return;
+    }
+    const events = data.events || [];
+    if (!events.length) {
+        panel.innerHTML = '<p>Timeline пуст.</p>';
+        return;
+    }
+    let html = '<h4><i class="fas fa-stream"></i> Timeline</h4>';
+    html += '<div>';
+    for (const e of events) {
+        html += `<div style="padding:8px; border-left:3px solid #d9e4ff; margin:6px 0 6px 6px; background:#fafcff;">
+            <div><strong>${escapeHtml(e.kind)}</strong> <span class="reload-hint">${escapeHtml(e.at || '')}</span></div>
+            <div><span class="reload-hint">${escapeHtml(e.actor || 'system')}</span></div>
+            <div style="white-space:pre-wrap;">${escapeHtml(e.body || '')}</div>
+        </div>`;
+    }
+    html += '</div>';
+    panel.innerHTML = html;
+}
+
+async function createThread(changeId) {
+    const subject = (prompt('Тема треда:', 'Комментарий к изменению') || '').trim();
+    if (!subject) return;
+    const body = (prompt('Комментарий:', '') || '').trim();
+    if (!body) return;
+    const requires_resolution = confirm('Требуется обязательный резолв этого треда?');
+    const r = await fetch(`/api/changes/${changeId}/discussion/threads`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({subject, body, requires_resolution}),
+    });
+    const data = await r.json();
+    if (!data.ok) {
+        alert(data.error || 'Ошибка создания треда');
+        return;
+    }
+    await loadDiscussion(changeId);
+    await loadChanges();
+}
+
+async function replyThread(changeId, threadId) {
+    const body = (prompt('Ответ в тред:', '') || '').trim();
+    if (!body) return;
+    const r = await fetch(`/api/changes/${changeId}/discussion/threads/${threadId}/messages`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({body}),
+    });
+    const data = await r.json();
+    if (!data.ok) {
+        alert(data.error || 'Ошибка отправки ответа');
+        return;
+    }
+    await loadDiscussion(changeId);
+    await loadChanges();
+}
+
+async function setThreadStatus(changeId, threadId, action) {
+    let comment = '';
+    if (action === 'reject' || action === 'request_info') {
+        comment = (prompt('Комментарий для автора (обязательно):', '') || '').trim();
+        if (!comment) return;
+    }
+    const r = await fetch(`/api/changes/${changeId}/discussion/threads/${threadId}/status`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action, comment}),
+    });
+    const data = await r.json();
+    if (!data.ok) {
+        alert(data.error || 'Ошибка резолва');
+        return;
+    }
+    await loadDiscussion(changeId);
+    await loadChanges();
+}
+
+async function setStatus(id, status) {
+    const comment = prompt('Комментарий:', '') || '';
+    const r = await fetch(`/api/changes/${id}/status`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({status, comment}),
+    });
+    const data = await r.json();
+    if (!data.ok) alert(data.error || 'Ошибка изменения статуса');
+    await loadChanges();
+}
+
+async function applyChange(id) {
+    const r = await fetch(`/api/changes/${id}/apply`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({}),
+    });
+    const data = await r.json();
+    if (!data.ok) {
+        alert(data.error || 'Ошибка применения');
+        return;
+    }
+    alert('Изменение применено.');
+    await loadChanges();
+}
+
+async function showChange(id) {
+    const r = await fetch(`/api/changes/${id}`);
+    const data = await r.json();
+    if (!data.ok) {
+        alert(data.error || 'Ошибка загрузки CR');
+        return;
+    }
+    const revs = data.change.revisions || [];
+    const latest = revs.length ? revs[revs.length - 1] : null;
+    const diff = latest && latest.payload ? latest.payload.structural_diff : null;
+    const patch = latest && latest.payload ? latest.payload.json_patch : null;
+    const upsert = latest && latest.payload ? latest.payload.upsert_plan : null;
+    const stagingBatchId = latest ? latest.staging_batch_id : null;
+    const summary = diff && diff.summary
+        ? `added=${diff.summary.added}, updated=${diff.summary.updated}, removed=${diff.summary.removed}`
+        : 'n/a';
+    const upsertSummary = upsert
+        ? `domains i/u/d=${upsert.domains.insert}/${upsert.domains.update}/${upsert.domains.delete}; ` +
+          `skills i/u/d=${upsert.skills.insert}/${upsert.skills.update}/${upsert.skills.delete}; ` +
+          `actions i/u/d=${upsert.actions.insert}/${upsert.actions.update}/${upsert.actions.delete}; ` +
+          `subactions i/u/d=${upsert.subactions.insert}/${upsert.subactions.update}/${upsert.subactions.delete}`
+        : 'n/a';
+    alert(
+        `CR #${id}\nAuthor: ${data.change.created_by || 'n/a'}\nStatus: ${data.change.status}\nStaging batch: ${stagingBatchId || 'n/a'}\n` +
+        `Discussion blocking threads: ${(data.change.discussion_summary || {}).threads_blocking || 0}\n` +
+        `Structural diff: ${summary}\nJSON Patch ops: ${(patch || []).length}\nUpsert plan: ${upsertSummary}`
+    );
+}
+
+document.addEventListener('DOMContentLoaded', loadChanges);
+</script>
+{% endblock %}
+

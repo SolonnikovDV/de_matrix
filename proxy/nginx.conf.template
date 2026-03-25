@@ -1,0 +1,137 @@
+worker_processes auto;
+
+events {
+    worker_connections 2048;
+    multi_accept on;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    server_tokens off;
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+    access_log /var/log/nginx/access.log main;
+    error_log /var/log/nginx/error.log warn;
+
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 30;
+    client_body_timeout 15s;
+    client_header_timeout 15s;
+    send_timeout 15s;
+    types_hash_max_size 2048;
+    client_max_body_size ${MAX_BODY};
+
+    # Basic anti-scan / anti-ddos controls.
+    limit_req_zone $binary_remote_addr zone=req_per_ip:20m rate=${REQ_RATE};
+    limit_conn_zone $binary_remote_addr zone=conn_per_ip:20m;
+
+    upstream de_matrix_app {
+        least_conn;
+        server app:5001 max_fails=3 fail_timeout=10s;
+        keepalive 32;
+    }
+
+    map $request_method $method_allowed {
+        default 1;
+        TRACE 0;
+        TRACK 0;
+    }
+
+    # Minimal WAF heuristics (kept intentionally conservative).
+    map $request_uri $uri_suspicious {
+        default 0;
+        ~*(\.\./|\%2e\%2e|/wp-admin|/wp-login|/xmlrpc\.php|/\.env|/phpmyadmin|/etc/passwd|/proc/self) 1;
+    }
+
+    map $http_user_agent $ua_suspicious {
+        default 0;
+        ~*(sqlmap|nikto|masscan|nmap|acunetix|dirbuster|gobuster) 1;
+    }
+
+    geo $ip_whitelist {
+        default 0;
+        include /tmp/ip-whitelist.conf;
+    }
+
+    geo $ip_blacklist {
+        default 0;
+        include /tmp/ip-blacklist.conf;
+    }
+
+    server {
+        listen 80;
+        server_name ${DOMAIN} _;
+        location = /proxy-health {
+            access_log off;
+            add_header Content-Type text/plain;
+            return 200 'ok';
+        }
+        location / {
+            return 301 https://$host$request_uri;
+        }
+    }
+
+    server {
+        listen 443 ssl;
+        http2 on;
+        server_name ${DOMAIN} _;
+
+        ssl_certificate /etc/nginx/certs/fullchain.pem;
+        ssl_certificate_key /etc/nginx/certs/privkey.pem;
+        ssl_session_cache shared:SSL:10m;
+        ssl_session_timeout 10m;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_prefer_server_ciphers off;
+
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+
+        if ($method_allowed = 0) {
+            return 405;
+        }
+        if ($ip_blacklist = 1) {
+            return 403;
+        }
+        if ($uri_suspicious = 1) {
+            return 403;
+        }
+        if ($ua_suspicious = 1) {
+            return 403;
+        }
+
+        limit_req zone=req_per_ip burst=${REQ_BURST} nodelay;
+        limit_conn conn_per_ip ${CONN_LIMIT};
+
+        location = /proxy-health {
+            access_log off;
+            add_header Content-Type text/plain;
+            return 200 'ok';
+        }
+
+        location ~* /\.(env|git|svn|ht) {
+            deny all;
+            return 403;
+        }
+
+        location / {
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_connect_timeout 10s;
+            proxy_read_timeout 60s;
+            proxy_send_timeout 60s;
+            proxy_pass http://de_matrix_app;
+        }
+    }
+}
