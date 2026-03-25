@@ -54,7 +54,12 @@ if [[ "${ROLLBACK}" == "true" ]]; then
 fi
 
 echo "[smoke-all] db init"
-docker compose exec -T app python scripts/db_init.py
+if docker compose exec -T postgres psql -U dematrix -d dematrix < "${ROOT_DIR}/migrations/001_initial.sql"; then
+  echo "[smoke-all] schema applied via psql migration"
+else
+  echo "[smoke-all] psql migration failed, fallback to app db_init.py"
+  docker compose exec -T app python scripts/db_init.py
+fi
 
 echo "[smoke-all] db smoke check"
 docker compose exec -T app python scripts/db_smoke_check.py
