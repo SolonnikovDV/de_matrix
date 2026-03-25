@@ -81,10 +81,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Start smoke/e2e suite with rollback
+      - name: Start smoke/e2e suite
         run: |
           chmod +x scripts/*.sh
-          ./scripts/smoke_all.sh --rollback
+          ./scripts/smoke_all.sh
 
       - name: Verify proxy endpoints
         run: |

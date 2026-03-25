@@ -27,10 +27,10 @@ jobs:
           docker compose config >/tmp/de_matrix_compose_base.yaml
           docker compose -f docker-compose.yml -f docker-compose.prod.yml config >/tmp/de_matrix_compose_prod.yaml
 
-      - name: Full smoke/e2e with rollback
+      - name: Full smoke/e2e
         run: |
           chmod +x scripts/*.sh
-          ./scripts/smoke_all.sh --rollback
+          ./scripts/smoke_all.sh
 
       - name: Verify hardened proxy health
         run: |
