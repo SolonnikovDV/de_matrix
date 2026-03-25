@@ -291,8 +291,40 @@ def _run_scenario(
     )
 
 
+def _ensure_minimum_domain_skill() -> None:
+    domains = _http_get_json(API_DOMAINS_PATH).get("domains") or []
+    if domains:
+        first = domains[0]
+        if first.get("name") and (first.get("skills") or []):
+            return
+
+    ts = int(time.time())
+    bootstrap_payload = {
+        "domains": [
+            {
+                "name": f"E2E Bootstrap Domain {ts}",
+                "skills": [
+                    {
+                        "name": "E2E Bootstrap Skill",
+                        "description": "Created automatically for e2e precondition",
+                        "actions": [{"text": "E2E Bootstrap Action", "template_id": f"tpl_bootstrap_{ts}"}],
+                    }
+                ],
+            }
+        ]
+    }
+    upload = _upload_json_payload(bootstrap_payload, "append", None, None)
+    change_id = upload.get("change_id")
+    if not upload.get("ok") or not change_id:
+        raise RuntimeError(f"Failed to bootstrap minimum domain/skill: {upload}")
+    _http_post_json(f"/api/changes/{change_id}/status", {"status": "in_review", "comment": "bootstrap in_review"})
+    _http_post_json(f"/api/changes/{change_id}/status", {"status": "approved", "comment": "bootstrap approved"})
+    _http_post_json(f"/api/changes/{change_id}/apply", {})
+
+
 def main() -> int:
     _ensure_authenticated_session()
+    _ensure_minimum_domain_skill()
     base_domains = _http_get_json(API_DOMAINS_PATH).get("domains") or []
     if not base_domains:
         print("No domains available for append_to_domain/append_to_skill tests", file=sys.stderr)
