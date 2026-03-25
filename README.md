@@ -167,6 +167,7 @@ graph TD
 | `DE_MATRIX_ADMIN_USERNAME` / `DE_MATRIX_ADMIN_PASSWORD` | Bootstrap-admin |
 | `DE_MATRIX_AUTH_REQUIRED` | Требовать логин для UI/API |
 | `DE_MATRIX_DB_URL` | Подключение PostgreSQL |
+| `DE_MATRIX_DB_URL_RUNTIME` | Опциональный runtime override DB URL для `app` контейнера в compose |
 | `DE_MATRIX_MONGO_URI` / `DE_MATRIX_MONGO_DB` | Подключение MongoDB |
 | `DE_MATRIX_DOMAIN` | Публичный домен (выводится как URL для внешних пользователей) |
 | `DE_MATRIX_PROXY_HTTP_PORT` / `DE_MATRIX_PROXY_HTTPS_PORT` | Порты proxy |

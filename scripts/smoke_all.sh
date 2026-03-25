@@ -45,6 +45,22 @@ echo "[smoke-all] ensuring docker stack is up"
 bash "${ROOT_DIR}/scripts/proxy_prepare_tls.sh"
 docker compose up -d
 
+echo "[smoke-all] waiting for app container health"
+for i in $(seq 1 60); do
+  app_state="$(docker inspect --format '{{.State.Status}}' de-matrix-app 2>/dev/null || true)"
+  app_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' de-matrix-app 2>/dev/null || true)"
+  if [[ "${app_state}" == "running" && ( "${app_health}" == "healthy" || "${app_health}" == "none" ) ]]; then
+    break
+  fi
+  if [[ "${i}" == "60" ]]; then
+    echo "[smoke-all] app failed to become healthy"
+    docker compose ps || true
+    docker compose logs --no-color --tail=200 app || true
+    exit 1
+  fi
+  sleep 2
+done
+
 if [[ "${ROLLBACK}" == "true" ]]; then
   echo "[smoke-all] creating backup before tests"
   mkdir -p "${BACKUP_ROOT}"

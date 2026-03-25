@@ -3825,11 +3825,11 @@ if __name__ == '__main__':
             print("❌ Не найдено свободных портов")
             sys.exit(1)
 
-    debug_mode = args.debug or True
+    debug_mode = args.debug or os.environ.get("DE_MATRIX_DEBUG", "0").strip().lower() in ("1", "true", "yes")
     print(f"\n🚀 Запуск на порту {port}")
     print(f"📊 Матрица: http://localhost:{port}")
     print(f"📈 Граф: http://localhost:{port}/graph")
     print(f"📋 Экспорт: http://localhost:{port}/export")
     print(f"🔧 Отладка: http://localhost:{port}/debug\n")
 
-    app.run(debug=debug_mode, host='0.0.0.0', port=port)
+    app.run(debug=debug_mode, use_reloader=debug_mode, host='0.0.0.0', port=port)
