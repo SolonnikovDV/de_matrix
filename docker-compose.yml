@@ -31,6 +31,10 @@ services:
     container_name: de-matrix-app
     env_file:
       - .env
+    environment:
+      DE_MATRIX_DB_URL: ${DE_MATRIX_DB_URL:-postgresql+psycopg://dematrix:dematrix@postgres:5432/dematrix}
+      DE_MATRIX_MONGO_URI: ${DE_MATRIX_MONGO_URI:-mongodb://mongo:27017}
+      DE_MATRIX_MONGO_DB: ${DE_MATRIX_MONGO_DB:-de_matrix}
     volumes:
       - ./:/app
     depends_on:
