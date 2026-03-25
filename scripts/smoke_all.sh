@@ -41,6 +41,10 @@ restore_if_needed() {
   fi
 }
 
+echo "[smoke-all] ensuring docker stack is up"
+bash "${ROOT_DIR}/scripts/proxy_prepare_tls.sh"
+docker compose up -d
+
 if [[ "${ROLLBACK}" == "true" ]]; then
   echo "[smoke-all] creating backup before tests"
   mkdir -p "${BACKUP_ROOT}"
@@ -48,10 +52,6 @@ if [[ "${ROLLBACK}" == "true" ]]; then
   BACKUP_PATH="$(ls -1d "${BACKUP_ROOT}"/* | sort | tail -n 1)"
   trap restore_if_needed EXIT
 fi
-
-echo "[smoke-all] ensuring docker stack is up"
-bash "${ROOT_DIR}/scripts/proxy_prepare_tls.sh"
-docker compose up -d
 
 echo "[smoke-all] db init"
 docker compose exec -T app python scripts/db_init.py
