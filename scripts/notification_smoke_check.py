@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import smtplib
 import sys
 from email.message import EmailMessage
 from pathlib import Path
@@ -10,6 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from core.smtp_delivery import smtp_send_message  # noqa: E402
 
 
 def main() -> int:
@@ -29,8 +30,7 @@ def main() -> int:
     msg["Subject"] = "[de_matrix] notification smoke"
     msg.set_content("notification smoke check")
 
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as smtp:
-        smtp.send_message(msg)
+    smtp_send_message(msg, timeout=10)
 
     print(f"[notification-smoke] sent to {test_to} via {smtp_host}:{smtp_port}")
     return 0

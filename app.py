@@ -8,7 +8,6 @@ import hashlib
 import sys
 import argparse
 import socket
-import smtplib
 import secrets
 from datetime import datetime, timezone, timedelta
 from email.message import EmailMessage
@@ -43,6 +42,7 @@ from core.matrix_schema import (
     TAG_SKILL_STICKER,
 )
 from core import config_loader as _config_loader
+from core.smtp_delivery import smtp_send_message
 from core.config_loader import load_app_config, load_metadata, invalidate_metadata_cache
 from core.tools_matcher import get_tools_for_text
 from core.checkpoint import (
@@ -118,8 +118,6 @@ E2E_ADMIN_USERNAME = "e2e_admin"
 TRUST_REQUEST_ROLE = os.environ.get("DE_MATRIX_TRUST_REQUEST_ROLE", "0").strip().lower() in ("1", "true", "yes")
 AUTH_REQUIRED = os.environ.get("DE_MATRIX_AUTH_REQUIRED", "1").strip().lower() in ("1", "true", "yes")
 NOTIFICATIONS_ENABLED = os.environ.get("DE_MATRIX_NOTIFICATIONS_ENABLED", "1").strip().lower() in ("1", "true", "yes")
-SMTP_HOST = (os.environ.get("DE_MATRIX_SMTP_HOST") or "smtp").strip()
-SMTP_PORT = int((os.environ.get("DE_MATRIX_SMTP_PORT") or "1025").strip())
 SMTP_FROM = (os.environ.get("DE_MATRIX_SMTP_FROM") or "de-matrix@localhost").strip()
 PRESENCE_ONLINE_SECONDS = int((os.environ.get("DE_MATRIX_PRESENCE_ONLINE_SECONDS") or "120").strip())
 PRESENCE_AWAY_SECONDS = int((os.environ.get("DE_MATRIX_PRESENCE_AWAY_SECONDS") or "900").strip())
@@ -444,8 +442,7 @@ def _deliver_notification_log(log: NotificationLog) -> Tuple[bool, str]:
     log.attempts = (log.attempts or 0) + 1
     log.last_attempt_at = datetime.now(timezone.utc)
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
-            smtp.send_message(msg)
+        smtp_send_message(msg, timeout=10)
         log.status = "sent"
         log.error = ""
         log.sent_at = datetime.now(timezone.utc)

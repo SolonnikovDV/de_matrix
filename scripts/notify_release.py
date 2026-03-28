@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import smtplib
 import sys
 from datetime import datetime, timezone
 from email.message import EmailMessage
@@ -15,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from core.smtp_delivery import smtp_send_message  # noqa: E402
 from storage.db import db_session  # noqa: E402
 from storage.models import User, NotificationLog  # noqa: E402
 
@@ -27,8 +27,6 @@ def main() -> int:
     args = parser.parse_args()
 
     enabled = os.environ.get("DE_MATRIX_NOTIFICATIONS_ENABLED", "1").strip().lower() in ("1", "true", "yes")
-    smtp_host = (os.environ.get("DE_MATRIX_SMTP_HOST") or "smtp").strip()
-    smtp_port = int((os.environ.get("DE_MATRIX_SMTP_PORT") or "1025").strip())
     smtp_from = (os.environ.get("DE_MATRIX_SMTP_FROM") or "de-matrix@localhost").strip()
 
     if not enabled:
@@ -76,8 +74,7 @@ def main() -> int:
         log.attempts = 1
         log.last_attempt_at = datetime.now(timezone.utc)
         try:
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as smtp:
-                smtp.send_message(msg)
+            smtp_send_message(msg, timeout=10)
             log.status = "sent"
             log.sent_at = datetime.now(timezone.utc)
             print("[notify-release] sent")
