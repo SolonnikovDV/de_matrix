@@ -55,7 +55,10 @@
   - `append`
   - `append_to_domain`
   - `append_to_skill`
+  - `replace_domain`
+  - `replace_skill`
   - `replace_all`
+- импорт JSON: поддерживаются и единое дерево `nodes`, и legacy-обёртка `domains` (нормализуется в `nodes`);
 - экспорт и шаблон импорта;
 - staging batch + diff (`json_patch`, structural diff, upsert-plan).
 
@@ -76,9 +79,13 @@
 
 ### Уведомления
 
-- SMTP-интеграция (Mailpit в окружении);
-- события для авторов CR, админов и `@mention`;
-- журнал отправок `notification_logs` + retry из admin UI.
+- отправка через SMTP (`stdlib`: `smtplib` / TLS — см. `core/smtp_delivery.py`);
+- в Compose по умолчанию **Mailpit**: письма не уходят в интернет, их смотрят в веб-UI (порт `DE_MATRIX_MAIL_UI_PORT`, только localhost);
+- для внешнего relay: `DE_MATRIX_SMTP_STARTTLS=1` (типично порт **587**) или `DE_MATRIX_SMTP_SSL=1` (порт **465**), плюс `DE_MATRIX_SMTP_USER` / `DE_MATRIX_SMTP_PASSWORD` при необходимости;
+- если приложение на хосте, а SMTP в Docker: `DE_MATRIX_SMTP_HOST=127.0.0.1`, `DE_MATRIX_SMTP_PORT` = значение `DE_MATRIX_MAIL_SMTP_PORT` (проброс на Mailpit);
+- получатели берутся из поля **email** в профиле пользователя (админы при новом CR, автор при смене статуса, упомянутые в `@mention`);
+- журнал отправок `notification_logs` + retry в `/admin/notifications`;
+- проверка канала: `docker compose exec -T app python scripts/notification_smoke_check.py` (переменная `DE_MATRIX_NOTIFICATION_TEST_EMAIL`).
 
 ### Мониторинг присутствия (admin-only)
 
@@ -185,7 +192,11 @@ graph TD
 | `DE_MATRIX_PROXY_HTTP_PORT` / `DE_MATRIX_PROXY_HTTPS_PORT` | Порты proxy |
 | `DE_MATRIX_TLS_MODE` | `selfsigned` / `provided` |
 | `DE_MATRIX_NOTIFICATIONS_ENABLED` | Вкл/выкл отправку уведомлений |
-| `DE_MATRIX_SMTP_HOST` / `DE_MATRIX_SMTP_PORT` / `DE_MATRIX_SMTP_FROM` | SMTP настройки |
+| `DE_MATRIX_SMTP_HOST` / `DE_MATRIX_SMTP_PORT` / `DE_MATRIX_SMTP_FROM` | Адрес SMTP, порт, заголовок From |
+| `DE_MATRIX_SMTP_STARTTLS` | `1` — STARTTLS после подключения (часто порт 587) |
+| `DE_MATRIX_SMTP_SSL` | `1` — implicit TLS, `SMTP_SSL` (часто порт 465); не совмещать с `STARTTLS` |
+| `DE_MATRIX_SMTP_USER` / `DE_MATRIX_SMTP_PASSWORD` | Логин SMTP при непустом `USER` |
+| `DE_MATRIX_NOTIFICATION_TEST_EMAIL` | Получатель для `scripts/notification_smoke_check.py` |
 | `DE_MATRIX_ADMIN_UI_PORT` | Порт Portainer (localhost only) |
 | `DE_MATRIX_MAIL_UI_PORT` / `DE_MATRIX_MAIL_SMTP_PORT` | UI/SMTP порты Mailpit на хосте |
 | `DE_MATRIX_PROXY_RATE_LIMIT_*`, `DE_MATRIX_PROXY_CONN_LIMIT_PER_IP` | Лимиты proxy |
@@ -297,7 +308,7 @@ bash ./scripts/smoke_all.sh --rollback
 ### 7.5 Где смотреть код
 
 - backend/API: `app.py`
-- доменная логика: `core/`
+- доменная логика: `core/` (в т.ч. `core/smtp_delivery.py` для почты)
 - persistence/repositories: `storage/`
 - шаблоны UI: `templates/`
 - инфраструктура: `docker-compose*.yml`, `proxy/`, `scripts/`
@@ -366,6 +377,9 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=200 
 | `Password change required` | Временный пароль | Завершить смену пароля на `/account/password` |
 | `app restarting` | рассинхрон схемы БД/моделей | применить миграции и перезапустить app |
 | e2e/smoke fail после rollback | Изменилось состояние БД | повторить `db_init`, проверить пользователей и CR |
+| Нет писем на реальную почту | Mailpit только перехватывает SMTP | открыть UI Mailpit по `DE_MATRIX_MAIL_UI_PORT` или настроить внешний SMTP + TLS/логин |
+| Уведомления `skipped` / пустые получатели | В профиле нет email | заполнить email у админов/авторов; смотреть `/admin/notifications` |
+| `Connection refused` к SMTP | Неверный host/port для среды | в контейнере app — `smtp:1025`; с хоста — `127.0.0.1` и порт проброса Mailpit |
 
 ### 9.3 Backup/restore и восстановление
 

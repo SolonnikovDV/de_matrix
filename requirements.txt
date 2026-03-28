@@ -1,11 +1,25 @@
 # de_matrix — прямые зависимости (Python 3.12+).
-# Подпакеты Flask (Jinja2, Werkzeug, …) ставятся автоматически.
+# Установка: pip install -r requirements.txt
+#
+# Примечания:
+# - Werkzeug/Jinja2/MarkupSafe идут как зависимости Flask.
+# - Отправка почты (core/smtp_delivery, smtplib/ssl) — только стандартная библиотека.
+# - NumPy подтягивается транзитивно через pandas.
 
-Flask>=3.0,<4
-PyYAML>=6.0
-pandas>=2.0,<3
-openpyxl>=3.1
-SQLAlchemy>=2.0,<3
-psycopg[binary]>=3.1,<4
-pymongo>=4.6,<5
+# Web
+Flask>=3.0.3,<4
+
+# Конфиг и данные
+PyYAML>=6.0.2
+pandas>=2.2.0,<3
+openpyxl>=3.1.5
+
+# PostgreSQL + ORM
+SQLAlchemy>=2.0.36,<3
+psycopg[binary]>=3.2.0,<4
+
+# MongoDB (литература)
+pymongo>=4.10,<5
+
+# Перевод slug уровней (Google через deep-translator, без ключа API)
 deep-translator>=1.11,<2
