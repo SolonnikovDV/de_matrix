@@ -537,7 +537,11 @@ def _normalize_unified(data: Dict) -> Dict:
     if isinstance(nodes_in, list) and nodes_in:
         out["nodes"] = [_normalize_generic_node(x) for x in nodes_in if isinstance(x, dict)]
     else:
-        out["nodes"] = []
+        domains_in = data.get("domains")
+        if isinstance(domains_in, list) and domains_in:
+            out["nodes"] = _excel_domain_rows_as_nodes(domains_in)
+        else:
+            out["nodes"] = []
     out["domains"] = []
     for key in META_KEYS:
         if key in data and data[key] is not None:
