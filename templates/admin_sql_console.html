@@ -62,12 +62,12 @@
                 </label>
             </div>
             <div id="sqlOutput" class="sql-output"></div>
-            <h3 style="margin-top:16px;"><i class="fas fa-history"></i> История SQL</h3>
+            <h3 class="view-gap-top"><i class="fas fa-history"></i> История SQL</h3>
             <div class="sql-actions">
                 <button class="btn btn-secondary" onclick="clearSqlHistory()"><i class="fas fa-trash"></i> Очистить историю</button>
             </div>
             <div id="sqlHistory" class="history-list"></div>
-            <h3 style="margin-top:16px;"><i class="fas fa-diagram-project"></i> Диаграмма связей</h3>
+            <h3 class="view-gap-top"><i class="fas fa-diagram-project"></i> Диаграмма связей</h3>
             <div class="sql-actions">
                 <button class="btn btn-secondary" onclick="exportDiagramSvg()"><i class="fas fa-file-code"></i> SVG</button>
                 <button class="btn btn-secondary" onclick="exportDiagramPng()"><i class="fas fa-file-image"></i> PNG</button>
@@ -78,14 +78,14 @@
 </div>
 
 <div class="modal-overlay is-hidden" id="objectModal">
-    <div class="modal-box" style="max-width: 1100px;">
+    <div class="modal-box mw-1100">
         <div class="modal-header">
             <h3 id="objectModalTitle"><i class="fas fa-code"></i> DDL и содержимое объекта</h3>
         </div>
         <div class="modal-body">
             <h4>DDL</h4>
             <pre id="objectDdl" class="ddl-box"></pre>
-            <h4 style="margin-top:12px;">Data preview</h4>
+            <h4 class="mt-12">Data preview</h4>
             <div id="objectData"></div>
         </div>
         <div class="modal-footer">

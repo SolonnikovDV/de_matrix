@@ -10,26 +10,38 @@
         <h2><i class="fas fa-clipboard-check"></i> Очередь изменений</h2>
         <p class="reload-hint">Здесь отображаются изменения, отправленные на апрув перед применением к матрице.</p>
         <button class="btn btn-primary" onclick="loadChanges()"><i class="fas fa-sync"></i> Обновить</button>
-        <div id="changesList" style="margin-top: 16px;"></div>
+        <div id="changesList" class="view-gap-top"></div>
     </div>
-    <div class="import-section" style="margin-top: 20px;">
+    <div class="import-section">
         <h3><i class="fas fa-comments"></i> Диалог по change request</h3>
         <p class="reload-hint">История комментариев и резолвов как в PR-review. Выберите CR кнопкой <code>Discussion</code>.</p>
-        <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+        <div class="view-toolbar">
             <label for="discussionStatusFilter">Статус тредов:</label>
-            <select id="discussionStatusFilter" class="form-input" style="max-width:220px;" onchange="reloadCurrentDiscussion()">
+            <select id="discussionStatusFilter" class="form-input" onchange="reloadCurrentDiscussion()">
                 <option value="all">all</option>
                 <option value="open">open</option>
                 <option value="needs_author_response">needs_author_response</option>
                 <option value="resolved">resolved</option>
             </select>
-            <label style="display:flex; align-items:center; gap:6px;">
+            <label class="view-stack">
                 <input id="discussionMentionsOnly" type="checkbox" onchange="reloadCurrentDiscussion()">
                 Только где я упомянут / жду ответа
             </label>
         </div>
         <div id="discussionPanel">Треды не выбраны.</div>
-        <div id="timelinePanel" style="margin-top:14px;"></div>
+        <div id="timelinePanel" class="view-gap-top"></div>
+    </div>
+</div>
+
+<div class="modal-overlay is-hidden" id="changeDetailsModal" aria-hidden="true">
+    <div class="modal-box mw-900">
+        <h3><i class="fas fa-file-circle-check"></i> Детали изменения</h3>
+        <div id="changeDetailsBody">
+            <p class="empty-message">Нет данных.</p>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeChangeDetailsModal()">Закрыть</button>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -46,6 +58,36 @@ function escapeHtml(s) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+function statusMeta(status) {
+    const key = String(status || '').trim().toLowerCase();
+    const map = {
+        draft: { cls: 'chg-status-draft', label: 'draft' },
+        submitted: { cls: 'chg-status-submitted', label: 'submitted' },
+        in_review: { cls: 'chg-status-in-review', label: 'in_review' },
+        approved: { cls: 'chg-status-approved', label: 'approved' },
+        rejected: { cls: 'chg-status-rejected', label: 'rejected' },
+        applied: { cls: 'chg-status-applied', label: 'applied' },
+    };
+    return map[key] || { cls: 'chg-status-draft', label: key || 'unknown' };
+}
+
+function isNotMergedStatus(status) {
+    const key = String(status || '').trim().toLowerCase();
+    return key !== 'applied' && key !== 'rejected';
+}
+
+function setChangeDetailsModalVisible(visible) {
+    const modal = document.getElementById('changeDetailsModal');
+    if (!modal) return;
+    modal.classList.toggle('is-hidden', !visible);
+    modal.style.display = visible ? 'flex' : 'none';
+    modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function closeChangeDetailsModal() {
+    setChangeDetailsModalVisible(false);
 }
 
 async function loadChanges() {
@@ -65,7 +107,10 @@ async function loadChanges() {
                 <td>${item.id}</td>
                 <td>${item.title || ''}</td>
                 <td>${item.created_by || 'n/a'}</td>
-                <td>${item.status}</td>
+                <td>
+                    <span class="badge chg-status-badge ${statusMeta(item.status).cls}">${escapeHtml(statusMeta(item.status).label)}</span>
+                    ${isNotMergedStatus(item.status) ? '<span class="badge chg-status-sticker">not merged</span>' : ''}
+                </td>
                 <td>${item.merge_mode}</td>
                 <td>${item.threads_blocking || 0}/${item.threads_total || 0}</td>
                 <td>mentions: ${item.my_mentions || 0}, needs-response: ${item.my_needs_response || 0}</td>
@@ -111,7 +156,7 @@ async function loadDiscussion(changeId) {
         return;
     }
     const threads = data.threads || [];
-    let html = `<div style="margin-bottom:12px;">
+    let html = `<div class="chg-toolbar">
         <button class="btn btn-primary btn-sm" onclick="createThread(${changeId})"><i class="fas fa-plus"></i> Новый тред</button>
         <button class="btn btn-secondary btn-sm" onclick="loadDiscussion(${changeId})"><i class="fas fa-sync"></i> Обновить</button>
     </div>`;
@@ -120,21 +165,21 @@ async function loadDiscussion(changeId) {
         return;
     }
     for (const t of threads) {
-        html += `<div class="import-section" style="margin: 10px 0;">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        html += `<div class="import-section chg-thread-card">
+            <div class="chg-thread-head">
                 <strong>#${t.id} ${escapeHtml(t.subject)}</strong>
                 <span class="badge">${escapeHtml(t.status)}${t.requires_resolution ? ' · resolve required' : ''}</span>
             </div>
             <div class="reload-hint">Автор: ${escapeHtml(t.created_by)} (${escapeHtml(t.created_role)})${t.mentioned_me ? ' · mentioned me' : ''}${t.needs_my_response ? ' · needs my response' : ''}</div>
-            <div style="margin-top:8px;">`;
+            <div class="chg-thread-messages">`;
         for (const m of (t.messages || [])) {
-            html += `<div style="padding:8px; border:1px solid #e5ebf7; border-radius:8px; margin-bottom:6px;">
+            html += `<div class="chg-msg-item">
                 <div><strong>${escapeHtml(m.author)}</strong> <span class="reload-hint">(${escapeHtml(m.author_role)} · ${escapeHtml(m.kind)})</span></div>
-                <div style="white-space:pre-wrap;">${escapeHtml(m.body)}</div>
+                <div class="chg-prewrap">${escapeHtml(m.body)}</div>
             </div>`;
         }
         html += `</div>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+            <div class="chg-thread-actions">
                 <button class="btn btn-sm btn-secondary" onclick="replyThread(${changeId}, ${t.id})">Reply</button>
                 ${IS_ADMIN ? `
                     <button class="btn btn-sm btn-success" onclick="setThreadStatus(${changeId}, ${t.id}, 'accept')">Accept</button>
@@ -165,10 +210,10 @@ async function loadTimeline(changeId) {
     let html = '<h4><i class="fas fa-stream"></i> Timeline</h4>';
     html += '<div>';
     for (const e of events) {
-        html += `<div style="padding:8px; border-left:3px solid #d9e4ff; margin:6px 0 6px 6px; background:#fafcff;">
+        html += `<div class="chg-timeline-item">
             <div><strong>${escapeHtml(e.kind)}</strong> <span class="reload-hint">${escapeHtml(e.at || '')}</span></div>
             <div><span class="reload-hint">${escapeHtml(e.actor || 'system')}</span></div>
-            <div style="white-space:pre-wrap;">${escapeHtml(e.body || '')}</div>
+            <div class="chg-prewrap">${escapeHtml(e.body || '')}</div>
         </div>`;
     }
     html += '</div>';
@@ -281,14 +326,35 @@ async function showChange(id) {
           `actions i/u/d=${upsert.actions.insert}/${upsert.actions.update}/${upsert.actions.delete}; ` +
           `subactions i/u/d=${upsert.subactions.insert}/${upsert.subactions.update}/${upsert.subactions.delete}`
         : 'n/a';
-    alert(
-        `CR #${id}\nAuthor: ${data.change.created_by || 'n/a'}\nStatus: ${data.change.status}\nStaging batch: ${stagingBatchId || 'n/a'}\n` +
-        `Discussion blocking threads: ${(data.change.discussion_summary || {}).threads_blocking || 0}\n` +
-        `Structural diff: ${summary}\nJSON Patch ops: ${(patch || []).length}\nUpsert plan: ${upsertSummary}`
-    );
+    const body = document.getElementById('changeDetailsBody');
+    if (!body) return;
+    body.innerHTML = `
+        <div class="view-gap-md">
+            <p><strong>CR #${id}</strong></p>
+            <p><strong>Author:</strong> ${escapeHtml(data.change.created_by || 'n/a')}</p>
+            <p><strong>Status:</strong> ${escapeHtml(data.change.status || 'n/a')}</p>
+            <p><strong>Staging batch:</strong> ${escapeHtml(stagingBatchId || 'n/a')}</p>
+            <p><strong>Discussion blocking threads:</strong> ${(data.change.discussion_summary || {}).threads_blocking || 0}</p>
+            <p><strong>Structural diff:</strong> ${escapeHtml(summary)}</p>
+            <p><strong>JSON Patch ops:</strong> ${(patch || []).length}</p>
+            <p><strong>Upsert plan:</strong> ${escapeHtml(upsertSummary)}</p>
+        </div>
+        <details class="view-gap-md">
+            <summary><strong>JSON Patch (raw)</strong></summary>
+            <pre class="chg-prewrap">${escapeHtml(JSON.stringify(patch || [], null, 2))}</pre>
+        </details>
+        <details>
+            <summary><strong>Upsert plan (raw)</strong></summary>
+            <pre class="chg-prewrap">${escapeHtml(JSON.stringify(upsert || {}, null, 2))}</pre>
+        </details>
+    `;
+    setChangeDetailsModalVisible(true);
 }
 
 document.addEventListener('DOMContentLoaded', loadChanges);
+document.getElementById('changeDetailsModal')?.addEventListener('click', (e) => {
+    if (e.target?.id === 'changeDetailsModal') closeChangeDetailsModal();
+});
 </script>
 {% endblock %}
 

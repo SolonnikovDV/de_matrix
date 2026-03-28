@@ -11,7 +11,8 @@ if str(ROOT) not in sys.path:
 from storage.db import db_session
 from sqlalchemy import select, func
 
-from storage.postgres_repo import load_unified_from_db, load_tree_projection
+from core.diff_engine import _count_tree_nodes
+from storage.postgres_repo import load_unified_from_db
 from storage.mongo_repo import load_literature_map
 from storage.models import StagingBatch
 
@@ -19,15 +20,13 @@ from storage.models import StagingBatch
 def main():
     with db_session() as session:
         unified = load_unified_from_db(session, literature=load_literature_map())
-        projection = load_tree_projection(session)
         staging_count = session.execute(select(func.count(StagingBatch.id))).scalar_one()
-    domains = unified.get("domains") or []
-    projection_domains = projection.get("domains") or []
+    nodes = unified.get("nodes") or []
     templates = unified.get("action_templates") or {}
     literature = unified.get("literature") or {}
     print(
-        f"DB smoke ok: domains={len(domains)} "
-        f"projection_domains={len(projection_domains)} "
+        f"DB smoke ok: tree_nodes={_count_tree_nodes(nodes)} "
+        f"roots={len(nodes)} "
         f"templates={len(templates)} literature={len(literature)} "
         f"staging_batches={staging_count}"
     )

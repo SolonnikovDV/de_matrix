@@ -4,7 +4,7 @@
 
 {% block header_title %}Табличное представление матрицы компетенций{% endblock %}
 
-{% block footer_hint %}Выделяйте текст, копируйте или скачивайте таблицу{% endblock %}
+{% block footer_hint %}Порядок и шапка как в matrix_column_schema после импорта: в превью — текст колонки до скобок с тегами, в XLSX — полная первая строка как в файле для повторного импорта{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -373,7 +373,7 @@
                 <span>Выбранные домены</span>
             </label>
         </div>
-        <div class="export-domain-checkboxes" id="domainCheckboxes" style="display: none;"></div>
+        <div class="export-domain-checkboxes display-none" id="domainCheckboxes"></div>
     </div>
     <div class="export-controls">
         <button class="export-btn export-btn-primary" onclick="copyToClipboard()">
@@ -392,19 +392,7 @@
     
     <div class="table-wrapper" id="tableWrapper">
         <table class="matrix-table" id="matrixTable">
-            <thead>
-                <tr>
-                    <th>Домен / Навык / Действие</th>
-                    <th>Описание</th>
-                    <th>Уровень</th>
-                    <th>Проверочные вопросы</th>
-                    <th>Минимальные требования</th>
-                    <th>Антипаттерны</th>
-                    <th>Стек</th>
-                    <th>Инструменты</th>
-                    <th>Литература</th>
-                </tr>
-            </thead>
+            <thead id="matrixTableHead"></thead>
             <tbody id="tableBody">
                 <tr class="skeleton-table-row">
                     <td><span class="skeleton skeleton-line w-80"></span></td>
@@ -432,7 +420,7 @@
         </table>
     </div>
     
-    <div class="literature-section" id="literatureSection" style="display: none;">
+    <div class="literature-section display-none" id="literatureSection">
         <h2><i class="fas fa-book"></i> Раздел литературы (предметный указатель)</h2>
         <div class="table-wrapper">
             <table class="literature-table" id="literatureTable">
@@ -466,7 +454,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 let currentZoom = 1;
 const ZOOM_STEP = 0.1;
@@ -475,6 +462,35 @@ const MIN_ZOOM = 0.5;
 
 let lastMatrixData = null;
 let lastMeta = null;
+/** Последний unified-экспорт (заголовки как в matrix_column_schema). */
+let lastUnifiedExport = { headers: [], rows: [] };
+
+function escapeHtml(s) {
+    if (!s) return '';
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+}
+
+function applyExportDataStyles(scope) {
+    const root = scope || document;
+    root.querySelectorAll('[data-row-color]').forEach((el) => {
+        const c = el.getAttribute('data-row-color');
+        if (c) el.style.setProperty('--row-color', c);
+    });
+    root.querySelectorAll('[data-domain-color]').forEach((el) => {
+        const c = el.getAttribute('data-domain-color');
+        if (c && el.tagName === 'I') el.style.color = c;
+    });
+    root.querySelectorAll('[data-skill-color]').forEach((el) => {
+        const c = el.getAttribute('data-skill-color');
+        if (c && el.tagName === 'I') el.style.color = c;
+    });
+    root.querySelectorAll('[data-stack-color]').forEach((el) => {
+        const c = el.getAttribute('data-stack-color');
+        if (c) el.style.setProperty('--stack-color', c);
+    });
+}
 
 function getSelectedDomainIndicesFromUrl() {
     const params = new URLSearchParams(window.location.search);
@@ -506,6 +522,54 @@ function getFilteredDomains() {
     return domains.filter((_, i) => indices.includes(i));
 }
 
+function renderUnifiedExportTable(headers, rows) {
+    const thead = document.getElementById('matrixTableHead');
+    const tbody = document.getElementById('tableBody');
+    const h = headers || [];
+    const ncol = h.length || 1;
+    if (!thead || !tbody) return;
+    thead.innerHTML = h.length
+        ? `<tr>${h.map((x) => `<th>${escapeHtml(String(x))}</th>`).join('')}</tr>`
+        : '<tr><th>Матрица (unified)</th></tr>';
+    if (!rows || !rows.length) {
+        tbody.innerHTML = `<tr><td colspan="${ncol}" class="empty-cell"><p class="empty-message">Нет строк для экспорта (выберите домены или проверьте данные).</p></td></tr>`;
+        return;
+    }
+    tbody.innerHTML = rows.map((line) => {
+        const cells = line.map((c) => `<td>${escapeHtml(String(c != null ? c : '')).replace(/\n/g, '<br>')}</td>`).join('');
+        return `<tr class="unified-export-row">${cells}</tr>`;
+    }).join('');
+}
+
+async function loadUnifiedExportTable() {
+    const params = new URLSearchParams();
+    const scope = getExportScope();
+    if (scope === 'selected') {
+        const idx = getSelectedDomainIndices();
+        if (!idx || !idx.length) {
+            lastUnifiedExport = { headers: [], rows: [] };
+            renderUnifiedExportTable([], []);
+            return;
+        }
+        params.set('domains', idx.join(','));
+    }
+    try {
+        const r = await fetch(`/api/export/unified-table?${params.toString()}`);
+        const data = await r.json();
+        if (!data.ok) throw new Error(data.error || 'unified-table failed');
+        lastUnifiedExport = { headers: data.headers || [], rows: data.rows || [] };
+        renderUnifiedExportTable(data.headers || [], data.rows || []);
+    } catch (e) {
+        console.error(e);
+        const thead = document.getElementById('matrixTableHead');
+        const tbody = document.getElementById('tableBody');
+        if (thead) thead.innerHTML = '<tr><th>Ошибка</th></tr>';
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="1" class="error-cell">${escapeHtml(e.message || String(e))}</td></tr>`;
+        }
+    }
+}
+
 function buildDomainCheckboxes() {
     const domains = (lastMatrixData && lastMatrixData.domains) || [];
     const container = document.getElementById('domainCheckboxes');
@@ -528,16 +592,12 @@ function buildDomainCheckboxes() {
 
 function applyFilter() {
     const scope = getExportScope();
-    const domains = (lastMatrixData && lastMatrixData.domains) || [];
     if (scope === 'selected') {
         document.getElementById('domainCheckboxes').style.display = 'flex';
-        const indices = getSelectedDomainIndices();
-        const filtered = indices && indices.length ? domains.filter((_, i) => indices.includes(i)) : [];
-        renderTable(filtered, lastMeta);
     } else {
         document.getElementById('domainCheckboxes').style.display = 'none';
-        renderTable(domains, lastMeta);
     }
+    loadUnifiedExportTable();
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -595,111 +655,13 @@ async function loadMatrixData() {
         console.error('Error loading matrix data:', error);
         document.getElementById('tableBody').innerHTML = `
             <tr>
-                <td colspan="9" style="text-align: center; padding: 50px; color: #e74c3c;">
+                <td colspan="9" class="error-cell">
                     <i class="fas fa-exclamation-triangle fa-2x"></i>
                     <p>Ошибка загрузки данных</p>
                 </td>
             </tr>
         `;
     }
-}
-
-function renderTable(domains, meta) {
-    const tbody = document.getElementById('tableBody');
-    let html = '';
-    
-    domains.forEach((domain, domainIdx) => {
-        const domainColor = getDomainColor(domain.name);
-        const domainIcon = getDomainIcon(domain.name, domainIdx);
-        
-        html += `
-            <tr class="domain-row" style="border-left-color: ${domainColor}">
-                <td>
-                    <div class="domain-name">
-                        <i class="fas fa-${domainIcon}" style="color: ${domainColor}; margin-right: 8px;"></i>
-                        ${domain.name}
-                    </div>
-                </td>
-                <td colspan="8"></td>
-            </tr>
-        `;
-        
-        domain.skills.forEach((skill, skillIdx) => {
-            const skillColor = getSkillColor(skill.name, domainColor, skillIdx);
-            const skillIcon = getSkillIcon(skill.name, skillIdx);
-            
-            html += `
-                <tr class="skill-row">
-                    <td style="padding-left: 30px;">
-                        <div class="skill-name">
-                            <i class="fas fa-${skillIcon}" style="color: ${skillColor}; margin-right: 8px;"></i>
-                            ${skill.name}
-                        </div>
-                        ${skill.description ? `<div class="skill-description">${skill.description}</div>` : ''}
-                    </td>
-                    <td colspan="8"></td>
-                </tr>
-            `;
-            
-            skill.actions.forEach(action => {
-                const template = meta.action_templates[action.template_id] || {};
-                const stackLabels = (template.stack_refs || [])
-                    .map(ref => meta.stack_labels[ref])
-                    .filter(s => s);
-                
-                const tools = getToolsForTemplate(action.text, template, meta);
-                const literatureItems = resolveLiterature(template.resource_ids || [], meta.literature || {});
-                
-                html += `
-                    <tr class="action-row">
-                        <td style="padding-left: 45px;">
-                            <div class="action-text">${action.text}</div>
-                            <span class="template-badge">${template.name || 'Без шаблона'}</span>
-                        </td>
-                        <td>${skill.description || ''}</td>
-                        <td>${action.level_tag ? escapeHtml(String(action.level_tag).toUpperCase()) : '<span style="color: #95a5a6;">—</span>'}</td>
-                        <td>${(action.review_questions || []).length ? `<div class="requirements-preview">${(action.review_questions || []).map(escapeHtml).join('<br>')}</div>` : '<span style="color: #95a5a6;">—</span>'}</td>
-                        <td>${renderRequirements(template.minimal_requirements)}</td>
-                        <td>${renderAntipatterns(template.antipatterns)}</td>
-                        <td>${renderStack(stackLabels)}</td>
-                        <td>${renderTools(tools)}</td>
-                        <td>${renderLiterature(literatureItems)}</td>
-                    </tr>
-                `;
-                
-                // Поддействия
-                if (action.subactions) {
-                    action.subactions.forEach(sub => {
-                        const subTemplate = meta.action_templates[sub.template_id] || {};
-                        const subStack = (subTemplate.stack_refs || [])
-                            .map(ref => meta.stack_labels[ref])
-                            .filter(s => s);
-                        const subTools = getToolsForTemplate(sub.text, subTemplate, meta);
-                        const subLit = resolveLiterature(subTemplate.resource_ids || [], meta.literature || {});
-                        
-                        html += `
-                            <tr class="subaction-row">
-                                <td style="padding-left: 65px;">
-                                    <div class="subaction-text">↳ ${sub.text}</div>
-                                    <span class="template-badge">${subTemplate.name || 'Без шаблона'}</span>
-                                </td>
-                                <td>${skill.description || ''}</td>
-                                <td>${sub.level_tag ? escapeHtml(String(sub.level_tag).toUpperCase()) : '<span style="color: #95a5a6;">—</span>'}</td>
-                                <td>${(sub.review_questions || []).length ? `<div class="requirements-preview">${(sub.review_questions || []).map(escapeHtml).join('<br>')}</div>` : '<span style="color: #95a5a6;">—</span>'}</td>
-                                <td>${renderRequirements(subTemplate.minimal_requirements)}</td>
-                                <td>${renderAntipatterns(subTemplate.antipatterns)}</td>
-                                <td>${renderStack(subStack)}</td>
-                                <td>${renderTools(subTools)}</td>
-                                <td>${renderLiterature(subLit)}</td>
-                            </tr>
-                        `;
-                    });
-                }
-            });
-        });
-    });
-    
-    tbody.innerHTML = html;
 }
 
 function resolveLiterature(resourceIds, literature) {
@@ -720,7 +682,7 @@ function openLitPreviewFromData(raw, evt) {
 }
 
 function renderLiterature(items) {
-    if (!items || items.length === 0) return '<span style="color: #95a5a6;">—</span>';
+    if (!items || items.length === 0) return '<span class="muted-dash">—</span>';
     const parts = items.map(item => {
         const title = escapeHtml(item.title || '');
         const litData = JSON.stringify({id: item.id || '', title: item.title, chapter: item.chapter, pages: item.pages, url: item.url, local_path: item.local_path, description: item.description}).replace(/"/g, '&quot;');
@@ -753,14 +715,14 @@ function getToolsForTemplate(actionText, template, meta) {
 
 function renderRequirements(requirements) {
     if (!requirements || requirements.length === 0) {
-        return '<span style="color: #95a5a6;">—</span>';
+        return '<span class="muted-dash">—</span>';
     }
     return `<div class="requirements-preview">${requirements.join('<br>')}</div>`;
 }
 
 function renderAntipatterns(antipatterns) {
     if (!antipatterns || antipatterns.length === 0) {
-        return '<span style="color: #95a5a6;">—</span>';
+        return '<span class="muted-dash">—</span>';
     }
     return `<div class="requirements-preview">${antipatterns.join('<br>')}</div>`;
 }
@@ -803,21 +765,14 @@ function renderLiteratureSection(meta) {
     document.getElementById('literatureSection').style.display = 'block';
 }
 
-function escapeHtml(s) {
-    if (!s) return '';
-    const div = document.createElement('div');
-    div.textContent = s;
-    return div.innerHTML;
-}
-
 function renderStack(stackLabels) {
     if (!stackLabels || stackLabels.length === 0) {
-        return '<span style="color: #95a5a6;">—</span>';
+        return '<span class="muted-dash">—</span>';
     }
     return `
         <div class="stack-tags">
             ${stackLabels.map(s => `
-                <span class="stack-tag" style="background: ${s.color || '#9b59b6'}">
+                <span class="stack-tag stack-tag-color" data-stack-color="${s.color || '#9b59b6'}">
                     <i class="fas fa-${s.icon || 'cube'}"></i> ${s.name}
                 </span>
             `).join('')}
@@ -827,7 +782,7 @@ function renderStack(stackLabels) {
 
 function renderTools(tools) {
     if (!tools || tools.length === 0) {
-        return '<span style="color: #95a5a6;">—</span>';
+        return '<span class="muted-dash">—</span>';
     }
     return `
         <div class="tools-list">
@@ -855,154 +810,42 @@ function copyToClipboard() {
 }
 
 function exportToExcel() {
-    const domains = getFilteredDomains();
-    if (domains.length === 0) {
-        showNotification('Выберите хотя бы один домен для экспорта', 'error');
+    const all = (lastMatrixData && lastMatrixData.domains) || [];
+    if (!all.length) {
+        showNotification('Нет данных матрицы', 'error');
         return;
     }
-    const wb = XLSX.utils.book_new();
-    const meta = lastMeta || {};
-    const templates = meta.action_templates || {};
-    const stackLabels = meta.stack_labels || {};
-    const actionTools = meta.action_tools || [];
-
-    const lit = meta.literature || {};
-    const litTitles = (rids) => (rids || []).map(rid => (lit[rid] && lit[rid].title) || rid).join('; ');
-    const toolsFromPatterns = (actionText, tpl) => {
-        const patterns = meta.tools_patterns || {};
-        const groups = meta.tools_groups || {};
-        const text = (' ' + (actionText || '') + ' ' + (tpl.minimal_requirements || []).join(' ') + ' ' + (tpl.antipatterns || []).join(' ') + ' ').toLowerCase();
-        const out = [];
-        Object.keys(patterns).forEach(gid => {
-            if ((patterns[gid] || []).some(kw => text.indexOf(kw) !== -1) && groups[gid] && groups[gid].tools)
-                groups[gid].tools.forEach(t => { if (out.indexOf(t) === -1) out.push(t); });
-        });
-        return out.join(', ');
-    };
-    // Единый формат для экспорта и импорта: Domain, Skill, Action, Subaction, Description, Template ID, Level Tag, Review Questions
-    const matrixRows = [['Domain', 'Skill', 'Action', 'Subaction', 'Description', 'Template ID', 'Level Tag', 'Review Questions']];
-    domains.forEach(domain => {
-        domain.skills.forEach(skill => {
-            skill.actions.forEach(action => {
-                if (action.subactions) {
-                    action.subactions.forEach(sub => {
-                        matrixRows.push([
-                            domain.name,
-                            skill.name,
-                            action.text,
-                            sub.text,
-                            skill.description || '',
-                            sub.template_id || '',
-                            sub.level_tag || '',
-                            (sub.review_questions || []).join('; ')
-                        ]);
-                    });
-                } else {
-                    matrixRows.push([
-                        domain.name,
-                        skill.name,
-                        action.text,
-                        '',
-                        skill.description || '',
-                            action.template_id || '',
-                            action.level_tag || '',
-                            (action.review_questions || []).join('; ')
-                    ]);
-                }
-            });
-        });
-    });
-    const ws = XLSX.utils.aoa_to_sheet(matrixRows);
-    ws['!cols'] = [{ wch: 30 }, { wch: 25 }, { wch: 50 }, { wch: 50 }, { wch: 40 }, { wch: 25 }, { wch: 14 }, { wch: 42 }];
-    XLSX.utils.book_append_sheet(wb, ws, 'Матрица навыков');
-
-    const litIds = Object.keys(lit);
-    if (litIds.length > 0) {
-        const templateToLeaves = {};
-        Object.keys(templates).forEach(tid => {
-            (templates[tid].resource_ids || []).forEach(rid => {
-                if (!templateToLeaves[rid]) templateToLeaves[rid] = [];
-                templateToLeaves[rid].push(templates[tid].name || tid);
-            });
-        });
-        const litRows = [['Название', 'Глава / раздел', 'Страницы', 'URL', 'Локальный файл', 'Привязка к компетенциям']];
-        litIds.forEach(rid => {
-            const item = lit[rid];
-            litRows.push([
-                item.title || rid,
-                item.chapter || '',
-                item.pages || '',
-                item.url || '',
-                item.local_path || item.file_path || '',
-                (templateToLeaves[rid] || []).join('; ')
-            ]);
-        });
-        const wsLit = XLSX.utils.aoa_to_sheet(litRows);
-        wsLit['!cols'] = [{ wch: 45 }, { wch: 35 }, { wch: 15 }, { wch: 50 }, { wch: 30 }, { wch: 50 }];
-        XLSX.utils.book_append_sheet(wb, wsLit, 'Литература');
+    const scope = getExportScope();
+    if (scope === 'selected') {
+        const idx = getSelectedDomainIndices();
+        if (!idx || !idx.length) {
+            showNotification('Выберите хотя бы один домен', 'error');
+            return;
+        }
     }
-    
-    const date = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, `matrix_skills_${date}.xlsx`);
-    showNotification('Файл XLSX сохранен');
+    const params = new URLSearchParams();
+    if (scope === 'selected') params.set('domains', getSelectedDomainIndices().join(','));
+    window.location.href = `/api/export/unified.xlsx?${params.toString()}`;
+    showNotification('Идёт загрузка XLSX (unified relational)…');
 }
 
 function exportToCSV() {
-    const domains = getFilteredDomains();
-    if (domains.length === 0) {
-        showNotification('Выберите хотя бы один домен для экспорта', 'error');
+    const h = lastUnifiedExport.headers || [];
+    const dataRows = lastUnifiedExport.rows || [];
+    if (!dataRows.length) {
+        showNotification('Нет строк для CSV — обновите таблицу или выберите домены', 'error');
         return;
     }
-    const rows = [];
-    rows.push(['Домен', 'Навык', 'Действие', 'Поддействие', 'Описание навыка', 'Уровень', 'Проверочные вопросы', 'Минимальные требования', 'Антипаттерны', 'Стек', 'Инструменты', 'Литература']);
-    
-    const tbody = document.getElementById('tableBody');
-    let currentDomain = '';
-    let currentSkill = '';
-    let currentAction = '';
-    
-    tbody.querySelectorAll('tr').forEach(row => {
-        if (row.classList.contains('domain-row')) {
-            currentDomain = row.querySelector('.domain-name').textContent.trim();
-        } else if (row.classList.contains('skill-row')) {
-            const skillCell = row.querySelector('td');
-            currentSkill = skillCell.querySelector('.skill-name').textContent.trim();
-        } else if (row.classList.contains('action-row')) {
-            const cells = row.querySelectorAll('td');
-            currentAction = cells[0].querySelector('.action-text').textContent.trim();
-            const skillDesc = cells[1].textContent.replace(/\s+/g, ' ').trim();
-            const levelTag = cells[2].textContent.replace(/\s+/g, ' ').trim();
-            const questions = cells[3].textContent.replace(/\s+/g, ' ').trim();
-            const requirements = cells[4].textContent.replace('РазвернутьСвернуть', '').replace(/\s+/g, ' ').trim();
-            const antipatterns = cells[5].textContent.replace('РазвернутьСвернуть', '').replace(/\s+/g, ' ').trim();
-            const stack = cells[6].textContent.replace(/\s+/g, ' ').trim();
-            const tools = cells[7].textContent.replace(/\s+/g, ' ').trim();
-            const literature = cells[8] ? cells[8].textContent.replace(/\s+/g, ' ').trim() : '';
-            rows.push([currentDomain, currentSkill, currentAction, '', skillDesc, levelTag, questions, requirements, antipatterns, stack, tools, literature]);
-        } else if (row.classList.contains('subaction-row')) {
-            const cells = row.querySelectorAll('td');
-            const subactionText = cells[0].querySelector('.subaction-text').textContent.replace('↳', '').trim();
-            const skillDesc = cells[1].textContent.replace(/\s+/g, ' ').trim();
-            const levelTag = cells[2].textContent.replace(/\s+/g, ' ').trim();
-            const questions = cells[3].textContent.replace(/\s+/g, ' ').trim();
-            const requirements = cells[4].textContent.replace('РазвернутьСвернуть', '').replace(/\s+/g, ' ').trim();
-            const antipatterns = cells[5].textContent.replace('РазвернутьСвернуть', '').replace(/\s+/g, ' ').trim();
-            const stack = cells[6].textContent.replace(/\s+/g, ' ').trim();
-            const tools = cells[7].textContent.replace(/\s+/g, ' ').trim();
-            const literature = cells[8] ? cells[8].textContent.replace(/\s+/g, ' ').trim() : '';
-            rows.push([currentDomain, currentSkill, currentAction, subactionText, skillDesc, levelTag, questions, requirements, antipatterns, stack, tools, literature]);
-        }
-    });
-    
-    const csvContent = rows.map(row => 
-        row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(',')
+    const rows = [h, ...dataRows];
+    const csvContent = rows.map((row) =>
+        row.map((cell) => `"${String(cell != null ? cell : '').replace(/"/g, '""')}"`).join(',')
     ).join('\n');
     
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.href = url;
-    link.download = `matrix_skills_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `matrix_unified_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

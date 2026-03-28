@@ -1,17 +1,22 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+from collections import defaultdict
 from copy import deepcopy
 from typing import Dict, Any, Optional, List
 
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, delete, func, text
 from sqlalchemy.orm import Session
 
+from storage.matrix_level_tables import (
+    drop_all_level_tables,
+    level_registry_nonempty,
+    load_tree_from_level_tables,
+    rebuild_level_tables_from_tree,
+)
 from storage.models import (
-    Domain,
-    Skill,
-    Action,
-    Subaction,
+    MATRIX_STRUCT_SCHEMA,
+    MatrixNode,
     ActionTemplate,
     ActionTemplateMinimalRequirement,
     ActionTemplateAntipattern,
@@ -22,84 +27,57 @@ from storage.models import (
     UiConfig,
     UiSectionTitle,
     UiSetting,
-    ActionReviewQuestion,
-    SubactionReviewQuestion,
 )
 from core.schema import SCHEMA_VERSION
+from core.matrix_schema import normalize_level_tags
+
+
+def _matrix_struct_tables_exist(session: Session) -> bool:
+    row = session.execute(
+        text(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = :sch AND table_name = 'matrix_nodes'"
+        ),
+        {"sch": MATRIX_STRUCT_SCHEMA},
+    ).first()
+    return row is not None
+
+
+def _truncate_matrix_struct(session: Session) -> None:
+    """Полная очистка объектов матрицы в схеме matrix_struct перед replace из импорта/CR."""
+    if not _matrix_struct_tables_exist(session):
+        return
+    drop_all_level_tables(session)
+    ms = MATRIX_STRUCT_SCHEMA
+    session.execute(
+        text(
+            f"TRUNCATE TABLE "
+            f"{ms}.action_template_min_requirements, "
+            f"{ms}.action_template_antipatterns, "
+            f"{ms}.action_template_stack_refs, "
+            f"{ms}.action_template_example_refs, "
+            f"{ms}.action_template_literature_refs, "
+            f"{ms}.action_templates, "
+            f"{ms}.matrix_nodes, "
+            f"{ms}.action_examples, "
+            f"{ms}.ui_section_titles, "
+            f"{ms}.ui_settings, "
+            f"{ms}.ui_config "
+            f"RESTART IDENTITY CASCADE"
+        )
+    )
 
 
 def _empty_unified() -> Dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "domains": [],
+        "nodes": [],
         "action_examples": [],
         "literature": {},
         "action_templates": {},
         "ui_config": {},
     }
-
-
-def _slug(value: str) -> str:
-    return "".join(ch.lower() if ch.isalnum() else "_" for ch in (value or "").strip()).strip("_")
-
-
-def _domain_code(name: str, idx: int) -> str:
-    return _slug(name) or f"domain_{idx}"
-
-
-def _skill_code(domain_code: str, name: str, idx: int) -> str:
-    return f"{domain_code}.{_slug(name) or f'skill_{idx}'}"
-
-
-def _action_code(skill_code: str, text: str, idx: int) -> str:
-    return f"{skill_code}.{_slug(text) or f'action_{idx}'}"
-
-
-def _subaction_code(action_code: str, text: str, idx: int) -> str:
-    return f"{action_code}.{_slug(text) or f'subaction_{idx}'}"
-
-
-def load_tree_projection(session: Session) -> Dict[str, Any]:
-    out = {"domains": []}
-    domains = session.execute(select(Domain).order_by(Domain.sort_order, Domain.id)).scalars().all()
-    for d in domains:
-        d_item = {"code": d.code or "", "name": d.name, "skills": []}
-        skills = sorted(d.skills, key=lambda s: (s.sort_order, s.id))
-        for s in skills:
-            s_item = {"code": s.code or "", "name": s.name, "description": s.description or "", "actions": []}
-            actions = sorted(s.actions, key=lambda a: (a.sort_order, a.id))
-            for a in actions:
-                action_questions = [q.question for q in sorted(a.review_question_rows, key=lambda x: (x.sort_order, x.id))]
-                if not action_questions:
-                    action_questions = deepcopy(a.review_questions or [])
-                a_item = {
-                    "code": a.code or "",
-                    "text": a.text,
-                    "template_id": a.template_id,
-                    "review_questions": action_questions,
-                }
-                if a.level_tag:
-                    a_item["level_tag"] = a.level_tag
-                subs = sorted(a.subactions, key=lambda x: (x.sort_order, x.id))
-                if subs:
-                    a_item["subactions"] = []
-                    for sub in subs:
-                        sub_questions = [q.question for q in sorted(sub.review_question_rows, key=lambda x: (x.sort_order, x.id))]
-                        if not sub_questions:
-                            sub_questions = deepcopy(sub.review_questions or [])
-                        sub_item = {
-                            "code": sub.code or "",
-                            "text": sub.text,
-                            "template_id": sub.template_id,
-                            "review_questions": sub_questions,
-                        }
-                        if sub.level_tag:
-                            sub_item["level_tag"] = sub.level_tag
-                        a_item["subactions"].append(sub_item)
-                s_item["actions"].append(a_item)
-            d_item["skills"].append(s_item)
-        out["domains"].append(d_item)
-    return out
 
 
 def load_templates_projection(session: Session) -> Dict[str, Any]:
@@ -163,8 +141,8 @@ def load_ui_projection(session: Session) -> Dict[str, Any]:
 
 def load_unified_from_db(session: Session, literature: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     out = _empty_unified()
-    tree = load_tree_projection(session)
-    out["domains"] = tree.get("domains") or []
+    out["nodes"] = load_matrix_nodes_nested(session)
+    out["domains"] = []
     out["action_templates"] = load_templates_projection(session)
     out["action_examples"] = load_examples_projection(session)
     out["ui_config"] = load_ui_projection(session)
@@ -172,73 +150,63 @@ def load_unified_from_db(session: Session, literature: Optional[Dict[str, Any]] 
     return out
 
 
-def replace_tree_projection_in_db(session: Session, projection: Dict[str, Any]) -> None:
-    domains = (projection or {}).get("domains") or []
-    session.execute(delete(Subaction))
-    session.execute(delete(SubactionReviewQuestion))
-    session.execute(delete(ActionReviewQuestion))
-    session.execute(delete(Action))
-    session.execute(delete(Skill))
-    session.execute(delete(Domain))
+def load_matrix_nodes_nested(session: Session) -> List[Dict[str, Any]]:
+    if level_registry_nonempty(session):
+        return load_tree_from_level_tables(session)
+    cnt = session.execute(select(func.count(MatrixNode.id))).scalar_one()
+    if not int(cnt or 0):
+        return []
+    rows = session.execute(
+        select(MatrixNode).order_by(MatrixNode.depth, MatrixNode.sort_order, MatrixNode.id)
+    ).scalars().all()
+    by_parent: Dict[Optional[int], List[MatrixNode]] = defaultdict(list)
+    for r in rows:
+        by_parent[r.parent_id].append(r)
 
-    for di, d in enumerate(domains):
-        d_rec = Domain(
-            name=d.get("name", ""),
-            code=d.get("code") or _domain_code(d.get("name") or "", di),
-            sort_order=di,
-        )
-        session.add(d_rec)
-        session.flush()
-        for si, s in enumerate(d.get("skills") or []):
-            s_rec = Skill(
-                domain_id=d_rec.id,
-                name=s.get("name", ""),
-                code=s.get("code") or _skill_code(d_rec.code or "", s.get("name") or "", si),
-                description=s.get("description", "") or "",
-                sort_order=si,
-            )
-            session.add(s_rec)
-            session.flush()
-            for ai, a in enumerate(s.get("actions") or []):
-                a_rec = Action(
-                    skill_id=s_rec.id,
-                    text=a.get("text", ""),
-                    code=a.get("code") or _action_code(s_rec.code or "", a.get("text") or "", ai),
-                    template_id=a.get("template_id"),
-                    level_tag=a.get("level_tag"),
-                    review_questions=a.get("review_questions") or [],
-                    sort_order=ai,
-                )
-                session.add(a_rec)
-                session.flush()
-                for qi, question in enumerate(a.get("review_questions") or []):
-                    session.add(
-                        ActionReviewQuestion(
-                            action_id=a_rec.id,
-                            sort_order=qi,
-                            question=str(question),
-                        )
-                    )
-                for subi, sub in enumerate(a.get("subactions") or []):
-                    sub_rec = Subaction(
-                        action_id=a_rec.id,
-                        text=sub.get("text", ""),
-                        code=sub.get("code") or _subaction_code(a_rec.code or "", sub.get("text") or "", subi),
-                        template_id=sub.get("template_id"),
-                        level_tag=sub.get("level_tag"),
-                        review_questions=sub.get("review_questions") or [],
-                        sort_order=subi,
-                    )
-                    session.add(sub_rec)
-                    session.flush()
-                    for qi, question in enumerate(sub.get("review_questions") or []):
-                        session.add(
-                            SubactionReviewQuestion(
-                                subaction_id=sub_rec.id,
-                                sort_order=qi,
-                                question=str(question),
-                            )
-                        )
+    def to_dict(r: MatrixNode) -> Dict[str, Any]:
+        kids = by_parent.get(r.id, [])
+        ch = [to_dict(c) for c in sorted(kids, key=lambda x: (x.sort_order, x.id))]
+        d: Dict[str, Any] = {"name": r.title or "", "children": ch}
+        if r.description:
+            d["description"] = r.description
+        if r.responsible:
+            d["responsible"] = r.responsible
+        if r.level_sticker:
+            d["level_sticker"] = r.level_sticker or ""
+        if r.code:
+            d["code"] = r.code
+        if r.template_id:
+            d["template_id"] = r.template_id
+        lt = list(r.level_tags or []) if getattr(r, "level_tags", None) else []
+        if not lt and r.level_tag:
+            lt = normalize_level_tags(r.level_tag)
+        if lt:
+            d["level_tags"] = lt
+        elif r.level_tag:
+            d["level_tag"] = r.level_tag
+        lv = getattr(r, "leaf_view", None) or {}
+        if isinstance(lv, dict) and lv:
+            d["leaf_view"] = deepcopy(lv)
+        rq = r.review_questions or []
+        if isinstance(rq, list) and rq:
+            d["review_questions"] = [str(q) for q in rq]
+        epk = str(getattr(r, "excel_path_key", None) or "").strip()
+        if epk:
+            d["excel_path_key"] = epk
+        return d
+
+    roots = by_parent.get(None, [])
+    return [to_dict(r) for r in sorted(roots, key=lambda x: (x.sort_order, x.id))]
+
+
+def replace_matrix_nodes(
+    session: Session,
+    nodes: List[Dict[str, Any]],
+    ui_config: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Полная замена дерева: динамические таблицы уровней + пустой legacy matrix_nodes."""
+    session.execute(delete(MatrixNode))
+    rebuild_level_tables_from_tree(session, nodes or [], ui_config if isinstance(ui_config, dict) else {})
 
 
 def replace_templates_in_db(session: Session, templates: Dict[str, Any]) -> None:
@@ -305,29 +273,29 @@ def replace_ui_in_db(session: Session, ui_config: Dict[str, Any]) -> None:
 
 
 def replace_unified_in_db(session: Session, unified: Dict[str, Any]) -> None:
+    _truncate_matrix_struct(session)
     payload = unified or {}
-    replace_tree_projection_in_db(session, {"domains": payload.get("domains") or []})
+    nodes = payload.get("nodes") if isinstance(payload.get("nodes"), list) else []
+    ui_cfg = payload.get("ui_config") if isinstance(payload.get("ui_config"), dict) else {}
+    replace_matrix_nodes(session, nodes, ui_cfg)
     replace_templates_in_db(session, payload.get("action_templates") or {})
     replace_examples_in_db(session, payload.get("action_examples") or [])
     replace_ui_in_db(session, payload.get("ui_config") or {})
 
 
-def upsert_from_staging_projection(session: Session, staging_projection: Dict[str, Any]) -> None:
-    """
-    Transitional upsert implementation: currently full replacement of normalized tree.
-    """
-    replace_tree_projection_in_db(session, staging_projection or {"domains": []})
-
-
 def list_domains(session: Session) -> List[Dict[str, Any]]:
-    domains = session.execute(select(Domain).order_by(Domain.sort_order, Domain.id)).scalars().all()
+    """Имена корней и детей первого уровня (для API /api/domains)."""
+    nested = load_matrix_nodes_nested(session)
     out = []
-    for d in domains:
-        skills = sorted(d.skills, key=lambda s: (s.sort_order, s.id))
-        out.append({"name": d.name, "skills": [s.name for s in skills]})
+    for root in nested:
+        if not isinstance(root, dict):
+            continue
+        ch = root.get("children") or []
+        out.append(
+            {
+                "name": root.get("name", ""),
+                "skills": [c.get("name", "") for c in ch if isinstance(c, dict)],
+            }
+        )
     return out
-
-
-def count_domains(session: Session) -> int:
-    return session.execute(select(func.count(Domain.id))).scalar_one()
 

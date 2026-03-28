@@ -4,331 +4,489 @@
 
 {% block header_title %}Матрица компетенций Middle Data Engineer{% endblock %}
 
-{% block footer_hint %}Кликните на любой элемент для раскрытия{% endblock %}
+{% block footer_hint %}Дерево строится динамически из структуры БД: раскрывайте узлы слева направо, листья открываются в модале.{% endblock %}
 
 {% block content %}
-<div class="matrix" id="matrix">
-    {% for domain in domains %}
-    {% set domain_loop = loop %}
-    {% set domain_color = domain.name|domain_color %}
-    {% set domain_icon = domain.name|domain_icon(loop.index0) %}
-    <div class="domain-card" id="domain-{{ domain_loop.index0 }}" data-domain-id="{{ domain_loop.index0 }}" style="border-top: 4px solid {{ domain_color }}">
-        <div class="domain-header" style="background: {{ domain_color }}">
-            <h2>
-                <i class="fas fa-{{ domain_icon }}"></i>
-                {{ domain.name }}
-            </h2>
-            <div class="domain-actions">
-                <a href="/domain-graph/{{ domain_loop.index0 }}" class="domain-graph-link" title="Показать граф домена" onclick="event.stopPropagation();">
-                    <i class="fas fa-project-diagram"></i> Граф
-                </a>
-                <i class="fas fa-chevron-down toggle-icon"></i>
-            </div>
+<div class="import-container">
+    <div class="import-section">
+        <h2><i class="fas fa-th-large"></i> Матрица компетенций</h2>
+        <p class="reload-hint">Горизонтальный режим с динамической глубиной: уровни формируются автоматически по дереву из БД, каждый выбранный узел раскрывает следующий уровень справа.</p>
+        {% if matrix_has_data %}
+        <div class="domain-tree-view matrix-tree-view" id="matrixTreeView"></div>
+        {% else %}
+        <div class="matrix-empty-state">
+            <i class="fas fa-exclamation-triangle matrix-empty-icon"></i>
+            <h2>Данные не загружены</h2>
+            <p>Проверьте файл data/sources/matrix.json или выберите источник в настройках</p>
         </div>
-        <div class="domain-content">
-            <div class="skills-list">
-                {% for skill in domain.skills %}
-                {% set skill_loop = loop %}
-                {% set skill_color = skill.name|skill_color(domain_color, loop.index0) %}
-                {% set skill_icon = skill.name|skill_icon(loop.index0) %}
-                <div class="skill-item" data-skill-id="{{ skill_loop.index0 }}">
-                    <div class="skill-header">
-                        <h3>
-                            <i class="fas fa-{{ skill_icon }}" style="color: {{ skill_color }}"></i>
-                            {{ skill.name }}
-                        </h3>
-                        <i class="fas fa-chevron-down toggle-icon skill-toggle-icon"></i>
-                    </div>
-                    <div class="skill-description">{{ skill.description }}</div>
-                    <div class="skill-actions">
-                        <ul class="action-list">
-                            {% for action in skill.actions %}
-                            {% set action_loop = loop %}
-                                {% if action.subactions %}
-                                    <!-- Группа листов: раскрывается по клику -->
-                                    <li class="action-group expanded" data-has-children="true">
-                                        <div class="action-parent action-group-header">
-                                            <i class="fas fa-chevron-right toggle-icon group-toggle"></i>
-                                            <i class="fas fa-folder-open" style="color: {{ domain_color }}"></i>
-                                            <span class="group-name">{{ action.text }}</span>
-                                        </div>
-                                        <ul class="subaction-list">
-                                    {% for sub in action.subactions %}
-                                        <li class="subaction-item leaf-item" 
-                                            data-domain-id="{{ domain_loop.index0 }}"
-                                            data-skill-id="{{ skill_loop.index0 }}"
-                                            data-action-idx="{{ action_loop.index0 }}"
-                                            data-sub-idx="{{ loop.index0 }}"
-                                            data-leaf-path="{{ domain_loop.index0 }}/{{ skill_loop.index0 }}/{{ action_loop.index0 }}/{{ loop.index0 }}">
-                                            <i class="fas fa-angle-right" style="color: {{ skill_color }}"></i>
-                                            <span class="leaf-text">{{ sub.text }}</span>
-                                            {% if sub.level_tag %}
-                                            <span class="leaf-level-badge">{{ sub.level_tag|upper }}</span>
-                                            {% endif %}
-                                            <span class="leaf-lit-badges"></span>
-                                            <i class="fas fa-link leaf-bind-btn" title="Привязать литературу" data-leaf-path="{{ domain_loop.index0 }}/{{ skill_loop.index0 }}/{{ action_loop.index0 }}/{{ loop.index0 }}"></i>
-                                        </li>
-                                    {% endfor %}
-                                        </ul>
-                                    </li>
-                                {% else %}
-                                    <!-- Обычное действие без поддействий (лист) -->
-                                    <li class="action-item leaf-item" 
-                                        data-domain-id="{{ domain_loop.index0 }}"
-                                        data-skill-id="{{ skill_loop.index0 }}"
-                                        data-action-idx="{{ action_loop.index0 }}"
-                                        data-leaf-path="{{ domain_loop.index0 }}/{{ skill_loop.index0 }}/{{ action_loop.index0 }}">
-                                        <i class="fas fa-check-circle" style="color: {{ domain_color }}"></i>
-                                        <span class="leaf-text">{{ action.text }}</span>
-                                        {% if action.level_tag %}
-                                        <span class="leaf-level-badge">{{ action.level_tag|upper }}</span>
-                                        {% endif %}
-                                        <span class="leaf-lit-badges"></span>
-                                        <i class="fas fa-link leaf-bind-btn" title="Привязать литературу" data-leaf-path="{{ domain_loop.index0 }}/{{ skill_loop.index0 }}/{{ action_loop.index0 }}"></i>
-                                    </li>
-                                {% endif %}
-                            {% endfor %}
-                        </ul>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
+        {% endif %}
     </div>
-    {% endfor %}
 </div>
 
-<!-- Сообщение об ошибке, если нет доменов -->
-{% if not domains %}
-<div class="matrix-empty-state">
-    <i class="fas fa-exclamation-triangle matrix-empty-icon"></i>
-    <h2>Данные не загружены</h2>
-    <p>Проверьте файл data/sources/matrix.json или выберите источник в настройках</p>
+<div class="modal-overlay is-hidden" id="matrixLeafModal" aria-hidden="true">
+    <div class="modal-box mw-900 modal-leaf-matrix">
+        <div class="modal-header">
+            <h3><i class="fas fa-file-lines"></i> Лист матрицы</h3>
+        </div>
+        <div class="modal-body matrix-leaf-modal-scroll" id="matrixLeafModalBody"><p class="empty-message">Нет данных.</p></div>
+        <div class="modal-footer modal-actions">
+            <a id="matrixLeafModalOpenLink" class="btn btn-primary" href="#" target="_self"><i class="fas fa-up-right-from-square"></i> Открыть в полном режиме</a>
+            <button type="button" class="btn btn-secondary" onclick="closeMatrixLeafModal()">Закрыть</button>
+        </div>
+    </div>
 </div>
-{% endif %}
 {% endblock %}
 
 {% block extra_css %}
 <style>
-.leaf-bind-btn { margin-left: 8px; opacity: 0.6; cursor: pointer; font-size: 0.85em; transition: opacity 0.2s ease, color 0.2s ease; }
-.leaf-bind-btn:hover { opacity: 1; color: #3f6fd8; }
-.leaf-lit-badges { margin-left: 6px; }
-.lit-badge { font-size: 0.75em; color: #27ae60; margin-right: 4px; }
-.skill-toggle-icon { font-size: 0.9em; color: #95a5a6; }
+.matrix-tree-view { overflow: auto; min-height: 520px; }
+.matrix-tree-view .tree-column { min-width: 260px; max-width: none; }
+.matrix-tree-view .tree-node-label { flex: 1; min-width: 0; }
+.matrix-tree-view .tree-node-desc-hint {
+    font-size: 0.8rem;
+    color: var(--text-muted, #64748b);
+    line-height: 1.35;
+    margin-top: 4px;
+    padding-left: 1.5rem;
+}
 .matrix-empty-state { text-align: center; padding: 50px; }
 .matrix-empty-icon { font-size: 48px; color: #f39c12; }
-.leaf-lit-badges.loading::before {
-    content: "";
-    display: inline-block;
-    width: 26px;
-    height: 10px;
-    border-radius: 999px;
-    background: linear-gradient(90deg, #e9eef9 0%, #f7f9ff 50%, #e9eef9 100%);
-    background-size: 200% 100%;
-    animation: leafBadgePulse 1.2s ease-in-out infinite;
-}
-.leaf-level-badge {
-    display: inline-block;
-    margin-left: 6px;
-    padding: 2px 8px;
-    border-radius: 999px;
-    font-size: 0.7em;
-    letter-spacing: 0.04em;
-    color: #2f4f98;
-    background: #eaf1ff;
-    border: 1px solid #cfdcff;
-}
-@keyframes leafBadgePulse {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-}
 </style>
 {% endblock %}
 {% block extra_js %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM загружен, инициализация обработчиков...');
-    initMatrixHandlers();
-    setupKeyboardNavigation();
-    
-    if (window.location.hash) {
-        setTimeout(() => {
-            const hash = window.location.hash.substring(1);
-            const element = document.getElementById(hash);
-            if (element) {
-                element.scrollIntoView({ behavior: 'smooth' });
-                const domainCard = element.closest('.domain-card');
-                if (domainCard) {
-                    domainCard.classList.add('expanded');
+function escHtml(s) {
+    return String(s || '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
+function getNodeChildren(node) {
+    return Array.isArray(node?.children) ? node.children : [];
+}
+
+function getNodeTitle(node) {
+    return String(
+        node?.name ??
+        node?.text ??
+        node?.title ??
+        node?.label ??
+        node?.id ??
+        'Без названия'
+    );
+}
+
+/** Краткое описание узла для подписи в дереве (plain text, одна строка). */
+function getNodeDescriptionSnippet(node) {
+    const d = String(node && node.description != null ? node.description : '').trim();
+    if (!d) return '';
+    const oneLine = d.replace(/\s+/g, ' ').trim();
+    return oneLine.length > 140 ? oneLine.slice(0, 137) + '…' : oneLine;
+}
+
+function getLevelLabel(level, nodes) {
+    const sample = Array.isArray(nodes) && nodes.length ? nodes[0] : null;
+    if (typeof window.matrixSchemaLevelLabel === 'function') {
+        return window.matrixSchemaLevelLabel(level, sample);
+    }
+    if (sample && typeof sample.level_name === 'string' && sample.level_name.trim()) {
+        return sample.level_name.trim();
+    }
+    if (sample && Number.isInteger(sample.level)) {
+        return 'item_' + String(Number(sample.level));
+    }
+    return 'item_' + String(level);
+}
+
+function getPathString(node) {
+    if (node && Array.isArray(node.path) && node.path.length) {
+        return node.path.map(Number).join('/');
+    }
+    return '';
+}
+
+let matrixChangeHints = {};
+
+function matrixChangeHintMarkup(node) {
+    const p = getPathString(node);
+    if (!p || !matrixChangeHints || typeof matrixChangeHints !== 'object') return '';
+    const h = matrixChangeHints[p];
+    if (!h || !h.actor) return '';
+    const actor = String(h.actor).trim();
+    if (!actor) return '';
+    const cid = h.change_id != null ? String(h.change_id) : '';
+    const title = cid ? ('CR #' + cid + (h.at ? ' · ' + String(h.at) : '')) : '';
+    const label = 'изменено: ' + actor;
+    return '<a class="matrix-change-hint-sticker" href="/changes" title="' + escHtml(title) + '">' + escHtml(label) + '</a>';
+}
+
+function nodeLevelBadgesHtml(node) {
+    const tags = Array.isArray(node.level_tags) && node.level_tags.length
+        ? node.level_tags
+        : (node.level_tag ? [node.level_tag] : []);
+    if (!tags.length) return '';
+    return tags.map(function (t) {
+        return '<span class="tree-node-level-badge">' + escHtml(String(t).toUpperCase()) + '</span>';
+    }).join('');
+}
+
+function getLeafColumnLabel() {
+    if (typeof window.matrixSchemaLeafColumnHeading === 'function') {
+        return window.matrixSchemaLeafColumnHeading();
+    }
+    return 'leaf';
+}
+
+function renderLeafColumn(treeView, node) {
+    const col = document.createElement('div');
+    col.className = 'tree-column tree-column-leaf';
+    col.innerHTML = '<div class="tree-level-label">' + escHtml(getLeafColumnLabel()) + '</div>';
+    const list = document.createElement('div');
+    const item = document.createElement('div');
+    item.className = 'tree-node tree-node-leaf has-children';
+    const leafPath = getPathString(node);
+    const leafHint = node && getNodeTitle(node) ? '<div class="tree-node-leaf-hint">' + escHtml(getNodeTitle(node)) + '</div>' : '';
+    const leafDesc = node && getNodeDescriptionSnippet(node) ? '<div class="tree-node-desc-hint">' + escHtml(getNodeDescriptionSnippet(node)) + '</div>' : '';
+    item.innerHTML = '<div class="tree-node-main-row"><i class="fas fa-file-alt"></i><span class="tree-node-label">' +
+        escHtml('Открыть карточку') + '</span></div>' + leafHint + leafDesc;
+    item.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (leafPath) openMatrixLeafModal(leafPath);
+    });
+    list.appendChild(item);
+    col.appendChild(list);
+    treeView.appendChild(col);
+}
+
+function setMatrixLeafModalVisible(visible) {
+    const modal = document.getElementById('matrixLeafModal');
+    if (!modal) return;
+    modal.classList.toggle('is-hidden', !visible);
+    modal.style.display = visible ? 'flex' : 'none';
+    modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function closeMatrixLeafModal() {
+    setMatrixLeafModalVisible(false);
+}
+
+const LEAF_VIEW_SECTION_ORDER = ['readiness', 'antipatterns', 'stack', 'sources', 'questions', 'toolkit'];
+
+const LEAF_VIEW_TITLE_FALLBACK_MATRIX = {
+    stack: 'Стек и технологии',
+    toolkit: 'Инструментарий',
+    readiness: 'Критерии готовности',
+    antipatterns: 'Антипаттерны',
+    sources: 'Источники',
+    questions: 'Вопросы и проверка',
+};
+
+function leafViewTitleForKey(key) {
+    if (typeof window.matrixSchemaLeafViewTitleForKey === 'function') {
+        const t = window.matrixSchemaLeafViewTitleForKey(key);
+        if (t && String(t).trim()) return t;
+    }
+    const fb = LEAF_VIEW_TITLE_FALLBACK_MATRIX[key];
+    if (fb) return fb;
+    return String(key || '').replace(/_/g, ' ');
+}
+
+function leafViewValueIsEmpty(v) {
+    if (v == null) return true;
+    if (typeof v === 'string') return !String(v).trim();
+    if (Array.isArray(v)) return v.length === 0;
+    if (typeof v === 'object') return Object.keys(v).length === 0;
+    return false;
+}
+
+function formatLeafViewBody(val) {
+    if (val == null) return '';
+    if (Array.isArray(val)) {
+        return '<ul class="leaf-view-list">' + val.map(x => '<li>' + escHtml(x) + '</li>').join('') + '</ul>';
+    }
+    if (typeof val === 'object') {
+        return '<pre class="leaf-view-json">' + escHtml(JSON.stringify(val, null, 2)) + '</pre>';
+    }
+    const str = String(val).trim();
+    if (!str) return '';
+    if (str.includes('\n')) {
+        const parts = str.split(/\n+/).map(p => p.trim()).filter(Boolean);
+        if (parts.length > 1) {
+            return '<ul class="leaf-view-list"><li>' + parts.map(escHtml).join('</li><li>') + '</li></ul>';
+        }
+    }
+    return '<div class="leaf-view-body">' + escHtml(str).replace(/\n/g, '<br>') + '</div>';
+}
+
+function renderLeafViewSections(leafView, skipKeys) {
+    skipKeys = skipKeys || {};
+    if (!leafView || typeof leafView !== 'object') return '';
+    const keys = Object.keys(leafView).filter(k => !leafViewValueIsEmpty(leafView[k]) && !skipKeys[k]);
+    if (!keys.length) return '';
+    keys.sort((a, b) => {
+        const ia = LEAF_VIEW_SECTION_ORDER.indexOf(a);
+        const ib = LEAF_VIEW_SECTION_ORDER.indexOf(b);
+        if (ia === -1 && ib === -1) return a.localeCompare(b);
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
+        return ia - ib;
+    });
+    let html = '';
+    keys.forEach((k) => {
+        const title = leafViewTitleForKey(k);
+        const body = formatLeafViewBody(leafView[k]);
+        if (!body) return;
+        html += '<section class="action-section leaf-view-section"><h2><i class="fas fa-book-open"></i> ' +
+            escHtml(title) + '</h2><div class="section-content">' + body + '</div></section>';
+    });
+    return html;
+}
+
+function literatureItemDataAttr(item) {
+    return JSON.stringify(item || {}).replace(/"/g, '&quot;');
+}
+
+function levelTagsFromLeafPayload(data) {
+    if (Array.isArray(data.level_tags) && data.level_tags.length) return data.level_tags;
+    if (data.level_tag) return [data.level_tag];
+    return [];
+}
+
+function buildMatrixLeafModalHtml(data) {
+    const lt = levelTagsFromLeafPayload(data);
+    const summaryPlain = String(data.node_summary != null ? data.node_summary : '').trim();
+    const leafStickerNode = {
+        description: summaryPlain,
+        responsible: data.responsible,
+        level_tags: data.level_tags || lt,
+        level_tag: data.level_tag,
+        level_sticker: data.level_sticker,
+    };
+    const propCloud = (typeof window.matrixNodePropertyStickersHtml === 'function')
+        ? window.matrixNodePropertyStickersHtml(leafStickerNode, escHtml)
+        : '';
+    const level = lt.length ? lt.map(function (t) {
+        return '<span class="tree-node-level-badge">' + escHtml(String(t).toUpperCase()) + '</span>';
+    }).join(' ') : '';
+    const questionsHtml = Array.isArray(data.review_questions)
+        ? data.review_questions.map((q) => '<li>' + escHtml(String(q)) + '</li>').join('')
+        : '';
+    const questions = questionsHtml
+        ? '<section class="action-section"><h2><i class="fas fa-question-circle"></i> Проверочные вопросы</h2><div class="section-content"><ul class="review-questions-list">' + questionsHtml + '</ul></div></section>'
+        : '';
+    const skipLeafKeys = {};
+    if (data.matrix_sources && data.matrix_sources.length) skipLeafKeys.sources = true;
+    const leafBlocks = renderLeafViewSections(data.leaf_view, skipLeafKeys);
+    let matrixSrc = '';
+    if (data.matrix_sources && data.matrix_sources.length) {
+        matrixSrc = '<section class="action-section"><h2><i class="fas fa-link"></i> Источники (матрица)</h2><div class="section-content"><ul class="literature-list">';
+        data.matrix_sources.forEach(function (item) {
+            const litData = literatureItemDataAttr(item);
+            const hasPrev = item.url || item.local_path;
+            matrixSrc += '<li class="literature-item"><a href="#" class="literature-link literature-preview-trigger" data-lit="' + litData + '"><strong>' +
+                escHtml(item.title || '') + '</strong>';
+            if (hasPrev) matrixSrc += ' <i class="fas fa-external-link-alt icon-inline-small-gap"></i>';
+            matrixSrc += '</a>';
+            if (item.chapter) matrixSrc += '<br><span class="literature-chapter">' + escHtml(item.chapter) + '</span>';
+            if (item.pages) matrixSrc += '<span class="literature-pages">, ' + escHtml(item.pages) + '</span>';
+            if (item.description) matrixSrc += '<p class="literature-description">' + escHtml(item.description) + '</p>';
+            matrixSrc += '</li>';
+        });
+        matrixSrc += '</ul></div></section>';
+    }
+    let examples = '';
+    if (data.examples && data.examples.length) {
+        let exH = '';
+        data.examples.forEach(function (ex) {
+            if (typeof ex === 'object' && ex.html) exH += ex.html;
+            else if (typeof ex === 'string') exH += '<pre><code>' + escHtml(ex) + '</code></pre>';
+        });
+        examples = '<section class="action-section"><h2><i class="fas fa-code"></i> Примеры</h2><div class="section-content">' + exH + '</div></section>';
+    }
+    let tools = '';
+    if (data.tools && data.tools.length) {
+        tools = '<section class="action-section"><h2><i class="fas fa-tools"></i> Инструменты</h2><div class="section-content tools-list">';
+        data.tools.forEach(function (tool) { tools += '<span class="tool-cloud">' + escHtml(String(tool)) + '</span>'; });
+        tools += '</div></section>';
+    }
+    let stack = '';
+    if (data.stack_labels && data.stack_labels.length) {
+        stack = '<section class="action-section"><h2><i class="fas fa-layer-group"></i> Технологии</h2><div class="section-content preview-stack-cloud">';
+        data.stack_labels.forEach(function (s) {
+            const c = s.color || '#9b59b6';
+            stack += '<span class="stack-cloud stack-tag-color" data-stack-color="' + escHtml(c) + '">' + escHtml(s.name || '') + '</span>';
+        });
+        stack += '</div></section>';
+    }
+    let lit = '';
+    if (data.literature && data.literature.length) {
+        lit = '<section class="action-section"><h2><i class="fas fa-book"></i> Литература (шаблон)</h2><div class="section-content"><ul class="literature-list">';
+        data.literature.forEach(function (item) {
+            const litData = literatureItemDataAttr(item);
+            const hasPrev = item.url || item.local_path;
+            lit += '<li class="literature-item"><a href="#" class="literature-link literature-preview-trigger" data-lit="' + litData + '"><strong>' +
+                escHtml(item.title || '') + '</strong>';
+            if (hasPrev) lit += ' <i class="fas fa-external-link-alt icon-inline-small-gap"></i>';
+            lit += '</a>';
+            if (item.chapter) lit += '<br><span class="literature-chapter">' + escHtml(item.chapter) + '</span>';
+            if (item.pages) lit += '<span class="literature-pages">, ' + escHtml(item.pages) + '</span>';
+            if (item.description) lit += '<p class="literature-description">' + escHtml(item.description) + '</p>';
+            lit += '</li>';
+        });
+        lit += '</ul></div></section>';
+    }
+    const desc = data.description
+        ? '<section class="action-section"><h2><i class="fas fa-info-circle"></i> Описание</h2><div class="section-content">' + data.description + '</div></section>'
+        : '';
+    const levelSec = lt.length && !propCloud
+        ? '<section class="action-section"><h2><i class="fas fa-layer-group"></i> Уровень</h2><div class="section-content">' + level + '</div></section>'
+        : '';
+    return (
+        '<div class="view-gap-md matrix-leaf-modal-title"><p><strong>' + escHtml(data.title || 'Без названия') + '</strong></p>' +
+        (propCloud ? '<div class="matrix-leaf-prop-cloud">' + propCloud + '</div>' : '') + '</div>' +
+        desc + leafBlocks + matrixSrc + levelSec + examples + tools + stack + lit + questions
+    );
+}
+
+async function openMatrixLeafModal(leafPath) {
+    const body = document.getElementById('matrixLeafModalBody');
+    const openLink = document.getElementById('matrixLeafModalOpenLink');
+    if (!body || !openLink) return;
+    const path = String(leafPath || '').trim();
+    if (!path) return;
+    body.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i><p>Загрузка листа...</p></div>';
+    openLink.href = `/leaf/${path}`;
+    setMatrixLeafModalVisible(true);
+    try {
+        const r = await fetch(`/api/leaf/${path}`);
+        const data = await r.json();
+        if (!r.ok || data.error) {
+            body.innerHTML = `<div class="error-message">${escHtml(data.error || 'Не удалось загрузить лист')}</div>`;
+            return;
+        }
+        body.innerHTML = buildMatrixLeafModalHtml(data);
+        body.querySelectorAll('[data-stack-color]').forEach(function (el) {
+            const c = el.getAttribute('data-stack-color');
+            if (c) el.style.setProperty('--stack-color', c);
+        });
+        body.querySelectorAll('.literature-preview-trigger').forEach(function (a) {
+            a.onclick = function (e) {
+                e.preventDefault();
+                if (window.openLiteraturePreview && a.dataset.lit) {
+                    try {
+                        window.openLiteraturePreview(JSON.parse(a.dataset.lit.replace(/&quot;/g, '"')));
+                    } catch (err) {}
                 }
-            }
-        }, 500);
+            };
+        });
+    } catch (e) {
+        body.innerHTML = `<div class="error-message">${escHtml(e.message || 'Ошибка загрузки')}</div>`;
     }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const treeView = document.getElementById('matrixTreeView');
+    if (!treeView) return;
+    let rootNodes = [];
+    let selectedPath = [];
+
+    function renderPlaceholderColumn(level, text, nodesForLabel) {
+        const col = document.createElement('div');
+        col.className = 'tree-column';
+        col.innerHTML =
+            '<div class="tree-level-label">' + escHtml(getLevelLabel(level, nodesForLabel)) + '</div>' +
+            '<div><span class="tree-placeholder-text">' + escHtml(text) + '</span></div>';
+        treeView.appendChild(col);
+    }
+
+    function renderLevelColumn(nodes, level) {
+        const col = document.createElement('div');
+        col.className = 'tree-column';
+        col.innerHTML = `<div class="tree-level-label">${escHtml(getLevelLabel(level, nodes))}</div>`;
+        const list = document.createElement('div');
+        const currentSelected = selectedPath[level];
+        nodes.forEach((node) => {
+            const children = getNodeChildren(node);
+            const hasChildren = children.length > 0;
+            const isActive = currentSelected === node;
+            const item = document.createElement('div');
+            item.className = `tree-node${isActive ? ' active' : ''}${hasChildren ? ' has-children' : ''}`;
+            const propCloud = (typeof window.matrixNodePropertyStickersHtml === 'function')
+                ? window.matrixNodePropertyStickersHtml(node, escHtml)
+                : '';
+            const countHtml = hasChildren ? `<span class="tree-node-count">${children.length}</span>` : '';
+            const changeHintHtml = matrixChangeHintMarkup(node);
+            const changeRow = changeHintHtml ? `<div class="tree-node-change-hint-row">${changeHintHtml}</div>` : '';
+            const descHint = getNodeDescriptionSnippet(node);
+            const descRow = descHint ? `<div class="tree-node-desc-hint">${escHtml(descHint)}</div>` : '';
+            item.innerHTML = `<div class="tree-node-main-row"><i class="fas fa-${hasChildren ? 'folder' : 'check-circle'}"></i><span class="tree-node-label">${escHtml(getNodeTitle(node))}</span>${countHtml}</div>${changeRow}${propCloud}${descRow}`;
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selectedPath = selectedPath.slice(0, level);
+                selectedPath[level] = node;
+                const leafPath = getPathString(node);
+                if (!hasChildren && leafPath) openMatrixLeafModal(leafPath);
+                renderColumns();
+            });
+            list.appendChild(item);
+        });
+        col.appendChild(list);
+        treeView.appendChild(col);
+    }
+
+    function renderColumns() {
+        treeView.innerHTML = '';
+        if (!rootNodes.length) {
+            renderPlaceholderColumn(0, 'Нет данных дерева', []);
+            return;
+        }
+        let nodes = rootNodes;
+        let level = 0;
+        while (Array.isArray(nodes) && nodes.length) {
+            renderLevelColumn(nodes, level);
+            const selected = selectedPath[level];
+            if (!selected) {
+                renderPlaceholderColumn(level + 1, 'Выберите элемент из "' + getLevelLabel(level, nodes) + '"', []);
+                return;
+            }
+            const children = getNodeChildren(selected);
+            if (!children.length) {
+                renderLeafColumn(treeView, selected);
+                return;
+            }
+            nodes = children;
+            level += 1;
+        }
+    }
+
+    async function loadTree() {
+        treeView.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i><p>Загрузка структуры...</p></div>';
+        try {
+            const [treeRes, hintsRes] = await Promise.all([
+                fetch('/api/tree'),
+                fetch('/api/matrix/change-hints'),
+            ]);
+            const tree = await treeRes.json();
+            matrixChangeHints = {};
+            try {
+                const hj = await hintsRes.json();
+                if (hj && hj.hints && typeof hj.hints === 'object') matrixChangeHints = hj.hints;
+            } catch (e1) { matrixChangeHints = {}; }
+            rootNodes = Array.isArray(tree) ? tree : [];
+            selectedPath = [];
+            renderColumns();
+        } catch (error) {
+            treeView.innerHTML = `<div class="error-message">${escHtml(error.message || 'Ошибка загрузки структуры')}</div>`;
+        }
+    }
+
+    loadTree();
+    document.getElementById('matrixLeafModal')?.addEventListener('click', (e) => {
+        if (e.target?.id === 'matrixLeafModal') closeMatrixLeafModal();
+    });
 });
-
-function initMatrixHandlers() {
-    const domainCards = document.querySelectorAll('.domain-card');
-    console.log('Найдено доменов:', domainCards.length);
-    
-    domainCards.forEach(card => {
-        const header = card.querySelector('.domain-header');
-        if (header) {
-            header.removeEventListener('click', handleDomainClick);
-            header.addEventListener('click', handleDomainClick);
-        }
-    });
-    
-    const skillItems = document.querySelectorAll('.skill-item');
-    console.log('Найдено навыков:', skillItems.length);
-    
-    skillItems.forEach(skill => {
-        const header = skill.querySelector('.skill-header');
-        if (header) {
-            header.removeEventListener('click', handleSkillClick);
-            header.addEventListener('click', handleSkillClick);
-        }
-    });
-    
-    // Обычные действия
-    const actionItems = document.querySelectorAll('.action-item');
-    console.log('Найдено действий:', actionItems.length);
-    
-    actionItems.forEach(action => {
-        action.removeEventListener('click', handleActionClick);
-        action.addEventListener('click', handleActionClick);
-        action.style.cursor = 'pointer';
-    });
-    
-    // Поддействия
-    const subactionItems = document.querySelectorAll('.subaction-item');
-    console.log('Найдено поддействий:', subactionItems.length);
-    subactionItems.forEach(sub => {
-        sub.removeEventListener('click', handleSubactionClick);
-        sub.addEventListener('click', handleSubactionClick);
-        sub.style.cursor = 'pointer';
-    });
-    
-    // Группы листов: раскрытие по клику
-    document.querySelectorAll('.action-group-header').forEach(header => {
-        header.removeEventListener('click', handleGroupToggle);
-        header.addEventListener('click', handleGroupToggle);
-    });
-    
-    document.querySelectorAll('.domain-graph-link').forEach(link => {
-        link.addEventListener('click', (e) => {
-            e.stopPropagation();
-        });
-    });
-    
-    if (domainCards.length > 0 && !window.location.hash) {
-        setTimeout(() => {
-            domainCards[0].classList.add('expanded');
-        }, 500);
-    }
-    
-    document.querySelectorAll('.leaf-lit-badges').forEach(function(b) { b.classList.add('loading'); });
-    fetch('/api/leaf-literature').then(r => r.json()).then(function(map) {
-        document.querySelectorAll('.leaf-item').forEach(function(li) {
-            var path = li.dataset.leafPath;
-            var badges = li.querySelector('.leaf-lit-badges');
-            if (badges && map[path] && map[path].length) {
-                badges.innerHTML = map[path].map(function(t) {
-                    return '<span class="lit-badge" title="' + t.replace(/"/g, '&quot;') + '"><i class="fas fa-book"></i></span>';
-                }).join('');
-            }
-        });
-    }).catch(function(err) {
-        console.warn('Leaf literature map load failed', err);
-    }).finally(function() {
-        document.querySelectorAll('.leaf-lit-badges.loading').forEach(function(b) { b.classList.remove('loading'); });
-    });
-    
-    document.querySelectorAll('.leaf-bind-btn').forEach(function(btn) {
-        btn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            e.preventDefault();
-            if (window.openLiteratureLinkModal) window.openLiteratureLinkModal(null, btn.dataset.leafPath);
-        });
-    });
-}
-
-function handleDomainClick(e) {
-    if (e.target.closest('.domain-graph-link')) return;
-    e.stopPropagation();
-    const card = e.currentTarget.closest('.domain-card');
-    if (card) {
-        card.classList.toggle('expanded');
-        if (!card.classList.contains('expanded')) {
-            const skillItems = card.querySelectorAll('.skill-item');
-            skillItems.forEach(skill => skill.classList.remove('expanded'));
-        }
-    }
-}
-
-function handleSkillClick(e) {
-    e.stopPropagation();
-    const skill = e.currentTarget.closest('.skill-item');
-    if (skill) {
-        skill.classList.toggle('expanded');
-    }
-}
-
-function handleActionClick(e) {
-    e.stopPropagation();
-    const action = e.currentTarget;
-    const leafPath = action.dataset.leafPath;
-    if (leafPath) {
-        window.location.href = `/leaf/${leafPath}`;
-        return;
-    }
-    const domainId = action.dataset.domainId;
-    const skillId = action.dataset.skillId;
-    const actionIdx = action.dataset.actionIdx;
-    if (domainId !== undefined && skillId !== undefined && actionIdx !== undefined) {
-        window.location.href = `/action/${domainId}/${skillId}/${actionIdx}`;
-    }
-}
-
-function handleGroupToggle(e) {
-    e.stopPropagation();
-    const group = e.currentTarget.closest('.action-group');
-    if (group) group.classList.toggle('expanded');
-}
-
-function handleSubactionClick(e) {
-    e.stopPropagation();
-    const sub = e.currentTarget;
-    const leafPath = sub.dataset.leafPath;
-    if (leafPath) {
-        window.location.href = `/leaf/${leafPath}`;
-        return;
-    }
-    const domainId = sub.dataset.domainId;
-    const skillId = sub.dataset.skillId;
-    const actionIdx = sub.dataset.actionIdx;
-    const subIdx = sub.dataset.subIdx;
-    if (domainId !== undefined && skillId !== undefined && actionIdx !== undefined && subIdx !== undefined) {
-        window.location.href = `/subaction/${domainId}/${skillId}/${actionIdx}/${subIdx}`;
-    }
-}
-
-function setupKeyboardNavigation() {
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            document.querySelectorAll('.domain-card.expanded').forEach(d => d.classList.remove('expanded'));
-            document.querySelectorAll('.skill-item.expanded').forEach(s => s.classList.remove('expanded'));
-        }
-    });
-}
-
-function slugify(text) {
-    if (!text) return '';
-    return text.toString().toLowerCase()
-        .replace(/\s+/g, '-')
-        .replace(/[^\w\-]+/g, '')
-        .replace(/\-\-+/g, '-')
-        .replace(/^-+/, '')
-        .replace(/-+$/, '');
-}
 </script>
 {% endblock %}

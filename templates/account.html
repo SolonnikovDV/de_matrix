@@ -6,22 +6,32 @@
 
 {% block content %}
 <div class="import-container">
-    <div class="import-section" style="max-width: 640px; margin: 0 auto;">
+    <div class="import-section centered-card mw-700">
         <h2><i class="fas fa-user"></i> Профиль</h2>
-        <p class="reload-hint">Логин: <strong>{{ profile.username }}</strong> · Роль: <strong>{{ profile.role }}</strong></p>
+        <p class="reload-hint">Управление профилем пользователя.</p>
         {% if profile.must_change_password %}
         <div class="warning-message">Требуется смена временного пароля. <a href="/account/password">Сменить пароль</a></div>
         {% endif %}
         <form id="profileForm" class="settings-form">
+            <div class="form-group account-form-grid">
+                <div>
+                    <label for="username_readonly">System name</label>
+                    <input id="username_readonly" class="form-input" type="text" value="{{ profile.username }}" readonly>
+                </div>
+                <div>
+                    <label for="role_readonly">Role</label>
+                    <input id="role_readonly" class="form-input" type="text" value="{{ profile.role }}" readonly>
+                </div>
+            </div>
             <div class="form-group">
                 <label for="full_name">Имя</label>
-                <input id="full_name" class="form-input" type="text" value="{{ profile.full_name }}">
+                <input id="full_name" class="form-input" type="text" value="{{ profile.full_name }}" required>
             </div>
             <div class="form-group">
                 <label for="email">Email</label>
                 <input id="email" class="form-input" type="email" value="{{ profile.email }}">
             </div>
-            <div class="modal-actions">
+            <div class="modal-actions account-form-actions">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Сохранить профиль</button>
                 <a class="btn btn-secondary" href="/account/password"><i class="fas fa-key"></i> Сменить пароль</a>
             </div>
@@ -32,10 +42,24 @@
 
 {% block extra_js %}
 <script>
+function isEmailMaskValid(email) {
+    const v = String(email || '').trim();
+    if (!v) return true;
+    return /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(v);
+}
+
 document.getElementById('profileForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const full_name = (document.getElementById('full_name').value || '').trim();
     const email = (document.getElementById('email').value || '').trim();
+    if (!full_name) {
+        alert('Имя не может быть пустым');
+        return;
+    }
+    if (!isEmailMaskValid(email)) {
+        alert('Неверный формат email');
+        return;
+    }
     const r = await fetch('/account/profile', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},

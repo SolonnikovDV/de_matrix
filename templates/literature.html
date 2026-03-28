@@ -120,27 +120,6 @@
 </div>
 
 <style>
-#modalAdd.modal-overlay,
-#modalUpload.modal-overlay,
-#modalEdit.modal-overlay,
-#modalDownload.modal-overlay,
-#modalPreview.modal-overlay { align-items: flex-start; }
-#modalAdd .modal-box,
-#modalUpload .modal-box,
-#modalEdit .modal-box,
-#modalDownload .modal-box,
-#modalPreview .modal-box { padding: 25px; max-width: 400px; width: 100%; max-height: 90vh; overflow-y: auto; }
-#modalPreview .modal-box { max-width: 1100px; width: min(1100px, 95vw); }
-#modalAdd .modal-box label,
-#modalUpload .modal-box label,
-#modalEdit .modal-box label,
-#modalDownload .modal-box label { display: block; margin-top: 10px; font-weight: 600; color: #2c3e50; }
-#modalAdd .modal-box input, #modalAdd .modal-box textarea,
-#modalUpload .modal-box input, #modalUpload .modal-box textarea,
-#modalEdit .modal-box input, #modalEdit .modal-box textarea,
-#modalDownload .modal-box input, #modalDownload .modal-box textarea { width: 100%; padding: 8px 12px; margin-top: 4px; border: 1px solid #ddd; border-radius: 6px; }
-.modal-preview-box { max-width: 1100px; width: min(1100px, 95vw); }
-.modal-actions { margin-top: 20px; }
 .lit-card { background: white; border: 1px solid #eef2f6; border-radius: 10px; padding: 15px 20px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
 .lit-card h4 { margin: 0 0 8px 0; font-size: 1.05em; }
 .lit-card .lit-meta { font-size: 0.9em; color: #7f8c8d; margin-bottom: 8px; }
@@ -155,16 +134,13 @@
 .literature-container { padding: 20px; }
 .literature-actions { margin-bottom: 20px; }
 .btn-upload-offset { margin-left: 8px; }
-.modal-note { font-size: 0.9em; color: #666; margin-bottom: 12px; }
-.modal-actions-tight { margin-top: 15px; }
-.preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.preview-message { font-size: 0.9em; color: #e67e22; margin-bottom: 10px; }
-.preview-hint { font-size: 0.85em; color: #7f8c8d; margin-bottom: 8px; }
-.preview-iframe { width: 100%; height: 65vh; border: 1px solid #ddd; border-radius: 8px; }
 .skeleton-gap-8 { margin-top: 8px; }
 .skeleton-gap-10 { margin-top: 10px; }
 .lit-preview-icon { font-size: 0.85em; color: #95a5a6; cursor: pointer; }
 .lit-description { margin: 8px 0 0 0; font-size: 0.9em; }
+.lit-leaf-sep { color: #95a5a6; }
+a.lit-leaf-link { font-weight: 500; }
+.lit-matrix-only-hint { margin-top: 10px; font-size: 0.85em; color: #7f8c8d; }
 </style>
 
 <script>
@@ -362,13 +338,19 @@ async function loadLiterature() {
         el.innerHTML = list.map(item => {
             var litData = JSON.stringify({title: item.title, chapter: item.chapter, pages: item.pages, url: item.url, local_path: item.local_path, description: item.description}).replace(/"/g, '&quot;');
             var editData = JSON.stringify({id: item.id, title: item.title || '', chapter: item.chapter || '', pages: item.pages || '', url: item.url || '', description: item.description || ''}).replace(/"/g, '&quot;');
+            var ro = !!item.from_matrix_only;
+            var tmplLine = (item.linked_templates || []).length
+                ? (item.linked_templates || []).map(t => escapeHtml(t.name)).join('; ')
+                : '—';
             return `
             <div class="lit-card" data-id="${item.id}" data-lit="${litData}" data-edit="${editData}">
                 <h4><a href="#" class="literature-preview-trigger" data-id="${item.id}" onclick="return openLitPreviewById(this.dataset.id, event)">${escapeHtml(item.title)}</a> <i class="fas fa-eye lit-preview-btn lit-preview-icon" title="Предпросмотр" data-id="${item.id}" onclick="event.stopPropagation(); return openLitPreviewById(this.dataset.id, event)"></i></h4>
                 <div class="lit-meta">${item.chapter ? escapeHtml(item.chapter) : ''} ${item.pages ? ' · ' + escapeHtml(item.pages) : ''}</div>
-                ${item.url || item.local_path ? `<a href="#" class="literature-preview-trigger" data-id="${item.id}" onclick="return openLitPreviewById(this.dataset.id, event)">Предпросмотр</a>` : ''}
+                ${item.url || item.local_path ? `<a href="#" class="literature-preview-trigger" data-id="${item.id}" onclick="return openLitPreviewById(this.dataset.id, event)">Предпросмотр ссылки / файла</a>` : ''}
                 ${item.description ? `<p class="lit-description">${escapeHtml(item.description)}</p>` : ''}
-                <div class="lit-linked">Привязка: ${(item.linked_templates || []).length ? (item.linked_templates || []).map(t => escapeHtml(t.name)).join('; ') : '—'}</div>
+                <div class="lit-linked">Шаблоны: ${tmplLine}</div>
+                <div class="lit-linked">Листы матрицы: ${formatLinkedLeaves(item.linked_leaves)}</div>
+                ${ro ? '<p class="lit-matrix-only-hint">Только из колонки «Источники» в матрице. Добавьте источник в каталог для редактирования и привязки через шаблон.</p>' : `
                 <div class="lit-actions">
                     <button type="button" class="btn btn-sm btn-info lit-btn-link" data-id="${item.id}" onclick="event.preventDefault(); event.stopPropagation(); if (window.openLiteratureLinkModal) { window.openLiteratureLinkModal(this.dataset.id); } else { alert('Модуль привязки литературы не инициализирован'); }">
                         <i class="fas fa-link"></i> Привязать к листам
@@ -382,7 +364,7 @@ async function loadLiterature() {
                     <button type="button" class="btn btn-sm btn-danger lit-btn-delete" data-id="${item.id}" data-title="${escapeHtml(item.title || item.id)}">
                         <i class="fas fa-trash"></i> Удалить
                     </button>
-                </div>
+                </div>`}
             </div>
         `;
         }).join('');
@@ -406,6 +388,17 @@ function escapeHtml(s) {
     const div = document.createElement('div');
     div.textContent = s;
     return div.innerHTML;
+}
+
+function formatLinkedLeaves(leaves) {
+    if (!leaves || !leaves.length) return '—';
+    const parts = leaves.map(function (l) {
+        const p = String(l.path_str || '').trim();
+        if (!p) return '';
+        const label = l.breadcrumb || p;
+        return '<a href="/leaf/' + escapeHtml(p) + '" class="lit-leaf-link">' + escapeHtml(label) + '</a>';
+    }).filter(Boolean);
+    return parts.length ? parts.join('<span class="lit-leaf-sep">; </span>') : '—';
 }
 
 async function submitUploadFile(e) {

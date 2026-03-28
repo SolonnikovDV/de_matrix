@@ -16,22 +16,27 @@
         <a href="/domain/{{ di }}/skill/{{ si }}">{{ skill.name }}</a>
         {% if sub_idx is defined and parent_action_text is defined %}
             <i class="fas fa-chevron-right separator"></i>
-            <a href="/action/{{ di }}/{{ si }}/{{ ai }}">{{ parent_action_text }}</a>
+            <a href="/leaf/{{ di }}/{{ si }}/{{ ai }}">{{ parent_action_text }}</a>
         {% endif %}
         <i class="fas fa-chevron-right separator"></i>
         <span>{{ action.text }}</span>
     </nav>
 
     <div class="action-card">
-        <div class="action-header" style="border-left-color: {{ domain_color }}">
+        <div class="action-header node-color-domain" data-domain-color="{{ domain_color }}">
             <div class="action-title">
-                <i class="fas fa-{{ skill_icon }}" style="color: {{ domain_color }}"></i>
+                <i class="fas fa-{{ skill_icon }} node-color-domain" data-domain-color="{{ domain_color }}"></i>
                 <h1>{{ action.text }}</h1>
             </div>
             <div class="action-meta">
-                <span class="badge" style="background: {{ domain_color }}">{{ domain.name }}</span>
-                <span class="badge skill-badge" style="background: {{ skill_color }}">{{ skill.name }}</span>
-                {% if action.level_tag %}
+                <span id="leafChangeHintWrap" class="leaf-change-hint-wrap" hidden></span>
+                <span class="badge node-color-domain" data-domain-color="{{ domain_color }}">{{ domain.name }}</span>
+                <span class="badge skill-badge node-color-skill" data-skill-color="{{ skill_color }}">{{ skill.name }}</span>
+                {% if action.level_tags %}
+                    {% for t in action.level_tags %}
+                    <span class="badge level-badge">{{ t|upper }}</span>
+                    {% endfor %}
+                {% elif action.level_tag %}
                 <span class="badge level-badge">{{ action.level_tag|upper }}</span>
                 {% endif %}
             </div>
@@ -59,19 +64,177 @@
 </div>
 {% endblock %}
 
+{% block extra_css %}
+<style>
+.leaf-change-hint-wrap { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-right: 4px; }
+.leaf-change-hint-wrap[hidden] { display: none !important; }
+.action-meta { flex-wrap: wrap; align-items: center; gap: 8px; }
+</style>
+{% endblock %}
+
 {% block extra_js %}
 <script>
+window.__leafPathForHints = {{ leaf_path|tojson }};
+</script>
+<script>
+async function loadLeafChangeHint() {
+    const wrap = document.getElementById('leafChangeHintWrap');
+    const path = typeof window.__leafPathForHints === 'string' ? window.__leafPathForHints.trim() : '';
+    if (!wrap || !path) return;
+    try {
+        const r = await fetch('/api/matrix/change-hints');
+        const j = await r.json();
+        const h = j && j.hints && j.hints[path];
+        if (!h || !String(h.actor || '').trim()) return;
+        const actor = String(h.actor).trim();
+        const cid = h.change_id != null ? String(h.change_id) : '';
+        const title = cid ? ('CR #' + cid + (h.at ? ' · ' + String(h.at) : '')) : '';
+        const a = document.createElement('a');
+        a.className = 'matrix-change-hint-sticker';
+        a.href = '/changes';
+        a.title = title;
+        a.textContent = 'изменено: ' + actor;
+        wrap.appendChild(a);
+        wrap.hidden = false;
+    } catch (e) { /* ignore */ }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    loadLeafChangeHint();
+    document.querySelectorAll('[data-domain-color]').forEach(function(el) {
+        const c = el.getAttribute('data-domain-color');
+        if (!c) return;
+        if (el.classList.contains('action-header')) el.style.borderLeftColor = c;
+        if (el.classList.contains('badge')) el.style.background = c;
+        if (el.tagName === 'I') el.style.color = c;
+    });
+    document.querySelectorAll('[data-skill-color]').forEach(function(el) {
+        const c = el.getAttribute('data-skill-color');
+        if (c && el.classList.contains('badge')) el.style.background = c;
+    });
     loadActionDetails();
 });
+
+const LEAF_VIEW_SECTION_ORDER = ['readiness', 'antipatterns', 'stack', 'sources', 'questions', 'toolkit'];
+const LEAF_VIEW_TITLE_FALLBACK = {
+    readiness: 'Критерии готовности',
+    antipatterns: 'Антипаттерны',
+    stack: 'Стек и технологии',
+    sources: 'Источники',
+    questions: 'Вопросы и проверка',
+    toolkit: 'Инструментарий',
+};
+
+function escapeHtml(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function leafViewTitleForKey(key) {
+    const rows = window.__matrixColumnSchema || [];
+    for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (r && r.leaf_view_key === key && r.label) return String(r.label);
+    }
+    const fb = LEAF_VIEW_TITLE_FALLBACK[key];
+    if (fb) return fb;
+    return String(key || '').replace(/_/g, ' ');
+}
+
+function leafViewValueIsEmpty(v) {
+    if (v == null) return true;
+    if (typeof v === 'string') return !String(v).trim();
+    if (Array.isArray(v)) return v.length === 0;
+    if (typeof v === 'object') return Object.keys(v).length === 0;
+    return false;
+}
+
+function formatLeafViewBody(val) {
+    if (val == null) return '';
+    if (Array.isArray(val)) {
+        const items = val.map(x => '<li>' + escapeHtml(x) + '</li>').join('');
+        return '<ul class="leaf-view-list">' + items + '</ul>';
+    }
+    if (typeof val === 'object') {
+        return '<pre class="leaf-view-json">' + escapeHtml(JSON.stringify(val, null, 2)) + '</pre>';
+    }
+    const str = String(val).trim();
+    if (!str) return '';
+    if (str.includes('\n')) {
+        const parts = str.split(/\n+/).map(p => p.trim()).filter(Boolean);
+        if (parts.length > 1) {
+            return '<ul class="leaf-view-list"><li>' + parts.map(escapeHtml).join('</li><li>') + '</li></ul>';
+        }
+    }
+    return '<div class="leaf-view-body">' + escapeHtml(str).replace(/\n/g, '<br>') + '</div>';
+}
+
+function renderLeafViewSections(leafView, skipKeys) {
+    skipKeys = skipKeys || {};
+    if (!leafView || typeof leafView !== 'object') return '';
+    const keys = Object.keys(leafView).filter(k => !leafViewValueIsEmpty(leafView[k]) && !skipKeys[k]);
+    if (!keys.length) return '';
+    keys.sort((a, b) => {
+        const ia = LEAF_VIEW_SECTION_ORDER.indexOf(a);
+        const ib = LEAF_VIEW_SECTION_ORDER.indexOf(b);
+        if (ia === -1 && ib === -1) return a.localeCompare(b);
+        if (ia === -1) return 1;
+        if (ib === -1) return -1;
+        return ia - ib;
+    });
+    let html = '';
+    keys.forEach((k) => {
+        const title = leafViewTitleForKey(k);
+        const body = formatLeafViewBody(leafView[k]);
+        if (!body) return;
+        html += '<section class="action-section leaf-view-section"><h2><i class="fas fa-book-open"></i> ' +
+            escapeHtml(title) + '</h2><div class="section-content">' + body + '</div></section>';
+    });
+    return html;
+}
+
+function renderMatrixSourcesSection(items) {
+    if (!items || !items.length) return '';
+    let html = `
+        <section class="action-section">
+            <h2><i class="fas fa-link"></i> Источники (матрица)</h2>
+            <div class="section-content">
+                <ul class="literature-list">`;
+    items.forEach(item => {
+        const litData = JSON.stringify(item).replace(/"/g, '&quot;');
+        const hasPrev = item.url || item.local_path;
+        html += `
+            <li class="literature-item">
+                <a href="#" class="literature-link literature-preview-trigger" data-lit="${litData}">
+                    <strong>${(item.title || '').replace(/</g, '&lt;')}</strong>
+                    ${hasPrev ? '<i class="fas fa-external-link-alt icon-inline-small-gap"></i>' : ''}
+                </a>`;
+        if (item.chapter) html += `<br><span class="literature-chapter">${(item.chapter || '').replace(/</g, '&lt;')}</span>`;
+        if (item.pages) html += `<span class="literature-pages">, ${(item.pages || '').replace(/</g, '&lt;')}</span>`;
+        if (item.description) html += `<p class="literature-description">${(item.description || '').replace(/</g, '&lt;')}</p>`;
+        html += `</li>`;
+    });
+    html += `</ul></div></section>`;
+    return html;
+}
+
+function levelTagsFromPayload(data) {
+    if (Array.isArray(data.level_tags) && data.level_tags.length) return data.level_tags;
+    if (data.level_tag) return [data.level_tag];
+    return [];
+}
 
 function loadActionDetails() {
     {% if leaf_path is defined %}
         const url = `/api/leaf/{{ leaf_path }}`;
     {% elif sub_idx is defined %}
-        const url = `/api/subaction/{{ di }}/{{ si }}/{{ ai }}/{{ sub_idx }}`;
+        const url = `/api/leaf/{{ di }}/{{ si }}/{{ ai }}/{{ sub_idx }}`;
     {% else %}
-        const url = `/api/action/{{ di }}/{{ si }}/{{ ai }}`;
+        const url = `/api/leaf/{{ di }}/{{ si }}/{{ ai }}`;
     {% endif %}
     
     fetch(url)
@@ -105,13 +268,20 @@ function loadActionDetails() {
                     `;
                 }
 
-                if (data.level_tag) {
+                const skipLv = {};
+                if (data.matrix_sources && data.matrix_sources.length) skipLv.sources = true;
+                html += renderLeafViewSections(data.leaf_view, skipLv);
+                html += renderMatrixSourcesSection(data.matrix_sources);
+
+                const levelTags = levelTagsFromPayload(data);
+                if (levelTags.length) {
+                    const badges = levelTags.map(t =>
+                        `<span class="badge level-badge">${escapeHtml(String(t).toUpperCase())}</span>`
+                    ).join(' ');
                     html += `
                         <section class="action-section">
                             <h2><i class="fas fa-layer-group"></i> Уровень компетенции</h2>
-                            <div class="section-content">
-                                <span class="badge level-badge">${String(data.level_tag).toUpperCase()}</span>
-                            </div>
+                            <div class="section-content">${badges}</div>
                         </section>
                     `;
                 }
@@ -164,7 +334,7 @@ function loadActionDetails() {
                             <div class="section-content preview-stack-cloud">
                     `;
                     data.stack_labels.forEach(stack => {
-                        html += `<span class="stack-cloud" style="background: ${stack.color};">${stack.name}</span>`;
+                        html += `<span class="stack-cloud stack-tag-color" data-stack-color="${stack.color || '#9b59b6'}">${stack.name}</span>`;
                     });
                     html += `</div></section>`;
                 }
@@ -182,7 +352,7 @@ function loadActionDetails() {
                             <li class="literature-item">
                                 <a href="#" class="literature-link literature-preview-trigger" data-lit="${litData}">
                                     <strong>${(item.title || '').replace(/</g, '&lt;')}</strong>
-                                    <i class="fas fa-external-link-alt" style="margin-left: 6px; font-size: 0.85em;"></i>
+                                    <i class="fas fa-external-link-alt icon-inline-small-gap"></i>
                                 </a>
                                 ${item.chapter ? `<br><span class="literature-chapter">${(item.chapter || '').replace(/</g, '&lt;')}</span>` : ''}
                                 ${item.pages ? `<span class="literature-pages">, ${(item.pages || '').replace(/</g, '&lt;')}</span>` : ''}
@@ -208,6 +378,10 @@ function loadActionDetails() {
             }
             
             content.innerHTML = html || '<p class="empty-message">Нет дополнительной информации</p>';
+            content.querySelectorAll('[data-stack-color]').forEach(function(el) {
+                const c = el.getAttribute('data-stack-color');
+                if (c) el.style.setProperty('--stack-color', c);
+            });
             content.querySelectorAll('.literature-preview-trigger').forEach(function(a) {
                 a.onclick = function(e) {
                     e.preventDefault();

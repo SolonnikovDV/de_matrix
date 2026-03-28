@@ -4,7 +4,7 @@
 
 {% block header_title %}{% if focus_skill and domain.skills %}{{ domain.name }} → {{ domain.skills[0].name }}{% else %}{{ domain.name }}{% endif %}{% endblock %}
 
-{% block footer_hint %}Дерево элементов: раскрытие слева направо{% endblock %}
+{% block footer_hint %}Доменное дерево строится динамически из БД: раскрывайте узлы по уровням, клик по листу открывает полную страницу.{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -35,114 +35,29 @@
     </span>
 </p>
 <div class="domain-tree-view" id="domainTreeView">
-    <div class="tree-column tree-domain-col" style="border-left-color: {{ domain.color }}">
-        <div class="tree-level-label">Домен</div>
-        <div class="tree-node tree-domain-node active" style="--accent: {{ domain.color }}">
-            <i class="fas fa-{{ domain.icon }}"></i>
-            <span class="tree-node-label">{{ domain.name }}</span>
-            <span class="tree-node-count">{{ domain.skills|length }}</span>
-        </div>
-    </div>
-    <div class="tree-column tree-skills-col">
-        <div class="tree-level-label">Навыки</div>
-        {% for skill in domain.skills %}
-        <div class="tree-node tree-skill-node" data-skill-idx="{{ skill.index }}" style="--accent: {{ skill.color }}">
-            <i class="fas fa-{{ skill.icon }}"></i>
-            <span class="tree-node-label">{{ skill.name }}</span>
-            <span class="tree-node-count">{{ skill.actions|length }}</span>
-        </div>
-        {% endfor %}
-    </div>
-    <div class="tree-column tree-actions-col">
-        <div class="tree-level-label">Действия</div>
-        <div class="tree-actions-placeholder" id="treeActionsPlaceholder">
-            <span class="tree-placeholder-text">Выберите навык</span>
-        </div>
-        <div class="tree-actions-content tree-hidden" id="treeActionsContent"></div>
-    </div>
-    <div class="tree-column tree-subactions-col">
-        <div class="tree-level-label">Поддействия</div>
-        <div class="tree-subactions-placeholder" id="treeSubactionsPlaceholder">
-            <span class="tree-placeholder-text">Выберите действие</span>
-        </div>
-        <div class="tree-subactions-content tree-hidden" id="treeSubactionsContent"></div>
-    </div>
 </div>
 
 <!-- Данные для JS -->
 <script>
-window.DOMAIN_TREE_DATA = {{ domain | tojson }};
-window.DOMAIN_FOCUS_SKILL = {{ 'true' if focus_skill else 'false' }};
+window.DOMAIN_TREE_CONTEXT = {
+    domainIndex: {{ current_domain_index | int }},
+    focusSkill: {{ 'true' if focus_skill else 'false' }},
+    focusSkillIndex: {% if current_skill_index is defined %}{{ current_skill_index | int }}{% else %}null{% endif %}
+};
 </script>
 {% endblock %}
 
 {% block extra_js %}
 <script>
 (function() {
-    var data = window.DOMAIN_TREE_DATA;
-    var domainIdx = data.index;
-    var skillsCol = document.querySelector('.tree-skills-col');
-    var actionsCol = document.querySelector('.tree-actions-col');
-    var actionsPlaceholder = document.getElementById('treeActionsPlaceholder');
-    var actionsContent = document.getElementById('treeActionsContent');
-    var subactionsPlaceholder = document.getElementById('treeSubactionsPlaceholder');
-    var subactionsContent = document.getElementById('treeSubactionsContent');
-
-    function clearSelection(cls) {
-        document.querySelectorAll(cls).forEach(function(n) { n.classList.remove('active'); });
-    }
-
-    function renderActions(skill) {
-        clearSelection('.tree-skill-node');
-        document.querySelector('[data-skill-idx="' + skill.index + '"]')?.classList.add('active');
-        actionsPlaceholder.style.display = 'none';
-        actionsContent.style.display = 'block';
-        actionsContent.innerHTML = '';
-        skill.actions.forEach(function(a) {
-            a.skillIdx = skill.index;
-            var div = document.createElement('div');
-            div.className = 'tree-node tree-action-node' + (a.subactions && a.subactions.length ? ' has-children' : '');
-            div.style.setProperty('--accent', data.color);
-            div.dataset.actionIdx = a.index;
-            div.dataset.skillIdx = skill.index;
-            div.dataset.hasSubactions = (a.subactions && a.subactions.length) ? '1' : '0';
-            if (a.leaf_path) div.dataset.leafPath = a.leaf_path;
-            var countHtml = (a.subactions && a.subactions.length) ? '<span class="tree-node-count">' + a.subactions.length + '</span>' : '';
-            var levelHtml = a.level_tag ? '<span class="tree-node-level-badge">' + escapeHtml(String(a.level_tag).toUpperCase()) + '</span>' : '';
-            div.innerHTML = '<i class="fas fa-' + (a.subactions && a.subactions.length ? 'folder' : 'check-circle') + '"></i><span class="tree-node-label">' + escapeHtml(a.text) + '</span>' + levelHtml + countHtml;
-            div.addEventListener('click', function() {
-                if (a.subactions && a.subactions.length) {
-                    renderSubactions(a);
-                } else if (a.leaf_path) {
-                    window.location.href = '/leaf/' + a.leaf_path;
-                }
-            });
-            actionsContent.appendChild(div);
-        });
-        subactionsPlaceholder.style.display = 'block';
-        subactionsContent.style.display = 'none';
-        subactionsContent.innerHTML = '';
-    }
-
-    function renderSubactions(action) {
-        clearSelection('.tree-action-node');
-        document.querySelector('.tree-action-node[data-action-idx="' + action.index + '"][data-skill-idx="' + action.skillIdx + '"]')?.classList.add('active');
-        subactionsPlaceholder.style.display = 'none';
-        subactionsContent.style.display = 'block';
-        subactionsContent.innerHTML = '';
-        (action.subactions || []).forEach(function(s) {
-            var div = document.createElement('div');
-            div.className = 'tree-node tree-subaction-node';
-            div.dataset.leafPath = s.leaf_path;
-            var levelHtml = s.level_tag ? '<span class="tree-node-level-badge">' + escapeHtml(String(s.level_tag).toUpperCase()) + '</span>' : '';
-            div.innerHTML = '<i class="fas fa-angle-right"></i><span>' + escapeHtml(s.text) + '</span>' + levelHtml;
-            div.addEventListener('click', function(e) {
-                e.stopPropagation();
-                window.location.href = '/leaf/' + s.leaf_path;
-            });
-            subactionsContent.appendChild(div);
-        });
-    }
+    var treeView = document.getElementById('domainTreeView');
+    var context = window.DOMAIN_TREE_CONTEXT || {};
+    var domainIndex = Number.isInteger(context.domainIndex) ? context.domainIndex : parseInt(context.domainIndex || '0', 10);
+    var focusSkill = Boolean(context.focusSkill);
+    var focusSkillIndex = Number.isInteger(context.focusSkillIndex) ? context.focusSkillIndex : null;
+    var rootNodes = [];
+    var selectedPath = [];
+    var changeHints = {};
 
     function escapeHtml(s) {
         if (!s) return '';
@@ -151,24 +66,144 @@ window.DOMAIN_FOCUS_SKILL = {{ 'true' if focus_skill else 'false' }};
         return d.innerHTML;
     }
 
-    skillsCol.querySelectorAll('.tree-skill-node').forEach(function(node) {
-        node.addEventListener('click', function() {
-            var idx = parseInt(node.dataset.skillIdx, 10);
-            var skill = data.skills[idx];
-            if (skill) {
-                skill.actions.forEach(function(a) {
-                    a.skillIdx = skill.index;
-                });
-                renderActions(skill);
-            }
-        });
-    });
-
-    if (window.DOMAIN_FOCUS_SKILL && data.skills && data.skills.length === 1) {
-        var skill = data.skills[0];
-        skill.actions.forEach(function(a) { a.skillIdx = skill.index; });
-        renderActions(skill);
+    function getNodeChildren(node) {
+        return Array.isArray(node && node.children) ? node.children : [];
     }
+
+    function getNodeTitle(node) {
+        return String((node && (node.name || node.text || node.title || node.label || node.id)) || 'Без названия');
+    }
+
+    function getLevelLabel(level, nodes) {
+        var sample = Array.isArray(nodes) && nodes.length ? nodes[0] : null;
+        if (typeof window.matrixSchemaLevelLabel === 'function') {
+            return window.matrixSchemaLevelLabel(level, sample);
+        }
+        if (sample && typeof sample.level_name === 'string' && sample.level_name.trim()) {
+            return sample.level_name.trim();
+        }
+        if (sample && Number.isInteger(sample.level)) {
+            return 'item_' + String(Number(sample.level));
+        }
+        return 'item_' + String(level);
+    }
+
+    function getPathString(node) {
+        if (!node || !Array.isArray(node.path) || !node.path.length) return '';
+        return node.path.map(function(n) { return Number(n); }).join('/');
+    }
+
+    function changeHintMarkup(node) {
+        var p = getPathString(node);
+        if (!p || !changeHints || typeof changeHints !== 'object') return '';
+        var h = changeHints[p];
+        if (!h || !h.actor) return '';
+        var actor = String(h.actor).trim();
+        if (!actor) return '';
+        var cid = h.change_id != null ? String(h.change_id) : '';
+        var title = cid ? ('CR #' + cid + (h.at ? ' · ' + String(h.at) : '')) : '';
+        var label = 'изменено: ' + actor;
+        return '<a class="matrix-change-hint-sticker" href="/changes" title="' + escapeHtml(title) + '">' + escapeHtml(label) + '</a>';
+    }
+
+    function renderPlaceholderColumn(level, text, nodesForLabel) {
+        var col = document.createElement('div');
+        col.className = 'tree-column';
+        col.innerHTML = '<div class="tree-level-label">' + escapeHtml(getLevelLabel(level, nodesForLabel)) + '</div>' +
+            '<div><span class="tree-placeholder-text">' + escapeHtml(text) + '</span></div>';
+        treeView.appendChild(col);
+    }
+
+    function renderLevelColumn(nodes, level) {
+        var col = document.createElement('div');
+        col.className = 'tree-column';
+        col.innerHTML = '<div class="tree-level-label">' + escapeHtml(getLevelLabel(level, nodes)) + '</div>';
+        var list = document.createElement('div');
+        var currentSelected = selectedPath[level];
+        nodes.forEach(function(node) {
+            var children = getNodeChildren(node);
+            var hasChildren = children.length > 0;
+            var isActive = currentSelected === node;
+            var item = document.createElement('div');
+            item.className = 'tree-node' + (isActive ? ' active' : '') + (hasChildren ? ' has-children' : '');
+            var propCloud = (typeof window.matrixNodePropertyStickersHtml === 'function')
+                ? window.matrixNodePropertyStickersHtml(node, escapeHtml)
+                : '';
+            var countHtml = hasChildren ? '<span class="tree-node-count">' + children.length + '</span>' : '';
+            var hintHtml = changeHintMarkup(node);
+            var changeRow = hintHtml ? '<div class="tree-node-change-hint-row">' + hintHtml + '</div>' : '';
+            item.innerHTML = '<div class="tree-node-main-row"><i class="fas fa-' + (hasChildren ? 'folder' : 'check-circle') + '"></i>' +
+                '<span class="tree-node-label">' + escapeHtml(getNodeTitle(node)) + '</span>' + countHtml + '</div>' + changeRow + propCloud;
+            item.addEventListener('click', function(e) {
+                e.stopPropagation();
+                selectedPath = selectedPath.slice(0, level);
+                selectedPath[level] = node;
+                var leafPath = getPathString(node);
+                if (!hasChildren && leafPath) window.location.href = '/leaf/' + leafPath;
+                renderColumns();
+            });
+            list.appendChild(item);
+        });
+        col.appendChild(list);
+        treeView.appendChild(col);
+    }
+
+    function renderColumns() {
+        treeView.innerHTML = '';
+        if (!rootNodes.length) {
+            renderPlaceholderColumn(0, 'Нет данных дерева', []);
+            return;
+        }
+        var nodes = rootNodes;
+        var level = 0;
+        while (Array.isArray(nodes) && nodes.length) {
+            renderLevelColumn(nodes, level);
+            var selected = selectedPath[level];
+            if (!selected) {
+                renderPlaceholderColumn(level + 1, 'Выберите элемент из "' + getLevelLabel(level, nodes) + '"', []);
+                return;
+            }
+            var children = getNodeChildren(selected);
+            if (!children.length) {
+                renderPlaceholderColumn(level + 1, 'Для "' + getNodeTitle(selected) + '" нет дочерних элементов', []);
+                return;
+            }
+            nodes = children;
+            level += 1;
+        }
+    }
+
+    async function loadDomainTree() {
+        treeView.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i><p>Загрузка структуры...</p></div>';
+        try {
+            var treeRes = null;
+            var hintsRes = null;
+            await Promise.all([
+                fetch('/api/tree').then(function (r) { treeRes = r; }),
+                fetch('/api/matrix/change-hints').then(function (r) { hintsRes = r; }),
+            ]);
+            var tree = await treeRes.json();
+            changeHints = {};
+            try {
+                var hj = await hintsRes.json();
+                if (hj && hj.hints && typeof hj.hints === 'object') changeHints = hj.hints;
+            } catch (e2) { changeHints = {}; }
+            var root = Array.isArray(tree) ? tree[domainIndex] : null;
+            rootNodes = root ? [root] : [];
+            selectedPath = root ? [root] : [];
+            if (root && focusSkill && Number.isInteger(focusSkillIndex)) {
+                var skills = getNodeChildren(root);
+                if (focusSkillIndex >= 0 && focusSkillIndex < skills.length) {
+                    selectedPath[1] = skills[focusSkillIndex];
+                }
+            }
+            renderColumns();
+        } catch (error) {
+            treeView.innerHTML = '<div class="error-message">' + escapeHtml(error.message || 'Ошибка загрузки структуры') + '</div>';
+        }
+    }
+
+    loadDomainTree();
 })();
 </script>
 {% endblock %}

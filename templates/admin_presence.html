@@ -1,0 +1,362 @@
+{% extends "base.html" %}
+
+{% block title %}Мониторинг присутствия{% endblock %}
+{% block header_title %}Мониторинг присутствия пользователей{% endblock %}
+{% block footer_hint %}Только для admin: online/offline, сессии и недельная статистика{% endblock %}
+
+{% block content %}
+<div class="import-container">
+    <div class="import-section">
+        <h2><i class="fas fa-user-clock"></i> Presence dashboard <span id="presenceOnlineBadge" class="badge presence-online-badge">online: 0</span></h2>
+        <p class="reload-hint">Текущий статус присутствия, последнее посещение, длительность сессий и суммарное время за неделю.</p>
+        <div class="view-toolbar">
+            <label for="usernameFilter">Пользователь:</label>
+            <input id="usernameFilter" class="form-input" type="text" placeholder="username/full_name">
+            <label for="statusFilter">Статус:</label>
+            <select id="statusFilter" class="form-input">
+                <option value="all">all</option>
+                <option value="online">online</option>
+                <option value="away">away</option>
+                <option value="offline">offline</option>
+            </select>
+            <label for="limitInput">Limit:</label>
+            <input id="limitInput" class="form-input" type="number" min="1" max="500" value="200">
+            <label class="view-stack">
+                <input id="autoRefreshInput" type="checkbox" checked>
+                Auto refresh
+            </label>
+            <select id="refreshSecInput" class="form-input">
+                <option value="5">5s</option>
+                <option value="10" selected>10s</option>
+                <option value="20">20s</option>
+                <option value="30">30s</option>
+            </select>
+            <button class="btn btn-primary" onclick="loadPresence()"><i class="fas fa-sync"></i> Обновить</button>
+            <button class="btn btn-secondary" onclick="exportPresenceCsv()"><i class="fas fa-file-csv"></i> Export CSV</button>
+        </div>
+        <div id="presenceSummary" class="view-gap-md"></div>
+        <div id="presenceList"></div>
+    </div>
+</div>
+
+<div class="modal-overlay is-hidden" id="presenceSessionsModal" aria-hidden="true">
+    <div class="modal-box modal-wide">
+        <h3 id="presenceSessionsTitle">Сессии пользователя</h3>
+        <div class="view-toolbar">
+            <label for="sessionsFromDate">С:</label>
+            <input id="sessionsFromDate" class="form-input" type="date">
+            <label for="sessionsToDate">По:</label>
+            <input id="sessionsToDate" class="form-input" type="date">
+            <button type="button" class="btn btn-sm btn-secondary" onclick="setSessionsPreset('today')">today</button>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="setSessionsPreset('7d')">7d</button>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="setSessionsPreset('30d')">30d</button>
+            <label for="sessionsLimit">На страницу:</label>
+            <select id="sessionsLimit" class="form-input">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+            </select>
+            <label for="sessionsSortBy">Сортировка:</label>
+            <select id="sessionsSortBy" class="form-input">
+                <option value="login_at" selected>login_at</option>
+                <option value="last_seen_at">last_seen_at</option>
+                <option value="logout_at">logout_at</option>
+                <option value="duration_seconds">duration</option>
+                <option value="id">id</option>
+            </select>
+            <select id="sessionsSortOrder" class="form-input">
+                <option value="desc" selected>desc</option>
+                <option value="asc">asc</option>
+            </select>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="applySessionsFilter()"><i class="fas fa-filter"></i> Применить</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="resetSessionsFilter()"><i class="fas fa-eraser"></i> Сбросить</button>
+        </div>
+        <div id="presenceSessionsBody"></div>
+        <div class="view-toolbar view-gap-top justify-between">
+            <div id="sessionsPageInfo" class="reload-hint"></div>
+            <div class="view-stack">
+                <button type="button" class="btn btn-sm btn-secondary" id="sessionsPrevBtn" onclick="sessionsPrevPage()"><i class="fas fa-chevron-left"></i> Назад</button>
+                <button type="button" class="btn btn-sm btn-secondary" id="sessionsNextBtn" onclick="sessionsNextPage()">Вперед <i class="fas fa-chevron-right"></i></button>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" onclick="closePresenceSessionsModal()">Закрыть</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function esc(s) {
+    return String(s || '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
+function fmtDuration(totalSec) {
+    const sec = Math.max(0, Number(totalSec || 0));
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    return `${h}h ${m}m ${s}s`;
+}
+
+function statusBadge(status) {
+    const m = {
+        online: { css: 'online', text: 'online' },
+        away: { css: 'away', text: 'away' },
+        offline: { css: 'offline', text: 'offline' },
+    };
+    const st = m[status] || m.offline;
+    return `<span class="presence-status"><span class="presence-status-dot ${st.css}"></span>${st.text}</span>`;
+}
+
+let presenceRefreshTimer = null;
+let presenceDebounce = null;
+const sessionsState = {
+    username: '',
+    from: '',
+    to: '',
+    limit: 20,
+    offset: 0,
+    total: 0,
+    sortBy: 'login_at',
+    sortOrder: 'desc',
+};
+
+function restartPresenceAutoRefresh() {
+    if (presenceRefreshTimer) {
+        clearInterval(presenceRefreshTimer);
+        presenceRefreshTimer = null;
+    }
+    const isEnabled = document.getElementById('autoRefreshInput').checked;
+    if (isEnabled) {
+        let sec = Number.parseInt(document.getElementById('refreshSecInput').value || '10', 10);
+        if (Number.isNaN(sec) || sec < 3) sec = 10;
+        presenceRefreshTimer = setInterval(loadPresence, sec * 1000);
+    }
+}
+
+async function loadPresence() {
+    const summaryEl = document.getElementById('presenceSummary');
+    const listEl = document.getElementById('presenceList');
+    listEl.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i><p>Загрузка...</p></div>';
+    const username = (document.getElementById('usernameFilter').value || '').trim();
+    const status = (document.getElementById('statusFilter').value || 'all').trim();
+    let limit = Number.parseInt(document.getElementById('limitInput').value || '200', 10);
+    if (Number.isNaN(limit) || limit < 1) limit = 200;
+    if (limit > 500) limit = 500;
+
+    const params = new URLSearchParams();
+    if (username) params.set('username', username);
+    if (status) params.set('status', status);
+    params.set('limit', String(limit));
+    const r = await fetch(`/api/admin/presence?${params.toString()}`);
+    const data = await r.json();
+    if (!data.ok) {
+        summaryEl.innerHTML = '';
+        listEl.innerHTML = `<div class="error-message">${esc(data.error || 'Ошибка')}</div>`;
+        return;
+    }
+
+    const summary = data.summary || {};
+    const onlineBadge = document.getElementById('presenceOnlineBadge');
+    if (onlineBadge) onlineBadge.textContent = `online: ${summary.online_users || 0}`;
+    summaryEl.innerHTML = `
+      <div class="presence-summary-badges">
+        <span class="badge">${summary.total_users || 0} users</span>
+        <span class="badge">${summary.online_users || 0} online</span>
+        <span class="badge">${summary.away_users || 0} away</span>
+        <span class="badge">${summary.offline_users || 0} offline</span>
+        <span class="badge">week total: ${fmtDuration(summary.week_total_seconds || 0)}</span>
+      </div>
+    `;
+
+    const items = data.items || [];
+    if (items.length === 0) {
+        listEl.innerHTML = '<p>Нет данных присутствия по текущему фильтру.</p>';
+        return;
+    }
+    let html = '<table class="preview-table"><thead><tr><th>Пользователь</th><th>Статус</th><th>Последняя активность</th><th>Текущая сессия</th><th>Последняя сессия</th><th>Сессий за неделю</th><th>Время за неделю</th><th>Детали</th></tr></thead><tbody>';
+    for (const u of items) {
+        html += `<tr>
+            <td><strong>${esc(u.username)}</strong><br><small>${esc(u.full_name || '')}</small></td>
+            <td>${statusBadge(u.status)}</td>
+            <td>${esc(u.last_seen_at || '-')}</td>
+            <td>${fmtDuration(u.current_session_seconds || 0)} (${u.active_sessions || 0} active)</td>
+            <td>${u.last_session_seconds == null ? '-' : fmtDuration(u.last_session_seconds)}</td>
+            <td>${u.week_sessions_count || 0}</td>
+            <td>${fmtDuration(u.week_total_seconds || 0)}</td>
+            <td><button class="btn btn-sm btn-secondary" onclick="showUserSessions('${encodeURIComponent(u.username)}')">Сессии</button></td>
+        </tr>`;
+    }
+    html += '</tbody></table>';
+    listEl.innerHTML = html;
+}
+
+function exportPresenceCsv() {
+    const username = (document.getElementById('usernameFilter').value || '').trim();
+    const status = (document.getElementById('statusFilter').value || 'all').trim();
+    const params = new URLSearchParams();
+    if (username) params.set('username', username);
+    if (status) params.set('status', status);
+    globalThis.location.href = `/api/admin/presence/export.csv?${params.toString()}`;
+}
+
+function setModalVisible(el, visible) {
+    if (!el) return;
+    el.classList.toggle('is-hidden', !visible);
+    el.style.display = visible ? 'flex' : 'none';
+    el.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function closePresenceSessionsModal() {
+    const modal = document.getElementById('presenceSessionsModal');
+    setModalVisible(modal, false);
+}
+
+async function showUserSessions(encodedUsername) {
+    const username = decodeURIComponent(encodedUsername || '');
+    sessionsState.username = username;
+    sessionsState.offset = 0;
+    sessionsState.limit = Number.parseInt(document.getElementById('sessionsLimit').value || '20', 10) || 20;
+    await loadSessionsPage(true);
+}
+
+async function loadSessionsPage(openModal = false) {
+    const username = sessionsState.username;
+    const modal = document.getElementById('presenceSessionsModal');
+    const title = document.getElementById('presenceSessionsTitle');
+    const body = document.getElementById('presenceSessionsBody');
+    const pageInfo = document.getElementById('sessionsPageInfo');
+    const prevBtn = document.getElementById('sessionsPrevBtn');
+    const nextBtn = document.getElementById('sessionsNextBtn');
+    title.textContent = `Сессии: ${username}`;
+    body.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i><p>Загрузка...</p></div>';
+    if (openModal) setModalVisible(modal, true);
+
+    const params = new URLSearchParams();
+    params.set('limit', String(sessionsState.limit));
+    params.set('offset', String(sessionsState.offset));
+    params.set('sort_by', sessionsState.sortBy || 'login_at');
+    params.set('sort_order', sessionsState.sortOrder || 'desc');
+    if (sessionsState.from) params.set('from', sessionsState.from);
+    if (sessionsState.to) params.set('to', sessionsState.to);
+
+    const r = await fetch(`/api/admin/presence/${encodeURIComponent(username)}/sessions?${params.toString()}`);
+    const data = await r.json();
+    if (!data.ok) {
+        body.innerHTML = `<div class="error-message">${esc(data.error || 'Ошибка')}</div>`;
+        pageInfo.textContent = '';
+        prevBtn.disabled = true;
+        nextBtn.disabled = true;
+        return;
+    }
+    const items = data.items || [];
+    sessionsState.total = Number(data.total || 0);
+    sessionsState.limit = Number(data.limit || sessionsState.limit);
+    sessionsState.offset = Number(data.offset || sessionsState.offset);
+
+    if (items.length === 0) {
+        body.innerHTML = '<p>Нет данных по сессиям.</p>';
+        pageInfo.textContent = `0 / ${sessionsState.total}`;
+        prevBtn.disabled = sessionsState.offset <= 0;
+        nextBtn.disabled = true;
+        return;
+    }
+    let html = '<table class="preview-table"><thead><tr><th>ID</th><th>Вход</th><th>Последняя активность</th><th>Выход</th><th>Длительность</th><th>IP</th><th>User-Agent</th><th>Причина</th></tr></thead><tbody>';
+    for (const s of items) {
+        html += `<tr>
+          <td>${s.id}</td>
+          <td>${esc(s.login_at || '-')}</td>
+          <td>${esc(s.last_seen_at || '-')}</td>
+          <td>${esc(s.logout_at || (s.active ? 'active' : '-'))}</td>
+          <td>${fmtDuration(s.duration_seconds || 0)}</td>
+          <td>${esc(s.ip_address || '-')}</td>
+          <td title="${esc(s.user_agent || '-')}">${esc(s.user_agent || '-').slice(0, 80)}</td>
+          <td>${esc(s.ended_reason || (s.active ? 'active' : '-'))}</td>
+        </tr>`;
+    }
+    html += '</tbody></table>';
+    body.innerHTML = html;
+    const from = sessionsState.offset + 1;
+    const to = sessionsState.offset + items.length;
+    pageInfo.textContent = `${from}-${to} из ${sessionsState.total}`;
+    prevBtn.disabled = sessionsState.offset <= 0;
+    nextBtn.disabled = (sessionsState.offset + items.length) >= sessionsState.total;
+}
+
+function applySessionsFilter() {
+    sessionsState.from = (document.getElementById('sessionsFromDate').value || '').trim();
+    sessionsState.to = (document.getElementById('sessionsToDate').value || '').trim();
+    sessionsState.limit = Number.parseInt(document.getElementById('sessionsLimit').value || '20', 10) || 20;
+    sessionsState.sortBy = (document.getElementById('sessionsSortBy').value || 'login_at').trim();
+    sessionsState.sortOrder = (document.getElementById('sessionsSortOrder').value || 'desc').trim();
+    sessionsState.offset = 0;
+    loadSessionsPage(false);
+}
+
+function resetSessionsFilter() {
+    document.getElementById('sessionsFromDate').value = '';
+    document.getElementById('sessionsToDate').value = '';
+    document.getElementById('sessionsLimit').value = '20';
+    document.getElementById('sessionsSortBy').value = 'login_at';
+    document.getElementById('sessionsSortOrder').value = 'desc';
+    sessionsState.from = '';
+    sessionsState.to = '';
+    sessionsState.limit = 20;
+    sessionsState.sortBy = 'login_at';
+    sessionsState.sortOrder = 'desc';
+    sessionsState.offset = 0;
+    loadSessionsPage(false);
+}
+
+function toDateInputValue(d) {
+    return d.toISOString().slice(0, 10);
+}
+
+function setSessionsPreset(kind) {
+    const now = new Date();
+    const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    let from = new Date(today);
+    if (kind === '7d') {
+        from.setUTCDate(from.getUTCDate() - 6);
+    } else if (kind === '30d') {
+        from.setUTCDate(from.getUTCDate() - 29);
+    }
+    document.getElementById('sessionsFromDate').value = toDateInputValue(from);
+    document.getElementById('sessionsToDate').value = toDateInputValue(today);
+    applySessionsFilter();
+}
+
+function sessionsPrevPage() {
+    sessionsState.offset = Math.max(0, sessionsState.offset - sessionsState.limit);
+    loadSessionsPage(false);
+}
+
+function sessionsNextPage() {
+    sessionsState.offset = sessionsState.offset + sessionsState.limit;
+    loadSessionsPage(false);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('usernameFilter').addEventListener('input', () => {
+        if (presenceDebounce) clearTimeout(presenceDebounce);
+        presenceDebounce = setTimeout(loadPresence, 300);
+    });
+    document.getElementById('statusFilter').addEventListener('change', loadPresence);
+    document.getElementById('autoRefreshInput').addEventListener('change', restartPresenceAutoRefresh);
+    document.getElementById('refreshSecInput').addEventListener('change', restartPresenceAutoRefresh);
+    document.getElementById('presenceSessionsModal').addEventListener('click', (e) => {
+        if (e.target.id === 'presenceSessionsModal') closePresenceSessionsModal();
+    });
+    loadPresence();
+    restartPresenceAutoRefresh();
+});
+</script>
+{% endblock %}

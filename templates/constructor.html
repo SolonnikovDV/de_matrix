@@ -1,0 +1,2404 @@
+{% extends "base.html" %}
+
+{% block title %}Конструктор изменений матрицы{% endblock %}
+{% block header_title %}Конструктор изменений матрицы{% endblock %}
+{% block footer_hint %}Для всех пользователей: создание CR через иерархический конструктор{% endblock %}
+
+{% block content %}
+<div class="import-container">
+    <div class="import-section">
+        <h2><i class="fas fa-diagram-project"></i> Иерархический конструктор</h2>
+            <p class="reload-hint">
+            Зафиксируйте шаги пути слева направо. Атрибуты (описание, ответственный, J/M/S, шаблон, <code>leaf_view</code>) — в модалке <strong>«Свойства раздела»</strong>.
+            Когда путь готов, нажмите <strong>«Завершить путь»</strong> — после этого доступны очередь и preview. Схема уровней: <code>constructor_levels</code> в БД.
+        </p>
+
+        <div class="view-toolbar">
+            <button type="button" class="btn btn-secondary" onclick="reloadMeta()"><i class="fas fa-sync"></i> Обновить структуру</button>
+            <button type="button" class="btn btn-info" id="constructorBtnPreview" disabled onclick="previewCurrent()"><i class="fas fa-search"></i> Preview diff</button>
+            <button type="button" class="btn btn-primary" id="constructorBtnAddQueue" disabled onclick="addToQueue()"><i class="fas fa-plus"></i> Добавить в очередь</button>
+            <button type="button" class="btn btn-success" onclick="submitQueue()"><i class="fas fa-paper-plane"></i> Отправить очередь</button>
+            <button type="button" class="btn btn-warning" onclick="clearQueue()"><i class="fas fa-trash"></i> Очистить очередь</button>
+        </div>
+        <div id="constructorStatus" class="reload-hint field-hidden"></div>
+        <p id="constructorQueueHint" class="reload-hint">Сначала зафиксируйте путь и нажмите «Завершить путь» — затем станут доступны «Добавить в очередь» и Preview.</p>
+
+        <details class="constructor-acc">
+            <summary class="constructor-acc-summary">Проверка текста (RU/EN)</summary>
+            <div class="constructor-acc-body validation-block view-gap-md">
+            <div class="view-toolbar">
+                <label for="spellLang">Язык spellcheck:</label>
+                <select id="spellLang" class="form-input mw-180" onchange="applySpellLang()">
+                    <option value="ru">Русский (ru)</option>
+                    <option value="en">English (en)</option>
+                    <option value="ru,en" selected>Русский + English</option>
+                </select>
+                <span class="reload-hint">Используйте подсказки браузера (ПКМ) для автозамены.</span>
+            </div>
+            </div>
+        </details>
+
+        <details class="constructor-acc">
+            <summary class="constructor-acc-summary">Git-style commit metadata</summary>
+            <div class="constructor-acc-body validation-block view-gap-md">
+            <div class="d-flex gap-10 flex-wrap mb-8">
+                <input id="commitTitle" class="form-input spell-text minw-560" type="text" spellcheck="true" lang="ru,en"
+                       placeholder="feat(matrix): add new action for ...">
+            </div>
+            <div>
+                <textarea id="commitBody" class="form-input spell-text" rows="3" spellcheck="true" lang="ru,en"
+                          placeholder="Why this change is needed, context and expected impact"></textarea>
+            </div>
+            <p class="reload-hint">Будет сохранено в CR title/revision note/submit comment для review/timeline.</p>
+            </div>
+        </details>
+
+        <div class="constructor-editor-split">
+        <div class="constructor-editor-main">
+        <details class="constructor-acc" open>
+            <summary class="constructor-acc-summary">Путь в матрице</summary>
+            <div class="constructor-acc-body validation-block view-gap-md" id="constructorTowerSection">
+            <div id="wizardBreadcrumb" class="reload-hint constructor-breadcrumb"></div>
+            <div id="constructorPathToolbar"></div>
+            <div id="wizardTowerBody"></div>
+            <div class="view-toolbar view-gap-sm">
+                <button type="button" class="btn btn-secondary" id="wizardBackBtn" onclick="wizardBack()">Назад</button>
+                <button type="button" class="btn btn-warning" onclick="wizardResetFull()">Сбросить путь</button>
+            </div>
+            </div>
+        </details>
+        </div>
+        <aside class="constructor-inspector-col" aria-label="Инспектор свойств и цепочка пути">
+            <div class="constructor-inspector-card constructor-path-card">
+                <h3 class="constructor-inspector-h3"><i class="fas fa-route"></i> Канва пути (ER)</h3>
+                <p class="reload-hint constructor-inspector-hint">SVG-канва: сущности и связи. Длинная цепочка — прокрутка окна; <strong>Ctrl+колёсико</strong> — масштаб.</p>
+                <div class="er-path-toolbar view-toolbar flex-wrap gap-8 align-center" style="margin-bottom:8px;">
+                    <span class="reload-hint" style="margin:0;">Вид</span>
+                    <button type="button" class="btn btn-sm btn-secondary" id="pathVizBtnH" onclick="setConstructorPathVizOrient('horizontal')">Горизонтально</button>
+                    <button type="button" class="btn btn-sm btn-secondary" id="pathVizBtnV" onclick="setConstructorPathVizOrient('vertical')">Вертикально</button>
+                    <span class="reload-hint" style="margin:0 4px 0 10px;">Масштаб</span>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="constructorPathVizZoomDelta(-0.15)" title="Уменьшить">−</button>
+                    <span id="constructorPathVizZoomLabel" class="reload-hint" style="min-width:2.75rem;text-align:center;">100%</span>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="constructorPathVizZoomDelta(0.15)" title="Увеличить">+</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="constructorPathVizZoomReset()">Сброс</button>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="exportConstructorPathSvg()"><i class="fas fa-download"></i> SVG</button>
+                </div>
+                <div id="constructorPathVizViewport" class="constructor-path-viz er-path-viewport">
+                    <div id="constructorPathVizInner" class="er-path-zoom-inner"></div>
+                </div>
+            </div>
+        </aside>
+        </div>
+
+        <details class="constructor-acc">
+            <summary class="constructor-acc-summary">Preview текущего элемента</summary>
+            <div class="constructor-acc-body validation-block view-gap-md">
+            <div id="previewBox"><p class="empty-message">Нажмите Preview diff для просмотра.</p></div>
+            </div>
+        </details>
+
+        <details class="constructor-acc">
+            <summary class="constructor-acc-summary">Очередь изменений</summary>
+            <div class="constructor-acc-body validation-block">
+            <div id="queueBox"><p class="empty-message">Очередь пуста.</p></div>
+            </div>
+        </details>
+    </div>
+</div>
+
+<div class="modal-overlay is-hidden" id="constructorPropsModal" aria-hidden="true">
+    <div class="modal-box mw-960 modal-constructor-props">
+        <div class="modal-header">
+            <h3><i class="fas fa-sliders"></i> Свойства раздела</h3>
+        </div>
+        <div class="modal-body modal-constructor-props-body validation-block view-gap-md" id="constructorAttributes">
+            <p class="reload-hint">Поля из <code>constructor_levels</code> и <code>matrix_column_schema</code>. J/M/S — грейды узла (<code>level_tags</code>). Тег колонки <code>skill_sticker</code> в Excel — про подпись колонки (часто «Ответственный»), не про эти чекбоксы.</p>
+            <details class="constructor-acc constructor-acc-nested" open>
+                <summary class="constructor-acc-summary">Корень и навык</summary>
+                <div class="constructor-acc-body view-gap-md">
+                    <div class="view-toolbar flex-wrap gap-10" id="constructorDomainMetaRow">
+                        <textarea id="domainDescNew" class="form-input spell-text minw-400" rows="2" placeholder="" spellcheck="true" lang="ru,en"></textarea>
+                        <input id="domainResponsibleNew" class="form-input spell-text minw-280" type="text" placeholder="" spellcheck="true" lang="ru,en">
+                    </div>
+                    <div id="constructorDomainGradesWrap" class="view-toolbar flex-wrap gap-10">
+                        <span class="reload-hint" id="constructorDomainGradesHint">Уровни (домен)</span>
+                        <div id="constructorDomainGradesCbs" class="view-toolbar flex-wrap gap-10"></div>
+                    </div>
+                    <div id="constructorSkillSection" class="view-gap-md">
+                        <div class="view-toolbar flex-wrap gap-10" id="constructorSkillMetaRow">
+                            <input id="skillDescNew" class="form-input spell-text minw-320" type="text" placeholder="" spellcheck="true" lang="ru,en">
+                            <span id="constructorSkillResponsibleWrap" class="view-toolbar flex-wrap gap-10 align-center">
+                                <span class="reload-hint" id="skillResponsibleFieldLabel">Ответственный</span>
+                                <input id="skillResponsible" class="form-input spell-text minw-280" type="text" placeholder="" spellcheck="true" lang="ru,en" aria-labelledby="skillResponsibleFieldLabel">
+                            </span>
+                        </div>
+                        <div id="constructorSkillGradesWrap" class="view-toolbar flex-wrap gap-10">
+                            <span class="reload-hint" id="constructorSkillGradesHint">Уровни (навык)</span>
+                            <div id="constructorSkillGradesCbs" class="view-toolbar flex-wrap gap-10"></div>
+                        </div>
+                    </div>
+                </div>
+            </details>
+            <details class="constructor-acc constructor-acc-nested" open id="constructorActionSection">
+                <summary class="constructor-acc-summary">Действие, подуровень и leaf_view</summary>
+                <div class="constructor-acc-body view-gap-md">
+                    <div class="view-toolbar flex-wrap gap-10">
+                        <label class="reload-hint">Шаблон уровня «<span id="attrActionLevelLabel"></span>»</label>
+                        <select id="actionTemplateId" class="form-input minw-280" onchange="onAttrsChange()"></select>
+                    </div>
+                    <div class="view-toolbar flex-wrap gap-10" id="constructorActionMetaRow">
+                        <input id="actionResponsibleNew" class="form-input spell-text minw-280" type="text" placeholder="" spellcheck="true" lang="ru,en">
+                        <textarea id="actionDescriptionNew" class="form-input spell-text minw-400" rows="2" placeholder="" spellcheck="true" lang="ru,en"></textarea>
+                    </div>
+                    <div id="constructorActionGradesWrap" class="view-toolbar flex-wrap gap-10">
+                        <span class="reload-hint" id="constructorActionGradesHint">Наклейки</span>
+                        <div id="constructorActionGradesCbs" class="view-toolbar flex-wrap gap-10"></div>
+                    </div>
+                    <div class="view-gap-md">
+                        <label class="reload-hint" for="leafViewStackNew">leaf_view.stack (карточка листа — «Стек и технологии»)</label>
+                        <textarea id="leafViewStackNew" class="form-input spell-text w-100" rows="3" placeholder="Текст или список по строкам" spellcheck="true" lang="ru,en"></textarea>
+                        <label class="reload-hint" for="leafViewToolkitNew">leaf_view.toolkit (карточка — «Инструментарий»)</label>
+                        <textarea id="leafViewToolkitNew" class="form-input spell-text w-100" rows="3" placeholder="Текст или список по строкам" spellcheck="true" lang="ru,en"></textarea>
+                        <p class="reload-hint" style="margin:0;">Заполняются для <strong>листового</strong> узла: если есть подуровень — для него; иначе для уровня действия.</p>
+                    </div>
+                    <div id="constructorSubBlock" class="view-gap-md field-hidden">
+                        <div class="view-toolbar flex-wrap gap-10">
+                            <label class="reload-hint">Шаблон уровня «<span id="attrSubLevelLabel"></span>»</label>
+                            <select id="subactionTemplateId" class="form-input minw-280" onchange="onAttrsChange()"></select>
+                        </div>
+                        <div class="view-toolbar flex-wrap gap-10" id="constructorSubMetaRow">
+                            <input id="subactionResponsibleNew" class="form-input spell-text minw-280" type="text" placeholder="" spellcheck="true" lang="ru,en">
+                            <textarea id="subactionDescriptionNew" class="form-input spell-text minw-400" rows="2" placeholder="" spellcheck="true" lang="ru,en"></textarea>
+                        </div>
+                        <div id="constructorSubGradesWrap" class="view-toolbar flex-wrap gap-10">
+                            <span class="reload-hint" id="constructorSubGradesHint">Наклейки</span>
+                            <div id="constructorSubGradesCbs" class="view-toolbar flex-wrap gap-10"></div>
+                        </div>
+                    </div>
+                    <div id="constructorOptionalSubWrap" class="view-toolbar field-hidden">
+                        <label><input type="checkbox" id="addSubactionToggle" onchange="onAttrsChange()">
+                            <span id="constructorOptionalSubLabel">Добавить вложенный элемент под текущим узлом</span>
+                        </label>
+                    </div>
+                    <div class="view-toolbar field-hidden" id="constructorOptionalSubInputs">
+                        <input id="subactionNew" class="form-input spell-text minw-320" type="text" placeholder="" oninput="onAttrsChange()" spellcheck="true" lang="ru,en">
+                    </div>
+                </div>
+            </details>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-primary" onclick="closeConstructorPropsModal()">Готово</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay is-hidden" id="submitConfirmModal" aria-hidden="true">
+    <div class="modal-box mw-900">
+        <h3><i class="fas fa-code-commit"></i> Подтверждение отправки (git-style)</h3>
+        <div id="submitConfirmBody"></div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-success" onclick="confirmSubmitQueue()">Подтвердить отправку</button>
+            <button type="button" class="btn btn-secondary" onclick="closeSubmitConfirm()">Отмена</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay is-hidden" id="queuePreviewModal" aria-hidden="true">
+    <div class="modal-box mw-900">
+        <h3><i class="fas fa-search"></i> Preview queued change</h3>
+        <div id="queuePreviewBody"><p class="empty-message">Нет данных для preview.</p></div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeQueuePreview()">Закрыть</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.constructor-breadcrumb { line-height: 1.5; }
+.constructor-wiz-step { margin-top: 12px; padding: 12px; border: 1px solid var(--border-soft, #e8ecf0); border-radius: var(--radius-sm, 8px); background: var(--surface-soft, #f8fafc); }
+.constructor-wiz-actions { margin-top: 12px; }
+/* Модульные секции: вторичные блоки по умолчанию свёрнуты (progressive disclosure) */
+.constructor-acc {
+    margin-bottom: var(--space-md, 14px);
+    border: 1px solid var(--border-soft, #e8ecf0);
+    border-radius: var(--radius-md, 10px);
+    background: var(--surface, #fff);
+    overflow: hidden;
+}
+.constructor-acc-summary {
+    cursor: pointer;
+    list-style: none;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-main, #1a2433);
+    padding: 12px 16px;
+    margin: 0;
+    background: var(--surface-soft, #f8fafc);
+    border-bottom: 1px solid var(--border-soft, #e8ecf0);
+}
+.constructor-acc-summary::-webkit-details-marker { display: none; }
+.constructor-acc[open] > .constructor-acc-summary { border-bottom-color: var(--border-soft, #e8ecf0); }
+.constructor-acc-body { padding: 12px 16px 16px; border: none; box-shadow: none; }
+.constructor-acc-body.validation-block { background: transparent; }
+.constructor-acc-nested { margin-top: 10px; margin-bottom: 0; }
+.constructor-acc-nested > .constructor-acc-summary { font-size: 0.9rem; background: var(--surface, #fff); }
+
+.constructor-editor-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+    gap: var(--space-md, 16px);
+    align-items: start;
+}
+.constructor-inspector-col {
+    position: sticky;
+    top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md, 14px);
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+    padding-right: 4px;
+}
+.constructor-inspector-card {
+    border: 1px solid var(--border-soft, #e8ecf0);
+    border-radius: var(--radius-md, 10px);
+    background: var(--surface-soft, #f8fafc);
+    padding: 12px 14px;
+}
+.constructor-inspector-h3 {
+    margin: 0 0 6px 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-main, #1a2433);
+}
+.constructor-inspector-h3 i { color: var(--bg-accent, #3498db); margin-right: 6px; }
+.constructor-inspector-hint { margin: 0 0 10px 0; font-size: 0.82rem; }
+.constructor-path-viz,
+.er-path-viewport {
+    min-height: 4.5rem;
+    max-height: min(42vh, 320px);
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: var(--radius-sm, 8px);
+    background: var(--surface, #fff);
+    border: 1px solid var(--border-soft, #e2e8f0);
+    padding: 6px;
+}
+.er-path-toolbar .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+.er-path-zoom-inner {
+    display: inline-block;
+    transition: transform 0.12s ease-out;
+    transform-origin: top left;
+}
+.er-path-svg {
+    display: block;
+    min-width: 260px;
+    width: 100%;
+    height: auto;
+}
+.er-path-svg--vertical { min-width: 0; width: 100%; max-width: 100%; }
+.er-path-svg--narrow { min-width: 200px; min-height: 54px; }
+.er-path-svg--narrow.er-path-svg--vertical { min-width: 0; }
+.constructor-inspector-attrs { margin-bottom: 0; }
+@media (max-width: 1020px) {
+    .constructor-editor-split { grid-template-columns: 1fr; }
+    .constructor-inspector-col {
+        position: static;
+        max-height: none;
+        overflow: visible;
+    }
+}
+.modal-constructor-props { max-height: 92vh; display: flex; flex-direction: column; }
+.modal-constructor-props-body { max-height: min(70vh, 640px); overflow-y: auto; }
+.constructor-path-toolbar-inner { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-soft, #e8ecf0); }
+textarea.w-100 { width: 100%; max-width: 100%; box-sizing: border-box; }
+
+/* Preview: блок-схема сущностей (конструктор) */
+.constructor-preview-diagram {
+    margin: 0 0 1.25rem 0;
+    padding: 14px 16px;
+    border: 1px solid var(--border-soft, #e2e8f0);
+    border-radius: var(--radius-md, 10px);
+    background: var(--surface-soft, #f8fafc);
+}
+.constructor-preview-diagram .cpd-h4 {
+    margin: 0 0 12px 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-main, #1a2433);
+}
+.cpd-flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0 6px;
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px dashed var(--border-soft, #cbd5e1);
+}
+.cpd-flow-step {
+    display: flex;
+    flex-direction: column;
+    min-width: 120px;
+    max-width: 200px;
+}
+.cpd-flow-lvl {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted, #64748b);
+    margin-bottom: 4px;
+}
+.cpd-flow-card {
+    flex: 1;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-soft, #cbd5e1);
+    background: var(--surface, #fff);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    font-size: 0.85rem;
+}
+.cpd-flow-card strong { display: block; line-height: 1.3; word-break: break-word; }
+.cpd-flow-sum {
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: var(--text-muted, #64748b);
+    line-height: 1.35;
+    max-height: 3.2em;
+    overflow: hidden;
+}
+.cpd-flow-arr {
+    display: flex;
+    align-items: center;
+    padding: 0 2px;
+    color: var(--text-muted, #94a3b8);
+    font-size: 1.1rem;
+    font-weight: 600;
+    align-self: center;
+    margin-top: 1.1rem;
+}
+.cpd-block {
+    position: relative;
+    margin: 0 0 10px 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-soft, #e2e8f0);
+    background: var(--surface, #fff);
+}
+.cpd-block-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 10px;
+    margin-bottom: 6px;
+}
+.cpd-level {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #0ea5e9;
+}
+.cpd-name { font-size: 0.95rem; color: var(--text-main, #1e293b); }
+.cpd-dl {
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 12px;
+    font-size: 0.8rem;
+}
+.cpd-dl dt {
+    margin: 0;
+    color: var(--text-muted, #64748b);
+    font-weight: 500;
+}
+.cpd-dl dd { margin: 0; color: var(--text-main, #334155); word-break: break-word; }
+.cpd-nest {
+    margin-top: 10px;
+    margin-left: 6px;
+    padding-left: 14px;
+    border-left: 3px solid var(--bg-accent, #3498db);
+}
+.cpd-depth-0 { border-left: 3px solid #0ea5e9; }
+.cpd-depth-1 { border-left: 3px solid #8b5cf6; }
+.cpd-depth-2 { border-left: 3px solid #10b981; }
+.cpd-depth-3, .cpd-depth-4, .cpd-depth-5 { border-left: 3px solid #f59e0b; }
+.constructor-preview-meta { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--border-soft, #e2e8f0); }
+.constructor-preview-meta p { margin: 0.35rem 0; font-size: 0.9rem; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let constructorMeta = {
+  nodes: [],
+  template_ids: [],
+  templates: [],
+  matrix_levels: [],
+  matrix_column_schema: [],
+  unified_column_schema: [],
+  constructor_leaf_step_title: '',
+  constructor_levels: [],
+  constructor_tower: {},
+  constructor_value_lists: {},
+  sticker_grades: ['junior', 'middle', 'senior'],
+  skill_sticker_tag: 'skill_sticker',
+};
+
+/* wizard: phase 'tower' (атрибуты только в модалке); pathComplete — разрешение на очередь/preview */
+let wizard = { phase: 'tower', locked: [], pathComplete: false };
+let constructorPathVizOrient = 'horizontal';
+let constructorPathVizZoom = 1;
+let queueItems = [];
+let queueEditIndex = null;
+let submitInProgress = false;
+let metaAutoRefreshTimer = null;
+let metaRefreshSkipUntil = 0;
+const META_AUTO_REFRESH_MS = 30000;
+
+/** Доп. шаги башни после matrix_levels (лист в subactions), синхронно с сервером. */
+function appendSyntheticLeafSteps(baseLevels) {
+  const out = baseLevels.slice();
+  const extra = Number((constructorMeta.constructor_tower || {}).extra_leaf_steps);
+  const n = Number.isFinite(extra) && extra > 0 ? Math.min(16, Math.floor(extra)) : 0;
+  if (!n) return out;
+  const leafBaseRaw = String(constructorMeta.constructor_leaf_step_title || '').trim();
+  const leafBase = leafBaseRaw || 'leaf_sublevel';
+  for (let k = 0; k < n; k++) {
+    const prev = out[out.length - 1];
+    const step = out.length;
+    const depth = prev ? Number(prev.depth) + 1 : 0;
+    out.push({
+      step,
+      depth: Number.isNaN(depth) ? step : depth,
+      title: n === 1 ? leafBase : `${leafBase} (${k + 1})`,
+      tags: ['item'],
+      skill_responsible: false,
+      grade_stickers: !!(prev && prev.grade_stickers),
+      role: 'subaction',
+      columns: [],
+      synthetic: true,
+    });
+  }
+  return out;
+}
+
+/** Упорядоченные уровни из API (constructor_levels) или фолбэк по matrix_levels + extra_leaf_steps. */
+function levelsOrdered() {
+  const cl = constructorMeta.constructor_levels;
+  if (cl && cl.length) return cl;
+  const ml = constructorMeta.matrix_levels || [];
+  const base = ml.map((row, step) => ({
+    step,
+    depth: Number.isNaN(Number(row.depth)) ? step : Number(row.depth),
+    title: String(row.title || '').trim(),
+    tags: row.tags || [],
+    skill_responsible: !!row.skill_responsible,
+    grade_stickers: !!row.grade_stickers,
+    role: step === 0 ? 'domain' : step === 1 ? 'skill' : step === 2 ? 'action' : 'subaction',
+    columns: [],
+  }));
+  return appendSyntheticLeafSteps(base);
+}
+
+function domainStepIndex() {
+  const lv = levelsOrdered();
+  const i = lv.findIndex((x) => x && x.role === 'domain');
+  return i >= 0 ? i : 0;
+}
+
+function skillStepIndex() {
+  const lv = levelsOrdered();
+  const i = lv.findIndex((x) => x && x.role === 'skill');
+  return i >= 0 ? i : 1;
+}
+
+function actionStepIndex() {
+  const lv = levelsOrdered();
+  const i = lv.findIndex((x) => x && x.role === 'action');
+  return i >= 0 ? i : 2;
+}
+
+/** Число шагов башни = число уровней в схеме из БД. */
+function towerStepCount() {
+  return levelsOrdered().length;
+}
+
+/**
+ * Минимум зафиксированных шагов, чтобы перейти к атрибутам.
+ * Не требуем весь путь до синтетического «листа»; если в схеме меньше шагов, чем индекс «действие»+1, берём высоту башни.
+ */
+function minTowerLocksForAttrs() {
+  const n = towerStepCount();
+  if (!n) return 9999;
+  /* Достаточно зафиксировать корень (первый уровень); нижние уровни и коммит — по желанию. */
+  return domainStepIndex() + 1;
+}
+
+function levelRowAtStep(step) {
+  const lv = levelsOrdered();
+  return lv[step] || null;
+}
+
+/** Поле depth из строки схемы (идентификатор уровня в ui_config), не индекс шага. */
+function depthForTowerStep(step) {
+  const r = levelRowAtStep(step);
+  if (!r || Number.isNaN(Number(r.depth))) return step;
+  return Number(r.depth);
+}
+
+function isPlaceholderItemTitle(t) {
+  const s = String(t || '').trim().toLowerCase().replace(/\s+/g, '');
+  if (!s) return true;
+  return /^item_\d+$/.test(s);
+}
+
+function levelTitleAtStep(step, fallback) {
+  const r = levelRowAtStep(step);
+  const t = r && r.title ? String(r.title).trim() : '';
+  if (t && !isPlaceholderItemTitle(t)) return t;
+  const d = depthForTowerStep(step);
+  if (typeof window.matrixSchemaItemLevelLabel === 'function') {
+    const s = window.matrixSchemaItemLevelLabel(d);
+    if (s && !isPlaceholderItemTitle(s)) return s;
+  }
+  return fallback || `item_${d}`;
+}
+
+function stickerGradesList() {
+  const vl = constructorMeta.constructor_value_lists || {};
+  const g = vl.sticker_grades || constructorMeta.sticker_grades;
+  return (g && g.length) ? g : ['junior', 'middle', 'senior'];
+}
+
+function esc(s) {
+  return String(s || '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+}
+
+/** Подпись типа сущности по глубине (как в башне конструктора). */
+function previewEntityTypeLabel(depth) {
+  return levelTitleAtStep(depth, `Уровень ${depth}`);
+}
+
+function previewTrunc(s, max) {
+  const t = String(s || '').trim();
+  if (!t) return '';
+  return t.length <= max ? t : `${t.slice(0, Math.max(1, max - 1))}…`;
+}
+
+function previewNodeShortSummary(n) {
+  if (!n || typeof n !== 'object') return '';
+  const bits = [];
+  const d = previewTrunc(n.description, 48);
+  if (d) bits.push(d);
+  const r = String(n.responsible || '').trim();
+  if (r) bits.push(r);
+  const tags = Array.isArray(n.level_tags) && n.level_tags.length ? n.level_tags.join('/') : '';
+  if (tags) bits.push(tags);
+  if (n.template_id) bits.push(`tpl:${String(n.template_id).slice(0, 14)}`);
+  const lv = n.leaf_view;
+  if (lv && typeof lv === 'object') {
+    Object.keys(lv).forEach((k) => {
+      const v = previewTrunc(lv[k], 24);
+      if (v) bits.push(`${k}:${v}`);
+    });
+  }
+  return bits.slice(0, 4).join(' · ');
+}
+
+/** Левый «позвоночник» дерева (первый ребёнок на каждом уровне) — для горизонтальной цепочки. */
+function previewPayloadLeftSpine(root) {
+  const out = [];
+  let n = root;
+  while (n && typeof n === 'object') {
+    out.push(n);
+    const ch = Array.isArray(n.children) ? n.children : [];
+    if (!ch.length) break;
+    n = ch[0];
+  }
+  return out;
+}
+
+function buildPreviewHorizontalFlow(spine) {
+  if (!spine.length) return '';
+  let html = '<div class="cpd-flow" role="img" aria-label="Цепочка сущностей">';
+  spine.forEach((n, i) => {
+    const label = previewEntityTypeLabel(i);
+    const nm = String(n.name || n.text || '').trim() || '—';
+    const sum = previewNodeShortSummary(n);
+    html += `<div class="cpd-flow-step"><span class="cpd-flow-lvl">${esc(label)}</span>`;
+    html += `<div class="cpd-flow-card"><strong>${esc(nm)}</strong>`;
+    if (sum) html += `<div class="cpd-flow-sum">${esc(sum)}</div>`;
+    html += '</div></div>';
+    if (i < spine.length - 1) html += '<div class="cpd-flow-arr">→</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function previewPropsDl(n) {
+  if (!n || typeof n !== 'object') return '';
+  const rows = [];
+  const d = String(n.description || '').trim();
+  if (d) rows.push(['Описание', previewTrunc(d, 200)]);
+  const r = String(n.responsible || '').trim();
+  if (r) rows.push(['Ответственный', r]);
+  const tags = Array.isArray(n.level_tags) && n.level_tags.length ? n.level_tags.join(', ') : '';
+  if (tags) rows.push(['Грейды (J/M/S)', tags]);
+  if (n.level_tag) rows.push(['level_tag', String(n.level_tag)]);
+  if (n.template_id) rows.push(['Шаблон', String(n.template_id)]);
+  const lv = n.leaf_view;
+  if (lv && typeof lv === 'object') {
+    Object.keys(lv).forEach((k) => {
+      const raw = lv[k];
+      const str = typeof raw === 'object' ? JSON.stringify(raw) : String(raw);
+      rows.push([`leaf_view.${k}`, previewTrunc(str, 240)]);
+    });
+  }
+  if (!rows.length) return '';
+  let inner = '';
+  rows.forEach(([k, v]) => {
+    inner += `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`;
+  });
+  return `<dl class="cpd-dl">${inner}</dl>`;
+}
+
+function renderPreviewEntityBlock(n, depth) {
+  if (!n || typeof n !== 'object') return '';
+  const label = previewEntityTypeLabel(depth);
+  const nm = String(n.name || n.text || '').trim() || '—';
+  const props = previewPropsDl(n);
+  const ch = Array.isArray(n.children) ? n.children : [];
+  let childrenHtml = '';
+  ch.forEach((c) => {
+    childrenHtml += renderPreviewEntityBlock(c, depth + 1);
+  });
+  const nest = childrenHtml ? `<div class="cpd-nest">${childrenHtml}</div>` : '';
+  const dClass = Math.min(depth, 5);
+  return `<section class="cpd-block cpd-depth-${dClass}"><div class="cpd-block-head"><span class="cpd-level">${esc(label)}</span><strong class="cpd-name">${esc(nm)}</strong></div>${props}${nest}</section>`;
+}
+
+function buildConstructorPayloadBlockDiagram(payloadPreview) {
+  const nodes = (payloadPreview && payloadPreview.nodes) || [];
+  if (!nodes.length) return '';
+  const root = nodes[0];
+  const spine = previewPayloadLeftSpine(root);
+  const flow = buildPreviewHorizontalFlow(spine);
+  const nested = renderPreviewEntityBlock(root, 0);
+  return (
+    '<div class="constructor-preview-diagram">' +
+    '<h4 class="cpd-h4"><i class="fas fa-diagram-project"></i> Схема изменения: связи и свойства</h4>' +
+    flow +
+    '<p class="reload-hint" style="margin:0 0 8px 0;">Полная вложенная структура payload (все ветки):</p>' +
+    nested +
+    '</div>'
+  );
+}
+
+function erTrunc(s, max) {
+  const t = String(s ?? '');
+  return t.length <= max ? t : `${t.slice(0, Math.max(1, max - 1))}…`;
+}
+
+/**
+ * Mini-ER канва: прямоугольники и стрелки (orientation: horizontal | vertical).
+ * steps: [{ level, val }]; opt.treeTheme — цвета как в инспекторе дерева.
+ */
+function buildErPathSvg(steps, opt) {
+  const o = opt || {};
+  const markerSuffix = String(o.markerIdSuffix || 'm').replace(/[^a-zA-Z0-9_-]/g, '') || 'm';
+  const boxW = Number(o.boxW) > 0 ? Number(o.boxW) : 112;
+  const boxH = Number(o.boxH) > 0 ? Number(o.boxH) : 50;
+  const gap = Number(o.gap) > 0 ? Number(o.gap) : 16;
+  const pad = 10;
+  const narrow = Boolean(o.narrow);
+  const treeTheme = Boolean(o.treeTheme);
+  const vertical = o.orientation === 'vertical';
+  const fsLevel = narrow ? 8 : 9;
+  const fsVal = narrow ? 10 : 11;
+  const truncLevel = narrow ? 11 : 15;
+  const truncVal = narrow ? 13 : 20;
+  const n = Array.isArray(steps) ? steps.length : 0;
+  if (!n) return '';
+  const fillLast = treeTheme ? '#e3f2fd' : '#e0f2fe';
+  const strokeLast = treeTheme ? '#1976d2' : '#0ea5e9';
+  const strokeBox = treeTheme ? '#b0bec5' : '#cbd5e1';
+  const lineStroke = treeTheme ? '#90a4ae' : '#94a3b8';
+  const mid = `er-arr-${markerSuffix}`;
+  const rx = treeTheme ? 7 : 8;
+  const markerDef = `<defs><marker id="${mid}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L8,4 L0,8 z" fill="${lineStroke}"/></marker></defs>`;
+
+  if (vertical) {
+    const Wv = boxW + 2 * pad;
+    const Hv = n * boxH + Math.max(0, n - 1) * gap + 2 * pad;
+    const cx = pad + boxW / 2;
+    let sv = `<svg class="er-path-svg er-path-svg--vertical${narrow ? ' er-path-svg--narrow' : ''}" viewBox="0 0 ${Wv} ${Hv}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Связь уровней по пути">`;
+    sv += markerDef;
+    for (let i = 0; i < n; i += 1) {
+      const y = pad + i * (boxH + gap);
+      const isLast = i === n - 1;
+      const fill = isLast ? fillLast : '#ffffff';
+      const stroke = isLast ? strokeLast : strokeBox;
+      sv += `<rect x="${pad}" y="${y}" width="${boxW}" height="${boxH}" rx="${rx}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+      const y1 = y + (narrow ? 14 : 16);
+      const y2 = y + (narrow ? 31 : 34);
+      const lv = esc(erTrunc(steps[i].level, truncLevel));
+      const vv = esc(erTrunc(steps[i].val, truncVal));
+      sv += `<text x="${cx}" y="${y1}" text-anchor="middle" font-size="${fsLevel}" fill="#64748b" font-family="system-ui,Segoe UI,sans-serif">${lv}</text>`;
+      sv += `<text x="${cx}" y="${y2}" text-anchor="middle" font-size="${fsVal}" font-weight="600" fill="#0f172a" font-family="system-ui,Segoe UI,sans-serif">${vv}</text>`;
+      if (i < n - 1) {
+        const yBottom = y + boxH;
+        const yNext = y + boxH + gap - 1;
+        sv += `<line x1="${cx}" y1="${yBottom}" x2="${cx}" y2="${yNext}" stroke="${lineStroke}" stroke-width="2" marker-end="url(#${mid})"/>`;
+      }
+    }
+    sv += '</svg>';
+    return sv;
+  }
+
+  const W = n * boxW + Math.max(0, n - 1) * gap + 2 * pad;
+  const H = boxH + 2 * pad;
+  const cy = pad + boxH / 2;
+  const y1 = pad + (narrow ? 14 : 16);
+  const y2 = pad + (narrow ? 31 : 34);
+  let svg = `<svg class="er-path-svg${narrow ? ' er-path-svg--narrow' : ''}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Связь уровней по пути">`;
+  svg += markerDef;
+  for (let i = 0; i < n; i += 1) {
+    const x = pad + i * (boxW + gap);
+    const isLast = i === n - 1;
+    const fill = isLast ? fillLast : '#ffffff';
+    const stroke = isLast ? strokeLast : strokeBox;
+    svg += `<rect x="${x}" y="${pad}" width="${boxW}" height="${boxH}" rx="${rx}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+    const lv = esc(erTrunc(steps[i].level, truncLevel));
+    const vv = esc(erTrunc(steps[i].val, truncVal));
+    svg += `<text x="${x + boxW / 2}" y="${y1}" text-anchor="middle" font-size="${fsLevel}" fill="#64748b" font-family="system-ui,Segoe UI,sans-serif">${lv}</text>`;
+    svg += `<text x="${x + boxW / 2}" y="${y2}" text-anchor="middle" font-size="${fsVal}" font-weight="600" fill="#0f172a" font-family="system-ui,Segoe UI,sans-serif">${vv}</text>`;
+    if (i < n - 1) {
+      const x1 = x + boxW;
+      const x2 = x + boxW + gap - 1;
+      svg += `<line x1="${x1}" y1="${cy}" x2="${x2}" y2="${cy}" stroke="${lineStroke}" stroke-width="2" marker-end="url(#${mid})"/>`;
+    }
+  }
+  svg += '</svg>';
+  return svg;
+}
+
+function syncConstructorPathVizToolbar() {
+  const h = document.getElementById('pathVizBtnH');
+  const v = document.getElementById('pathVizBtnV');
+  const horiz = constructorPathVizOrient !== 'vertical';
+  if (h) {
+    h.classList.toggle('btn-primary', horiz);
+    h.classList.toggle('btn-secondary', !horiz);
+  }
+  if (v) {
+    v.classList.toggle('btn-primary', !horiz);
+    v.classList.toggle('btn-secondary', horiz);
+  }
+}
+
+function setConstructorPathVizOrient(mode) {
+  constructorPathVizOrient = mode === 'vertical' ? 'vertical' : 'horizontal';
+  syncConstructorPathVizToolbar();
+  renderPathViz();
+}
+
+function updateConstructorPathVizZoomLabel() {
+  const el = document.getElementById('constructorPathVizZoomLabel');
+  if (el) el.textContent = `${Math.round(constructorPathVizZoom * 100)}%`;
+}
+
+function applyConstructorPathVizZoom() {
+  const inner = document.getElementById('constructorPathVizInner');
+  if (!inner) return;
+  const z = Math.min(2, Math.max(0.5, constructorPathVizZoom));
+  constructorPathVizZoom = z;
+  inner.style.transformOrigin = 'top left';
+  inner.style.transform = `scale(${z})`;
+  updateConstructorPathVizZoomLabel();
+}
+
+function constructorPathVizZoomDelta(d) {
+  constructorPathVizZoom = Math.round((constructorPathVizZoom + d) * 100) / 100;
+  applyConstructorPathVizZoom();
+}
+
+function constructorPathVizZoomReset() {
+  constructorPathVizZoom = 1;
+  applyConstructorPathVizZoom();
+}
+
+function exportConstructorPathSvg() {
+  const inner = document.getElementById('constructorPathVizInner');
+  if (!inner) return;
+  const svgEl = inner.querySelector('svg');
+  if (!svgEl) {
+    setConstructorStatus('Нет диаграммы для экспорта (задайте шаги пути).', true);
+    return;
+  }
+  const xml = new XMLSerializer().serializeToString(svgEl);
+  const blob = new Blob([`<?xml version="1.0" encoding="UTF-8"?>\n${xml}`], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'matrix-path-constructor.svg';
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  setConstructorStatus('SVG сохранён.', false);
+}
+
+function setModalVisible(id, visible) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.toggle('is-hidden', !visible);
+  el.style.display = visible ? 'flex' : 'none';
+  el.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function setConstructorStatus(message = '', isError = false) {
+  const el = document.getElementById('constructorStatus');
+  if (!el) return;
+  const text = String(message || '').trim();
+  if (!text) {
+    el.classList.add('field-hidden');
+    el.textContent = '';
+    el.classList.remove('error-message');
+    return;
+  }
+  el.textContent = text;
+  el.classList.remove('field-hidden');
+  el.classList.toggle('error-message', Boolean(isError));
+}
+
+function applySpellLang() {
+  const lang = (document.getElementById('spellLang')?.value || 'ru,en').trim();
+  document.querySelectorAll('.spell-text').forEach((el) => {
+    el.setAttribute('lang', lang);
+    el.setAttribute('spellcheck', 'true');
+  });
+}
+
+function normalizeCommitTitle(rawTitle, fallbackItem) {
+  const t = String(rawTitle || '').trim();
+  if (t) return t;
+  const parts = [fallbackItem.domain || ''];
+  if (fallbackItem.skill_mode !== 'none') parts.push(fallbackItem.skill || '');
+  if (fallbackItem.action_mode !== 'none') parts.push(fallbackItem.action || '');
+  return `feat(matrix): ${parts.filter(Boolean).join(' / ')}`;
+}
+
+function _ctorListCh(node) {
+  return Array.isArray(node && node.children) ? node.children : [];
+}
+
+function getRootNodeByIndex(i) {
+  const d = (constructorMeta.nodes || [])[i];
+  return d || null;
+}
+
+function getSkillByIndices(di, si) {
+  const dom = getRootNodeByIndex(di);
+  if (!dom) return null;
+  return _ctorListCh(dom)[si] || null;
+}
+
+function getActionByIndices(di, si, ai) {
+  const sk = getSkillByIndices(di, si);
+  if (!sk) return null;
+  return _ctorListCh(sk)[ai] || null;
+}
+
+/** Цепочка индексов [di, si, ai, ...] до строки мастера lastStepInclusive включительно. */
+function indicesUpTo(L, lastStepInclusive) {
+  if (lastStepInclusive < 0 || !L || !L.length) return [];
+  const row = L[lastStepInclusive];
+  if (row.indices && row.indices.length === lastStepInclusive + 1) {
+    return row.indices.slice();
+  }
+  const di = L[0].di != null ? L[0].di : L[0].index;
+  if (lastStepInclusive === 0) return [di];
+  const si = L[1].si != null ? L[1].si : L[1].index;
+  if (lastStepInclusive === 1) return [di, si];
+  const ai = L[2].ai != null ? L[2].ai : L[2].index;
+  if (lastStepInclusive === 2) return [di, si, ai];
+  const out = [di, si, ai];
+  for (let s = 3; s <= lastStepInclusive; s++) {
+    const r = L[s];
+    const ix = r.subi != null ? r.subi : r.index;
+    out.push(ix);
+  }
+  return out;
+}
+
+/** Узел дерева nodes по цепочке индексов [di, si, ai, s0, s1, ...]. */
+function getTreeNodeAtIndices(indices) {
+  if (!indices || !indices.length) return null;
+  if (indices.length === 1) return getRootNodeByIndex(indices[0]);
+  if (indices.length === 2) return getSkillByIndices(indices[0], indices[1]);
+  if (indices.length === 3) return getActionByIndices(indices[0], indices[1], indices[2]);
+  let cur = getActionByIndices(indices[0], indices[1], indices[2]);
+  for (let i = 3; i < indices.length; i++) {
+    const ch = _ctorListCh(cur);
+    cur = ch[indices[i]] || null;
+    if (!cur) return null;
+  }
+  return cur;
+}
+
+function listChildOptionsFromParent(parent, baseIndices) {
+  if (!parent) return [];
+  const bi = baseIndices || [];
+  if (bi.length === 0) {
+    return (constructorMeta.nodes || []).map((d, di) => ({ text: d.name || '', indices: [di] }));
+  }
+  const ch = _ctorListCh(parent);
+  return ch.map((c, i) => ({ text: c.name || c.text || '', indices: bi.concat([i]) }));
+}
+
+/** Текущий шаг башни: step = locked.length; matrix depth = depthForTowerStep(step). */
+function towerContext() {
+  const L = wizard.locked;
+  const step = L.length;
+  const maxSteps = towerStepCount();
+  if (step >= maxSteps) {
+    return { step, depth: null, options: [], parentNew: false, done: true };
+  }
+  const matrixDepth = depthForTowerStep(step);
+  if (step === 0) {
+    const roots = constructorMeta.nodes || [];
+    const options = roots.map((d, di) => ({ text: d.name || '', indices: [di] }));
+    return { step, depth: matrixDepth, options, parentNew: false, done: false };
+  }
+  const prev = L[step - 1];
+  if (prev.kind === 'new') {
+    return { step, depth: matrixDepth, options: [], parentNew: true, done: false };
+  }
+  const pidx = indicesUpTo(L, step - 1);
+  const parent = getTreeNodeAtIndices(pidx);
+  const options = listChildOptionsFromParent(parent, pidx);
+  return { step, depth: matrixDepth, options, parentNew: false, done: false };
+}
+
+function renderBreadcrumb() {
+  const el = document.getElementById('wizardBreadcrumb');
+  if (!el) return;
+  if (!wizard.locked.length) {
+    el.textContent = 'Путь не задан — начните с корня.';
+    renderPathViz();
+    const tb = document.getElementById('constructorPathToolbar');
+    if (tb) tb.innerHTML = '';
+    return;
+  }
+  const parts = wizard.locked.map((s, idx) => {
+    const st = s.step != null ? s.step : idx;
+    return `${levelTitleAtStep(st, 'уровень')} «${s.text}»${s.kind === 'new' ? ' (нов.)' : ''}`;
+  });
+  el.innerHTML = '<strong>Зафиксировано:</strong> ' + parts.map((p) => esc(p)).join(' → ');
+  renderPathViz();
+  renderConstructorPathToolbar();
+}
+
+function updateQueueToolbar() {
+  const ok = Boolean(wizard.pathComplete && wizard.locked.length >= minTowerLocksForAttrs());
+  const bp = document.getElementById('constructorBtnPreview');
+  const bq = document.getElementById('constructorBtnAddQueue');
+  const hint = document.getElementById('constructorQueueHint');
+  if (bp) bp.disabled = !ok;
+  if (bq) bq.disabled = !ok;
+  if (hint) hint.classList.toggle('field-hidden', ok);
+}
+
+function renderConstructorPathToolbar() {
+  const el = document.getElementById('constructorPathToolbar');
+  if (!el) return;
+  const minL = minTowerLocksForAttrs();
+  if (wizard.locked.length < minL) {
+    el.innerHTML = '';
+    return;
+  }
+  const maxS = towerStepCount();
+  const ctx = towerContext();
+  const nextTitle = !ctx.done ? levelTitleAtStep(ctx.step, 'уровень') : '';
+  let html = '<div class="view-toolbar flex-wrap gap-8 align-center constructor-path-toolbar-inner">';
+  html += '<button type="button" class="btn btn-secondary" onclick="openConstructorPropsModal()"><i class="fas fa-sliders"></i> Свойства раздела</button>';
+  html += '<button type="button" class="btn btn-success" onclick="wizardCompletePath()"><i class="fas fa-check"></i> Завершить путь</button>';
+  if (wizard.pathComplete) {
+    html += '<span class="reload-hint" style="margin:0;"><i class="fas fa-check-circle" style="color:#27ae60;"></i> Путь завершён — доступны очередь и Preview</span>';
+  } else {
+    html += '<span class="reload-hint" style="margin:0;">Нажмите «Завершить путь», чтобы включить «Добавить в очередь» и Preview.</span>';
+  }
+  if (!ctx.done && nextTitle) {
+    html += `<span class="reload-hint" style="margin:0;">Следующий уровень: <strong>${esc(nextTitle)}</strong> — зафиксируйте шаг в форме ниже.</span>`;
+  } else if (ctx.done) {
+    html += '<span class="reload-hint" style="margin:0;">Все уровни башни выбраны. При необходимости откройте свойства и завершите путь.</span>';
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function wizardCompletePath() {
+  if (wizard.locked.length < minTowerLocksForAttrs()) {
+    alert('Сначала зафиксируйте минимум корень матрицы.');
+    return;
+  }
+  wizard.pathComplete = true;
+  updateQueueToolbar();
+  renderConstructorPathToolbar();
+  setConstructorStatus('Путь завершён. Можно добавить изменение в очередь или Preview diff.');
+}
+
+function openConstructorPropsModal() {
+  if (wizard.locked.length < minTowerLocksForAttrs()) {
+    alert('Сначала зафиксируйте хотя бы первый уровень пути.');
+    return;
+  }
+  hydrateConstructorPropsFromWizard();
+  applyConstructorSchema();
+  syncConstructorAttrSections();
+  onAttrsChange();
+  setModalVisible('constructorPropsModal', true);
+  applySpellLang();
+}
+
+function closeConstructorPropsModal() {
+  setModalVisible('constructorPropsModal', false);
+}
+
+function hydrateConstructorPropsFromWizard() {
+  const L = wizard.locked;
+  const lastStep = L.length - 1;
+  const domObj = domainObjFromWizard();
+  document.getElementById('domainDescNew').value = (domObj && domObj.description) || '';
+  document.getElementById('domainResponsibleNew').value = (domObj && domObj.responsible) || '';
+  setGradeCheckboxes('domain', domainGradeTagsFromObj(domObj));
+  const sk = skillObjFromWizard();
+  document.getElementById('skillDescNew').value = (sk && sk.description) || '';
+  document.getElementById('skillResponsible').value = (sk && sk.responsible) || '';
+  setGradeCheckboxes('skill', skillGradeTagsFromObj(sk));
+  const act = actionObjFromWizard();
+  const subFromTower = L.length > actionStepIndex() + 1;
+  fillTemplateSelect('actionTemplateId', (act && act.template_id) || defaultTemplateId(), true);
+  document.getElementById('actionResponsibleNew').value = (act && act.responsible) || '';
+  document.getElementById('actionDescriptionNew').value = (act && act.description) || '';
+  setGradeCheckboxes('action', levelTagsFromTreeObj(act));
+  document.getElementById('addSubactionToggle').checked = subFromTower || false;
+  const lastLock = L[lastStep];
+  document.getElementById('subactionNew').value = subFromTower ? (lastLock && lastLock.text) || '' : '';
+  let lastSub = {};
+  if (subFromTower && lastLock && lastLock.kind === 'existing') {
+    const fullIx = indicesUpTo(L, lastStep);
+    lastSub = getTreeNodeAtIndices(fullIx) || {};
+  } else if (subFromTower && act) {
+    const subs = _ctorListCh(act);
+    lastSub = subs.length ? subs[subs.length - 1] : {};
+  }
+  fillTemplateSelect('subactionTemplateId', (lastSub.template_id) || defaultTemplateId(), true);
+  document.getElementById('subactionResponsibleNew').value = (lastSub && lastSub.responsible) || '';
+  document.getElementById('subactionDescriptionNew').value = (lastSub && lastSub.description) || '';
+  setGradeCheckboxes('sub', subFromTower ? levelTagsFromTreeObj(lastSub) : []);
+  const lvTarget = subFromTower ? lastSub : act;
+  const lv = (lvTarget && lvTarget.leaf_view) || {};
+  document.getElementById('leafViewStackNew').value = lv.stack != null ? String(lv.stack) : '';
+  document.getElementById('leafViewToolkitNew').value = lv.toolkit != null ? String(lv.toolkit) : '';
+}
+
+/** SVG mini-ER канва зафиксированного пути (инспектор справа). */
+function renderPathViz() {
+  const inner = document.getElementById('constructorPathVizInner');
+  if (!inner) return;
+  syncConstructorPathVizToolbar();
+  const L = wizard.locked || [];
+  if (!L.length) {
+    inner.innerHTML = '<p class="empty-message" style="margin:0;font-size:0.85rem;">Пока нет зафиксированных шагов — начните выбор в колонке «Путь в матрице».</p>';
+    applyConstructorPathVizZoom();
+    return;
+  }
+  const steps = L.map((row) => {
+    const st = row.step != null ? row.step : 0;
+    const title = levelTitleAtStep(st, 'уровень');
+    const val = String(row.text || '—') + (row.kind === 'new' ? ' (нов.)' : '');
+    return { level: title, val };
+  });
+  inner.innerHTML = buildErPathSvg(steps, {
+    markerIdSuffix: 'wiz',
+    orientation: constructorPathVizOrient,
+  });
+  applyConstructorPathVizZoom();
+}
+
+function rebuildGradeCheckboxUIs() {
+  const grades = stickerGradesList();
+  const mk = (cls) => grades.map((g) => {
+    const v = String(g).toLowerCase().trim();
+    return `<label><input type="checkbox" class="${cls}" data-grade="${esc(v)}"> ${esc(v)}</label>`;
+  }).join(' ');
+  const domEl = document.getElementById('constructorDomainGradesCbs');
+  const skEl = document.getElementById('constructorSkillGradesCbs');
+  const act = document.getElementById('constructorActionGradesCbs');
+  const sub = document.getElementById('constructorSubGradesCbs');
+  if (domEl) domEl.innerHTML = mk('domain-grade-cb');
+  if (skEl) skEl.innerHTML = mk('skill-grade-cb');
+  if (act) act.innerHTML = mk('action-grade-cb');
+  if (sub) sub.innerHTML = mk('sub-grade-cb');
+}
+
+function gradeCheckboxClass(kind) {
+  if (kind === 'domain') return 'domain-grade-cb';
+  if (kind === 'skill') return 'skill-grade-cb';
+  if (kind === 'sub') return 'sub-grade-cb';
+  return 'action-grade-cb';
+}
+
+function setGradeCheckboxes(kind, tags) {
+  const cls = gradeCheckboxClass(kind);
+  const norm = new Set((tags || []).map((t) => String(t).toLowerCase().trim()).filter(Boolean));
+  document.querySelectorAll(`input.${cls}`).forEach((el) => {
+    const g = (el.getAttribute('data-grade') || '').toLowerCase();
+    el.checked = norm.has(g);
+  });
+}
+
+function readGradeCheckboxes(kind) {
+  const cls = gradeCheckboxClass(kind);
+  const out = [];
+  document.querySelectorAll(`input.${cls}`).forEach((el) => {
+    if (!el.checked) return;
+    const g = (el.getAttribute('data-grade') || '').trim().toLowerCase();
+    if (g) out.push(g);
+  });
+  return out;
+}
+
+function levelTagsFromTreeObj(obj) {
+  if (!obj) return [];
+  if (Array.isArray(obj.level_tags) && obj.level_tags.length) {
+    return obj.level_tags.map((t) => String(t).toLowerCase().trim()).filter(Boolean);
+  }
+  if (obj.level_tag) return [String(obj.level_tag).toLowerCase().trim()].filter(Boolean);
+  return [];
+}
+
+/** Навык / домен: level_tags или одиночный level_sticker (legacy). */
+function skillGradeTagsFromObj(sk) {
+  if (!sk) return [];
+  const t = levelTagsFromTreeObj(sk);
+  if (t.length) return t;
+  const ls = String(sk.level_sticker || '').trim().toLowerCase();
+  return ls ? [ls] : [];
+}
+
+function domainGradeTagsFromObj(d) {
+  return skillGradeTagsFromObj(d);
+}
+
+function defaultTemplateId() {
+  const list = constructorMeta.templates || [];
+  if (list.length) return String(list[0].id || '').trim();
+  const ids = constructorMeta.template_ids || [];
+  return ids.length ? String(ids[0] || '').trim() : '';
+}
+
+function fillTemplateSelect(id, selected = '', allowEmpty = true) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  let list = constructorMeta.templates || [];
+  if (!list.length && (constructorMeta.template_ids || []).length) {
+    list = (constructorMeta.template_ids || []).map((tid) => ({ id: String(tid), name: String(tid) }));
+  }
+  const opts = [];
+  if (allowEmpty) opts.push('<option value="">— без шаблона —</option>');
+  const sel = String(selected || '').trim();
+  list.forEach((row) => {
+    const tid = String(row.id || '').trim();
+    if (!tid) return;
+    const label = String(row.name || tid).trim();
+    opts.push(`<option value="${esc(tid)}"${tid === sel ? ' selected' : ''}>${esc(label)}</option>`);
+  });
+  el.innerHTML = opts.join('');
+  const idSet = new Set(list.map((r) => String(r.id || '').trim()));
+  if (sel && !idSet.has(sel)) {
+    el.value = allowEmpty ? '' : defaultTemplateId();
+  }
+}
+
+function labelFromUnifiedByTag(tag) {
+  const rows = constructorMeta.unified_column_schema || [];
+  const want = String(tag || '').toLowerCase();
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r.tags) continue;
+    const tags = (r.tags || []).map((t) => String(t).toLowerCase());
+    if (tags.indexOf(want) < 0) continue;
+    const raw = String(r.label || r.header || '').trim();
+    if (!raw) continue;
+    return raw.replace(/\s*\([^)]*\)\s*$/i, '').trim();
+  }
+  return '';
+}
+
+function applyConstructorSchema() {
+  const sDom = domainStepIndex();
+  const sSkill = skillStepIndex();
+  const sAct = actionStepIndex();
+  const lvSkill = levelRowAtStep(sSkill) || {};
+  const lvAct = levelRowAtStep(sAct) || {};
+  const lastStep = Math.max(0, towerStepCount() - 1);
+  const lvLast = levelRowAtStep(lastStep) || {};
+  const d0name = levelTitleAtStep(sDom);
+  const d1 = levelTitleAtStep(sSkill);
+  const d2 = levelTitleAtStep(sAct);
+  const dSub = levelTitleAtStep(lastStep);
+  const showResp = !!lvSkill.skill_responsible;
+  document.getElementById('constructorSkillResponsibleWrap').style.display = showResp ? '' : 'none';
+  const colDesc = (lvSkill.columns || []).map((c) => c.label || c.header).filter(Boolean).join(', ');
+  document.getElementById('skillDescNew').placeholder = colDesc
+    ? `Описание (${colDesc})`
+    : `Описание · ${d1}`;
+  const respCol = (lvSkill.columns || []).find((c) => (c.maps_to || '').includes('responsible'));
+  let respHeader = '';
+  if (respCol && (respCol.label || respCol.header)) {
+    respHeader = String(respCol.label || respCol.header).replace(/\s*\([^)]*\)\s*$/i, '').trim();
+  }
+  document.getElementById('skillResponsible').placeholder = respHeader || `Ответственный · ${d1}`;
+  const al = document.getElementById('attrActionLevelLabel');
+  if (al) al.textContent = d2;
+  const sl = document.getElementById('attrSubLevelLabel');
+  if (sl) sl.textContent = dSub;
+  const optLab = document.getElementById('constructorOptionalSubLabel');
+  if (optLab) {
+    optLab.textContent = ` Добавить вложенный уровень «${dSub}» под «${d2}»`;
+  }
+  document.getElementById('subactionNew').placeholder = `Текст · ${dSub}`;
+  document.getElementById('domainDescNew').placeholder = `Описание · ${d0name}`;
+  document.getElementById('domainResponsibleNew').placeholder = `Ответственный · ${d0name}`;
+  const gradesStr = stickerGradesList().map((g) => String(g).toUpperCase()).join(' / ');
+  document.getElementById('constructorDomainGradesHint').textContent = `Уровни ${gradesStr} («${d0name}»):`;
+  document.getElementById('constructorSkillGradesHint').textContent = `Уровни ${gradesStr} («${d1}»):`;
+  document.getElementById('constructorActionGradesHint').textContent = `Уровни ${gradesStr} («${d2}»):`;
+  document.getElementById('constructorSubGradesHint').textContent = `Уровни ${gradesStr} («${dSub}»):`;
+  document.getElementById('actionResponsibleNew').placeholder = `Ответственный · ${d2}`;
+  document.getElementById('actionDescriptionNew').placeholder = `Описание · ${d2}`;
+  document.getElementById('subactionResponsibleNew').placeholder = `Ответственный · ${dSub}`;
+  document.getElementById('subactionDescriptionNew').placeholder = `Описание · ${dSub}`;
+  rebuildGradeCheckboxUIs();
+}
+
+function renderWizardTower() {
+  const body = document.getElementById('wizardTowerBody');
+  const backBtn = document.getElementById('wizardBackBtn');
+  if (!towerStepCount()) {
+    if (body) {
+      body.innerHTML = '<p class="error-message">Нет описания уровней матрицы. Обновите структуру после настройки ui_config в БД.</p>';
+    }
+    if (backBtn) backBtn.style.display = wizard.locked.length ? '' : 'none';
+    renderBreadcrumb();
+    return;
+  }
+  const ctx = towerContext();
+  if (ctx.done) {
+    if (body) body.innerHTML = '';
+    if (backBtn) backBtn.style.display = wizard.locked.length ? '' : 'none';
+    renderBreadcrumb();
+    return;
+  }
+  const title = levelTitleAtStep(ctx.step);
+  const hasOpts = ctx.options && ctx.options.length > 0;
+  let html = `<div class="constructor-wiz-step"><h4>Шаг: ${esc(title)}</h4>`;
+  if (hasOpts) {
+    html += `<p class="reload-hint">Выберите узел из текущей матрицы или задайте новое имя (ветка пока отсутствует в данных).</p>`;
+    html += `<div class="view-toolbar flex-wrap gap-10"><label>Из матрицы</label><select id="wizPickExisting" class="form-input minw-360">`;
+    html += '<option value="">— выберите —</option>';
+    ctx.options.forEach((o, idx) => {
+      html += `<option value="${idx}">${esc(o.text)}</option>`;
+    });
+    html += '</select></div>';
+    html += `<div class="view-toolbar flex-wrap gap-10 view-gap-sm"><label>Новое имя</label>`;
+    html += `<input type="text" id="wizNewName" class="form-input spell-text minw-360" placeholder="Новый элемент «${esc(title)}»" spellcheck="true"></div>`;
+  } else {
+    html += `<p class="reload-hint">В матрице нет дочерних узлов на этом пути — введите имя нового элемента уровня «${esc(title)}».</p>`;
+    html += `<div class="view-toolbar"><input type="text" id="wizNewName" class="form-input spell-text minw-400" placeholder="Новый элемент «${esc(title)}»" spellcheck="true"></div>`;
+  }
+  html += `<div class="constructor-wiz-actions"><button type="button" class="btn btn-primary" onclick="wizardConfirmTowerStep()"><i class="fas fa-lock"></i> Зафиксировать шаг «${esc(title)}»</button></div>`;
+  html += '</div>';
+  if (body) body.innerHTML = html;
+  if (backBtn) backBtn.style.display = wizard.locked.length ? '' : 'none';
+  renderBreadcrumb();
+  applySpellLang();
+}
+
+function wizardConfirmTowerStep() {
+  const ctx = towerContext();
+  const matrixDepth = ctx.depth;
+  const pickEl = document.getElementById('wizPickExisting');
+  const newEl = document.getElementById('wizNewName');
+  const pickIdx = pickEl && pickEl.value !== '' ? parseInt(pickEl.value, 10) : NaN;
+  const newName = (newEl && newEl.value || '').trim();
+  if (!Number.isNaN(pickIdx) && pickEl && ctx.options[pickIdx]) {
+    const o = ctx.options[pickIdx];
+    const idx = o.indices || [];
+    const row = { step: ctx.step, depth: matrixDepth, kind: 'existing', text: o.text, indices: idx.slice() };
+    if (idx.length >= 1) row.di = idx[0];
+    if (idx.length >= 2) row.si = idx[1];
+    if (idx.length >= 3) row.ai = idx[2];
+    if (idx.length >= 4) row.subi = idx[idx.length - 1];
+    row.index = idx.length ? idx[idx.length - 1] : -1;
+    wizard.locked.push(row);
+    metaRefreshSkipUntil = Date.now() + 20000;
+  } else if (newName) {
+    wizard.locked.push({ step: ctx.step, depth: matrixDepth, kind: 'new', text: newName, indices: [], index: -1 });
+    metaRefreshSkipUntil = Date.now() + 20000;
+  } else {
+    const hasOpts = !!(ctx.options && ctx.options.length);
+    alert(hasOpts ? 'Выберите элемент из списка или введите новое имя.' : 'Введите имя нового элемента.');
+    return;
+  }
+  wizard.pathComplete = false;
+  updateQueueToolbar();
+  wizard.phase = 'tower';
+  afterTowerLock();
+}
+
+function afterTowerLock() {
+  const maxS = towerStepCount();
+  if (!maxS) {
+    renderWizardTower();
+    return;
+  }
+  renderWizardTower();
+}
+
+function wizardBack() {
+  if (wizard.locked.length) {
+    wizard.locked.pop();
+    wizard.pathComplete = false;
+    updateQueueToolbar();
+    wizard.phase = 'tower';
+    renderWizardTower();
+  }
+}
+
+function wizardResetFull() {
+  wizard = { phase: 'tower', locked: [], pathComplete: false };
+  metaRefreshSkipUntil = Date.now() + 20000;
+  closeConstructorPropsModal();
+  document.getElementById('constructorTowerSection').classList.remove('field-hidden');
+  renderWizardTower();
+  updateQueueToolbar();
+  setConstructorStatus('Путь сброшен.');
+}
+
+/** Совместимость: старые вызовы открывают модалку свойств */
+function enterAttrsPhase() {
+  openConstructorPropsModal();
+}
+
+function domainObjFromWizard() {
+  const L = wizard.locked;
+  const dStep = domainStepIndex();
+  if (L.length <= dStep) return null;
+  for (let i = 0; i <= dStep; i += 1) {
+    if (L[i].kind !== 'existing') return null;
+  }
+  const ix = indicesUpTo(L, dStep);
+  if (!ix.length || ix[0] == null || ix[0] < 0) return null;
+  return getRootNodeByIndex(ix[0]);
+}
+
+function skillObjFromWizard() {
+  const L = wizard.locked;
+  const sk = skillStepIndex();
+  if (L.length <= sk) return null;
+  for (let i = 0; i <= sk; i++) {
+    if (L[i].kind !== 'existing') return null;
+  }
+  const ix = indicesUpTo(L, sk);
+  if (ix.length < 2) return null;
+  return getSkillByIndices(ix[0], ix[1]) || null;
+}
+
+function actionObjFromWizard() {
+  const L = wizard.locked;
+  const ai = actionStepIndex();
+  if (L.length <= ai) return null;
+  for (let i = 0; i <= ai; i++) {
+    if (L[i].kind !== 'existing') return null;
+  }
+  const ix = indicesUpTo(L, ai);
+  if (ix.length < 3 || ix[2] < 0) return null;
+  return getActionByIndices(ix[0], ix[1], ix[2]) || null;
+}
+
+function syncConstructorAttrSections() {
+  const n = wizard.locked.length;
+  const si = skillStepIndex();
+  const ai = actionStepIndex();
+  const skEl = document.getElementById('constructorSkillSection');
+  const actEl = document.getElementById('constructorActionSection');
+  if (skEl) skEl.classList.toggle('field-hidden', n <= si);
+  if (actEl) actEl.classList.toggle('field-hidden', n <= ai);
+}
+
+function onAttrsChange() {
+  syncConstructorAttrSections();
+  const n = wizard.locked.length;
+  const ai = actionStepIndex();
+  const hasActionPath = n > ai;
+  const subFromTower = hasActionPath && n > actionStepIndex() + 1;
+  const schemaHasSubLevels = towerStepCount() > actionStepIndex() + 1;
+  const addSub = hasActionPath && (subFromTower || document.getElementById('addSubactionToggle').checked);
+  document.getElementById('constructorSubBlock').classList.toggle('field-hidden', !addSub);
+  document.getElementById('constructorOptionalSubWrap').classList.toggle('field-hidden', !hasActionPath || subFromTower || schemaHasSubLevels);
+  document.getElementById('constructorOptionalSubInputs').classList.toggle('field-hidden', !hasActionPath || subFromTower || !addSub);
+  if (subFromTower) {
+    document.getElementById('subactionNew').disabled = true;
+  } else {
+    document.getElementById('subactionNew').disabled = !hasActionPath || !addSub;
+  }
+}
+
+function lockedDomainMode() {
+  const i = domainStepIndex();
+  return wizard.locked[i] && wizard.locked[i].kind === 'new' ? 'new' : 'existing';
+}
+
+function lockedSkillMode() {
+  const i = skillStepIndex();
+  return wizard.locked[i] && wizard.locked[i].kind === 'new' ? 'new' : 'existing';
+}
+
+function lockedActionMode() {
+  const i = actionStepIndex();
+  return wizard.locked[i] && wizard.locked[i].kind === 'new' ? 'new' : 'existing';
+}
+
+function deepCloneJSON(x) {
+  try {
+    return structuredClone(x);
+  } catch (e) {
+    return JSON.parse(JSON.stringify(x));
+  }
+}
+
+/** Цепочка узлов subactions вниз по «последнему ребёнку» (как собирает конструктор). */
+function subChainLastPathFromAction(actionObj) {
+  const out = [];
+  let subs = (actionObj && actionObj.subactions) || [];
+  while (subs.length) {
+    const node = subs[subs.length - 1];
+    out.push(node);
+    subs = node.subactions || [];
+  }
+  return out;
+}
+
+/**
+ * Клонирует существующие subactions действия и встраивает/обновляет цепочку по мастеру (L[3..]).
+ * leafPayload — поля нижнего уровня (text, template_id, level_tags).
+ */
+function mergeSubactionsFromWizardLocks(L, leafPayload, addSubFromToggleOnly) {
+  const actionMode = lockedActionMode();
+  const aidx = actionStepIndex();
+  let rootSubs = [];
+  const pathOk = () => {
+    if (L.length <= aidx) return false;
+    for (let j = 0; j <= aidx; j++) {
+      if (L[j].kind !== 'existing') return false;
+    }
+    return true;
+  };
+  if (actionMode === 'existing' && pathOk()) {
+    const ix = indicesUpTo(L, aidx);
+    const existing = getActionByIndices(ix[0], ix[1], ix[2]);
+    rootSubs = deepCloneJSON(existing?.subactions || []);
+  }
+  const subLevels = L.slice(aidx + 1);
+  if (!subLevels.length) {
+    if (addSubFromToggleOnly && leafPayload && (leafPayload.text || '').trim()) {
+      rootSubs.push(leafPayload);
+    }
+    return rootSubs;
+  }
+  let arr = rootSubs;
+  for (let i = 0; i < subLevels.length - 1; i++) {
+    const row = subLevels[i];
+    const lockPos = aidx + 1 + i;
+    if (row.kind === 'existing') {
+      const full = row.indices && row.indices.length > lockPos ? row.indices : indicesUpTo(L, lockPos);
+      const childIx = full[lockPos];
+      if (childIx == null || !arr[childIx]) return rootSubs;
+      arr[childIx].subactions = arr[childIx].subactions || [];
+      arr = arr[childIx].subactions;
+    } else {
+      const node = { text: (row.text || '').trim(), subactions: [] };
+      arr.push(node);
+      arr = node.subactions;
+    }
+  }
+  const lastRow = subLevels[subLevels.length - 1];
+  const lastLockIdx = L.length - 1;
+  if (lastRow.kind === 'existing') {
+    const full = lastRow.indices && lastRow.indices.length > lastLockIdx ? lastRow.indices : indicesUpTo(L, lastLockIdx);
+    const lix = full[lastLockIdx];
+    if (lix == null || !arr[lix]) return rootSubs;
+    const cur = arr[lix];
+    if ((leafPayload.text || '').trim()) cur.text = leafPayload.text.trim();
+    if (leafPayload.template_id) cur.template_id = leafPayload.template_id;
+    else delete cur.template_id;
+    if (leafPayload.level_tags && leafPayload.level_tags.length) cur.level_tags = leafPayload.level_tags;
+    else delete cur.level_tags;
+    if ((leafPayload.description || '').trim()) cur.description = leafPayload.description.trim();
+    else delete cur.description;
+    if ((leafPayload.responsible || '').trim()) cur.responsible = leafPayload.responsible.trim();
+    else delete cur.responsible;
+    if (leafPayload.leaf_view && typeof leafPayload.leaf_view === 'object' && Object.keys(leafPayload.leaf_view).length) {
+      cur.leaf_view = deepCloneJSON(leafPayload.leaf_view);
+    }
+  } else {
+    arr.push(leafPayload);
+  }
+  return rootSubs;
+}
+
+function subLegacyToNode(sub) {
+  const o = {
+    name: String(sub.text || sub.name || '').trim(),
+    children: [],
+  };
+  if (sub.template_id) o.template_id = sub.template_id;
+  if (sub.description) o.description = sub.description;
+  if (sub.responsible) o.responsible = sub.responsible;
+  if (sub.level_tags && sub.level_tags.length) o.level_tags = sub.level_tags.slice();
+  if (sub.leaf_view && typeof sub.leaf_view === 'object' && Object.keys(sub.leaf_view).length) {
+    o.leaf_view = deepCloneJSON(sub.leaf_view);
+  }
+  return o;
+}
+
+function actionLegacyToNode(a) {
+  const isGroup = a.type === 'group';
+  const title = isGroup ? a.name : a.text;
+  const subs = isGroup ? a.items : a.subactions;
+  const node = {
+    name: String(title || '').trim(),
+    children: [],
+  };
+  if (a.template_id) node.template_id = a.template_id;
+  if (a.description) node.description = a.description;
+  if (a.responsible) node.responsible = a.responsible;
+  if (a.level_tags && a.level_tags.length) node.level_tags = a.level_tags.slice();
+  if (a.level_tag) node.level_tag = a.level_tag;
+  if (a.leaf_view && typeof a.leaf_view === 'object' && Object.keys(a.leaf_view).length) {
+    node.leaf_view = deepCloneJSON(a.leaf_view);
+  }
+  if (subs && subs.length) node.children = subs.map(subLegacyToNode);
+  return node;
+}
+
+function skillLegacyToNode(s) {
+  const o = {
+    name: s.name,
+    children: (s.actions || []).map(actionLegacyToNode),
+  };
+  if (s.description) o.description = s.description;
+  if (s.responsible) o.responsible = s.responsible;
+  if (s.level_tags && s.level_tags.length) {
+    o.level_tags = s.level_tags.slice();
+    o.level_sticker = s.level_sticker || s.level_tags[0];
+  }
+  return o;
+}
+
+function rootLegacyToNode(d) {
+  const o = {
+    name: d.name,
+    children: (d.skills || []).map(skillLegacyToNode),
+  };
+  if (d.description) o.description = d.description;
+  if (d.responsible) o.responsible = d.responsible;
+  if (d.level_tags && d.level_tags.length) {
+    o.level_tags = d.level_tags.slice();
+    o.level_sticker = d.level_sticker || d.level_tags[0];
+  }
+  return o;
+}
+
+function payloadNodesFromDomainEntry(domainEntry) {
+  return { nodes: [rootLegacyToNode(domainEntry)] };
+}
+
+function nodeToLegacyDomainEntry(root) {
+  if (!root || typeof root !== 'object') return {};
+  const out = { name: root.name || '', skills: [] };
+  if (root.description) out.description = root.description;
+  if (root.responsible) out.responsible = root.responsible;
+  if (root.level_tags && root.level_tags.length) out.level_tags = root.level_tags.slice();
+  (root.children || []).forEach((sk) => {
+    const skillObj = { name: sk.name || '', actions: [] };
+    if (sk.description) skillObj.description = sk.description;
+    if (sk.responsible) skillObj.responsible = sk.responsible;
+    if (sk.level_tags && sk.level_tags.length) skillObj.level_tags = sk.level_tags.slice();
+    (sk.children || []).forEach((act) => {
+      const actionObj = { text: act.name || act.text || '', subactions: [] };
+      if (act.template_id) actionObj.template_id = act.template_id;
+      if (act.description) actionObj.description = act.description;
+      if (act.responsible) actionObj.responsible = act.responsible;
+      if (act.level_tags && act.level_tags.length) actionObj.level_tags = act.level_tags.slice();
+      if (act.leaf_view && typeof act.leaf_view === 'object' && Object.keys(act.leaf_view).length) {
+        actionObj.leaf_view = deepCloneJSON(act.leaf_view);
+      }
+      const subs = act.children || [];
+      if (subs.length) {
+        actionObj.subactions = subs.map((sub) => {
+          const row = {
+            text: sub.name || sub.text || '',
+            template_id: sub.template_id,
+            description: sub.description,
+            responsible: sub.responsible,
+            level_tags: sub.level_tags ? sub.level_tags.slice() : undefined,
+          };
+          if (sub.leaf_view && typeof sub.leaf_view === 'object' && Object.keys(sub.leaf_view).length) {
+            row.leaf_view = deepCloneJSON(sub.leaf_view);
+          }
+          return row;
+        });
+      }
+      skillObj.actions.push(actionObj);
+    });
+    out.skills.push(skillObj);
+  });
+  return out;
+}
+
+function extractDomainPayloadFromQueuedItem(item) {
+  const p = item.payload || {};
+  const n0 = (p.nodes || [])[0];
+  if (n0) return nodeToLegacyDomainEntry(n0);
+  return (p.domains || [])[0] || {};
+}
+
+function buildLeafViewPayloadFromFields() {
+  const stack = (document.getElementById('leafViewStackNew').value || '').trim();
+  const toolkit = (document.getElementById('leafViewToolkitNew').value || '').trim();
+  const lv = {};
+  if (stack) lv.stack = stack;
+  if (toolkit) lv.toolkit = toolkit;
+  return Object.keys(lv).length ? lv : null;
+}
+
+function buildQueuedRequest() {
+  if (!wizard.pathComplete) {
+    throw new Error('Нажмите «Завершить путь», затем можно добавить в очередь или Preview diff.');
+  }
+  if (wizard.locked.length < minTowerLocksForAttrs()) {
+    throw new Error('Зафиксируйте минимум первый уровень пути (корень матрицы).');
+  }
+  const L = wizard.locked;
+  const di = domainStepIndex();
+  const si = skillStepIndex();
+  const ai = actionStepIndex();
+  const n = L.length;
+  const hasSkill = n > si;
+  const hasAction = n > ai;
+  const domain = (L[di] && String(L[di].text || '').trim()) || '';
+  if (!domain) throw new Error('Задайте имя на первом уровне пути.');
+  const skill = hasSkill ? String(L[si].text || '').trim() : '';
+  const action = hasAction ? String(L[ai].text || '').trim() : '';
+  if (hasSkill && !skill) throw new Error('Укажите навык или не фиксируйте этот уровень для частичного коммита.');
+  if (hasAction && !action) throw new Error('Укажите действие или остановитесь на уровне навыка для частичного коммита.');
+
+  const domainMode = lockedDomainMode();
+  const skillMode = hasSkill ? lockedSkillMode() : 'none';
+  const actionMode = hasAction ? lockedActionMode() : 'none';
+
+  const skillDesc = (document.getElementById('skillDescNew').value || '').trim();
+  const skillResponsible = (document.getElementById('skillResponsible').value || '').trim();
+  const skillLevelTags = readGradeCheckboxes('skill');
+  const actionTemplateId = (document.getElementById('actionTemplateId').value || '').trim();
+  const actionDesc = (document.getElementById('actionDescriptionNew').value || '').trim();
+  const actionResp = (document.getElementById('actionResponsibleNew').value || '').trim();
+  const subFromTower = hasAction && n > ai + 1;
+  const addSub = hasAction && (subFromTower || document.getElementById('addSubactionToggle').checked);
+  const lastLock = L[L.length - 1];
+  const subactionText = subFromTower
+    ? (lastLock && lastLock.text ? String(lastLock.text).trim() : '')
+    : (document.getElementById('subactionNew').value || '').trim();
+  const subactionTemplateId = (document.getElementById('subactionTemplateId').value || '').trim();
+  const commitTitle = (document.getElementById('commitTitle').value || '').trim();
+  const commitBody = (document.getElementById('commitBody').value || '').trim();
+  if (hasAction && addSub && !subactionText) throw new Error('Укажите текст вложенного уровня или отключите опцию.');
+
+  let mergeMode = 'append';
+  let targetDomain = null;
+  let targetSkill = null;
+
+  const domainDesc = (document.getElementById('domainDescNew').value || '').trim();
+  const domainResp = (document.getElementById('domainResponsibleNew').value || '').trim();
+  const domainLevelTags = readGradeCheckboxes('domain');
+  const domainEntry = { name: domain, skills: [] };
+  if (domainDesc) domainEntry.description = domainDesc;
+  if (domainResp) domainEntry.responsible = domainResp;
+  if (domainLevelTags.length) {
+    domainEntry.level_tags = domainLevelTags;
+    domainEntry.level_sticker = domainLevelTags[0];
+  }
+
+  if (!hasSkill) {
+    const payload = payloadNodesFromDomainEntry(domainEntry);
+    const item = {
+      domain_mode: domainMode,
+      domain,
+      skill_mode: 'none',
+      skill: '',
+      action_mode: 'none',
+      action: '',
+      subaction: '',
+      merge_mode: mergeMode,
+      target_domain: targetDomain,
+      target_skill: targetSkill,
+      payload,
+      commit_title: '',
+      commit_body: commitBody,
+    };
+    item.commit_title = normalizeCommitTitle(commitTitle, item);
+    return item;
+  }
+
+  const skillObj = { name: skill, actions: [] };
+  if (skillDesc) skillObj.description = skillDesc;
+  const lSkill = levelRowAtStep(skillStepIndex()) || {};
+  if (lSkill.skill_responsible && skillResponsible) skillObj.responsible = skillResponsible;
+  if (skillLevelTags.length) {
+    skillObj.level_tags = skillLevelTags;
+    skillObj.level_sticker = skillLevelTags[0];
+  }
+
+  if (!hasAction) {
+    domainEntry.skills = [skillObj];
+    if (domainMode === 'existing' && skillMode === 'new') {
+      mergeMode = 'append_to_domain';
+      targetDomain = domain;
+    } else if (domainMode === 'existing' && skillMode === 'existing') {
+      mergeMode = 'append_to_skill';
+      targetDomain = domain;
+      targetSkill = skill;
+    }
+    const payload = payloadNodesFromDomainEntry(domainEntry);
+    const item = {
+      domain_mode: domainMode,
+      domain,
+      skill_mode: skillMode,
+      skill,
+      action_mode: 'none',
+      action: '',
+      subaction: '',
+      merge_mode: mergeMode,
+      target_domain: targetDomain,
+      target_skill: targetSkill,
+      payload,
+      commit_title: '',
+      commit_body: commitBody,
+    };
+    item.commit_title = normalizeCommitTitle(commitTitle, item);
+    return item;
+  }
+
+  if (domainMode === 'existing' && skillMode === 'new') {
+    mergeMode = 'append_to_domain';
+    targetDomain = domain;
+  } else if (domainMode === 'existing' && skillMode === 'existing') {
+    mergeMode = 'append_to_skill';
+    targetDomain = domain;
+    targetSkill = skill;
+  }
+
+  const actionObj = { text: action };
+  if (actionTemplateId) actionObj.template_id = actionTemplateId;
+  if (actionDesc) actionObj.description = actionDesc;
+  if (actionResp) actionObj.responsible = actionResp;
+  const actionLevelTags = readGradeCheckboxes('action');
+  if (actionLevelTags.length) actionObj.level_tags = actionLevelTags;
+  const leafViewPayload = buildLeafViewPayloadFromFields();
+  if (addSub) {
+    const subDesc = (document.getElementById('subactionDescriptionNew').value || '').trim();
+    const subResp = (document.getElementById('subactionResponsibleNew').value || '').trim();
+    const subObj = { text: subactionText, ...(subactionTemplateId ? { template_id: subactionTemplateId } : {}) };
+    if (subDesc) subObj.description = subDesc;
+    if (subResp) subObj.responsible = subResp;
+    const subLevelTags = readGradeCheckboxes('sub');
+    if (subLevelTags.length) subObj.level_tags = subLevelTags;
+    if (leafViewPayload) subObj.leaf_view = leafViewPayload;
+    const toggleOnly = !subFromTower && document.getElementById('addSubactionToggle').checked;
+    actionObj.subactions = mergeSubactionsFromWizardLocks(L, subObj, toggleOnly);
+  } else if (leafViewPayload) {
+    actionObj.leaf_view = leafViewPayload;
+  }
+  skillObj.actions = [actionObj];
+  domainEntry.skills = [skillObj];
+  const payload = payloadNodesFromDomainEntry(domainEntry);
+  const item = {
+    domain_mode: domainMode,
+    domain,
+    skill_mode: skillMode,
+    skill,
+    action_mode: actionMode,
+    action,
+    subaction: addSub ? subactionText : '',
+    merge_mode: mergeMode,
+    target_domain: targetDomain,
+    target_skill: targetSkill,
+    payload,
+    commit_title: '',
+    commit_body: commitBody,
+  };
+  item.commit_title = normalizeCommitTitle(commitTitle, item);
+  return item;
+}
+
+function queueItemToText(item) {
+  let tail = `${item.domain_mode}:${item.domain}`;
+  if (item.skill_mode !== 'none') tail += ` -> ${item.skill_mode}:${item.skill}`;
+  if (item.action_mode !== 'none') tail += ` -> ${item.action_mode}:${item.action}`;
+  if (item.subaction) tail += ` -> subaction:${item.subaction}`;
+  return `${item.commit_title || 'commit'} :: ${tail} (${item.merge_mode})`;
+}
+
+function renderQueue() {
+  const box = document.getElementById('queueBox');
+  if (!queueItems.length) {
+    box.innerHTML = '<p class="empty-message">Очередь пуста.</p>';
+    return;
+  }
+  let html = '<table class="preview-table"><thead><tr><th>#</th><th>Изменение</th><th>Merge mode</th><th>Действия</th></tr></thead><tbody>';
+  queueItems.forEach((q, idx) => {
+    html += `<tr>
+      <td>${idx + 1}</td>
+      <td>${esc(queueItemToText(q))}</td>
+      <td>${esc(q.merge_mode)}</td>
+      <td class="view-stack">
+        <button type="button" class="btn btn-sm btn-info" onclick="previewQueueItem(${idx})">Preview</button>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="editQueueItem(${idx})">Редактировать</button>
+        <button type="button" class="btn btn-sm btn-primary" onclick="duplicateQueueItem(${idx})">Дублировать</button>
+        <button type="button" class="btn btn-sm btn-danger" onclick="removeQueueItem(${idx})">Удалить</button>
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  box.innerHTML = html;
+}
+
+function removeQueueItem(idx) {
+  queueItems.splice(idx, 1);
+  if (queueEditIndex === idx) queueEditIndex = null;
+  renderQueue();
+}
+
+function applyItemToForm(item) {
+  if (!item) return;
+  wizardResetFull();
+  const dom = item.domain;
+  const sk = item.skill;
+  const act = item.action;
+  const d0 = (constructorMeta.nodes || []).findIndex((d) => (d.name || '') === dom);
+  if (item.domain_mode === 'existing' && d0 >= 0) {
+    wizard.locked.push({
+      step: domainStepIndex(),
+      depth: depthForTowerStep(domainStepIndex()),
+      kind: 'existing',
+      text: dom,
+      di: d0,
+      index: d0,
+      indices: [d0],
+    });
+  } else {
+    wizard.locked.push({
+      step: domainStepIndex(),
+      depth: depthForTowerStep(domainStepIndex()),
+      kind: 'new',
+      text: dom,
+      index: -1,
+      indices: [],
+    });
+  }
+  const d = d0 >= 0 ? constructorMeta.nodes[d0] : null;
+  const domPayload = extractDomainPayloadFromQueuedItem(item);
+  const skPayload = (domPayload.skills || [])[0] || {};
+  const actionsArr = skPayload.actions || [];
+  const actionObj = actionsArr[0] || {};
+
+  if (item.skill_mode === 'none') {
+    document.getElementById('commitTitle').value = item.commit_title || '';
+    document.getElementById('commitBody').value = item.commit_body || '';
+    document.getElementById('domainDescNew').value = domPayload.description || '';
+    document.getElementById('domainResponsibleNew').value = domPayload.responsible || '';
+    setGradeCheckboxes('domain', domainGradeTagsFromObj(domPayload));
+    document.getElementById('skillDescNew').value = '';
+    document.getElementById('skillResponsible').value = '';
+    setGradeCheckboxes('skill', []);
+    document.getElementById('actionTemplateId').value = '';
+    document.getElementById('addSubactionToggle').checked = false;
+    document.getElementById('subactionNew').value = '';
+    document.getElementById('subactionTemplateId').value = '';
+    document.getElementById('actionResponsibleNew').value = '';
+    document.getElementById('actionDescriptionNew').value = '';
+    document.getElementById('subactionResponsibleNew').value = '';
+    document.getElementById('subactionDescriptionNew').value = '';
+    setGradeCheckboxes('action', []);
+    setGradeCheckboxes('sub', []);
+    document.getElementById('leafViewStackNew').value = '';
+    document.getElementById('leafViewToolkitNew').value = '';
+    wizard.pathComplete = true;
+    updateQueueToolbar();
+    renderWizardTower();
+    closeConstructorPropsModal();
+    onAttrsChange();
+    return;
+  }
+
+  const sIdx = d ? _ctorListCh(d).findIndex((s) => (s.name || '') === sk) : -1;
+  if (item.skill_mode === 'existing' && sIdx >= 0) {
+    wizard.locked.push({
+      step: skillStepIndex(),
+      depth: depthForTowerStep(skillStepIndex()),
+      kind: 'existing',
+      text: sk,
+      di: d0,
+      si: sIdx,
+      index: sIdx,
+      indices: [d0, sIdx],
+    });
+  } else {
+    wizard.locked.push({
+      step: skillStepIndex(),
+      depth: depthForTowerStep(skillStepIndex()),
+      kind: 'new',
+      text: sk,
+      index: -1,
+      indices: [],
+    });
+  }
+
+  if (item.action_mode === 'none') {
+    document.getElementById('commitTitle').value = item.commit_title || '';
+    document.getElementById('commitBody').value = item.commit_body || '';
+    document.getElementById('domainDescNew').value = domPayload.description || '';
+    document.getElementById('domainResponsibleNew').value = domPayload.responsible || '';
+    setGradeCheckboxes('domain', domainGradeTagsFromObj(domPayload));
+    document.getElementById('skillDescNew').value = skPayload.description || '';
+    document.getElementById('skillResponsible').value = skPayload.responsible || '';
+    setGradeCheckboxes('skill', skillGradeTagsFromObj(skPayload));
+    document.getElementById('actionTemplateId').value = '';
+    document.getElementById('addSubactionToggle').checked = false;
+    document.getElementById('subactionNew').value = '';
+    document.getElementById('subactionTemplateId').value = '';
+    document.getElementById('actionResponsibleNew').value = '';
+    document.getElementById('actionDescriptionNew').value = '';
+    document.getElementById('subactionResponsibleNew').value = '';
+    document.getElementById('subactionDescriptionNew').value = '';
+    setGradeCheckboxes('action', []);
+    setGradeCheckboxes('sub', []);
+    fillTemplateSelect('actionTemplateId', defaultTemplateId(), true);
+    fillTemplateSelect('subactionTemplateId', defaultTemplateId(), true);
+    document.getElementById('leafViewStackNew').value = '';
+    document.getElementById('leafViewToolkitNew').value = '';
+    wizard.pathComplete = true;
+    updateQueueToolbar();
+    renderWizardTower();
+    closeConstructorPropsModal();
+    onAttrsChange();
+    return;
+  }
+
+  const skillNode = d && sIdx >= 0 ? _ctorListCh(d)[sIdx] : null;
+  const skillChForAct = skillNode ? _ctorListCh(skillNode) : [];
+  const aIdx = skillNode ? skillChForAct.findIndex((a) => (a.text || a.name || '') === act) : -1;
+  if (item.action_mode === 'existing' && aIdx >= 0) {
+    wizard.locked.push({
+      step: actionStepIndex(),
+      depth: depthForTowerStep(actionStepIndex()),
+      kind: 'existing',
+      text: act,
+      di: d0,
+      si: sIdx,
+      ai: aIdx,
+      index: aIdx,
+      indices: [d0, sIdx, aIdx],
+    });
+  } else {
+    wizard.locked.push({
+      step: actionStepIndex(),
+      depth: depthForTowerStep(actionStepIndex()),
+      kind: 'new',
+      text: act,
+      index: -1,
+      indices: [],
+    });
+  }
+  const chain = subChainLastPathFromAction(actionObj);
+  const hasSub = chain.length > 0;
+  let curAct = skillNode && aIdx >= 0 ? skillChForAct[aIdx] : null;
+  let running =
+    item.action_mode === 'existing' && d0 >= 0 && sIdx >= 0 && aIdx >= 0 ? [d0, sIdx, aIdx] : null;
+  const firstSubStep = actionStepIndex() + 1;
+  for (let i = 0; i < chain.length; i++) {
+    const node = chain[i];
+    const txt = (node.text || '').trim();
+    const towerStep = firstSubStep + i;
+    if (!curAct || !running) {
+      wizard.locked.push({
+        step: towerStep,
+        depth: depthForTowerStep(towerStep),
+        kind: 'new',
+        text: txt,
+        index: -1,
+        indices: [],
+      });
+      curAct = null;
+      running = null;
+      continue;
+    }
+    const subs = _ctorListCh(curAct);
+    const j = item.action_mode === 'existing' ? subs.findIndex((s) => (s.text || s.name || '').trim() === txt) : -1;
+    if (j >= 0) {
+      const ix = running.concat([j]);
+      wizard.locked.push({
+        step: towerStep,
+        depth: depthForTowerStep(towerStep),
+        kind: 'existing',
+        text: txt,
+        indices: ix,
+        di: ix[0],
+        si: ix[1],
+        ai: ix[2],
+        subi: ix[ix.length - 1],
+        index: ix[ix.length - 1],
+      });
+      curAct = subs[j];
+      running = ix;
+    } else {
+      wizard.locked.push({
+        step: towerStep,
+        depth: depthForTowerStep(towerStep),
+        kind: 'new',
+        text: txt,
+        index: -1,
+        indices: [],
+      });
+      curAct = null;
+      running = null;
+    }
+  }
+  document.getElementById('commitTitle').value = item.commit_title || '';
+  document.getElementById('commitBody').value = item.commit_body || '';
+  document.getElementById('domainDescNew').value = domPayload.description || '';
+  document.getElementById('domainResponsibleNew').value = domPayload.responsible || '';
+  setGradeCheckboxes('domain', domainGradeTagsFromObj(domPayload));
+  document.getElementById('actionTemplateId').value = actionObj.template_id || '';
+  document.getElementById('addSubactionToggle').checked = hasSub;
+  document.getElementById('skillDescNew').value = skPayload.description || '';
+  document.getElementById('skillResponsible').value = skPayload.responsible || '';
+  setGradeCheckboxes('skill', skillGradeTagsFromObj(skPayload));
+  const lastSub = hasSub ? chain[chain.length - 1] : {};
+  document.getElementById('subactionNew').value = lastSub.text || '';
+  document.getElementById('subactionTemplateId').value = lastSub.template_id || '';
+  document.getElementById('actionResponsibleNew').value = actionObj.responsible || '';
+  document.getElementById('actionDescriptionNew').value = actionObj.description || '';
+  document.getElementById('subactionResponsibleNew').value = (lastSub && lastSub.responsible) || '';
+  document.getElementById('subactionDescriptionNew').value = (lastSub && lastSub.description) || '';
+  setGradeCheckboxes('action', levelTagsFromTreeObj(actionObj));
+  setGradeCheckboxes('sub', hasSub ? levelTagsFromTreeObj(lastSub) : []);
+  const lvA = actionObj.leaf_view || {};
+  const lvS = hasSub && lastSub && lastSub.leaf_view ? lastSub.leaf_view : {};
+  document.getElementById('leafViewStackNew').value = hasSub
+    ? (lvS.stack != null ? String(lvS.stack) : '')
+    : (lvA.stack != null ? String(lvA.stack) : '');
+  document.getElementById('leafViewToolkitNew').value = hasSub
+    ? (lvS.toolkit != null ? String(lvS.toolkit) : '')
+    : (lvA.toolkit != null ? String(lvA.toolkit) : '');
+  wizard.pathComplete = true;
+  updateQueueToolbar();
+  renderWizardTower();
+  closeConstructorPropsModal();
+  onAttrsChange();
+}
+
+function editQueueItem(idx) {
+  const item = queueItems[idx];
+  if (!item) return;
+  queueEditIndex = idx;
+  applyItemToForm(item);
+  setConstructorStatus(`Редактирование элемента #${idx + 1}. Нажмите "Добавить в очередь" для сохранения.`);
+}
+
+function duplicateQueueItem(idx) {
+  const item = queueItems[idx];
+  if (!item) return;
+  queueItems.push(structuredClone(item));
+  renderQueue();
+}
+
+function addToQueue() {
+  try {
+    const item = buildQueuedRequest();
+    if (queueEditIndex === null) {
+      queueItems.push(item);
+    } else {
+      queueItems[queueEditIndex] = item;
+      queueEditIndex = null;
+    }
+    renderQueue();
+    setConstructorStatus('Элемент добавлен в очередь.');
+  } catch (e) {
+    setConstructorStatus(e.message || String(e), true);
+  }
+}
+
+function clearQueue() {
+  queueItems = [];
+  queueEditIndex = null;
+  renderQueue();
+  setConstructorStatus('');
+}
+
+function renderPreview(data, boxId = 'previewBox') {
+  const box = document.getElementById(boxId);
+  if (!box) return;
+  if (!data || !data.ok) {
+    box.innerHTML = `<div class="error-message">${esc(data?.error || 'Не удалось построить preview')}</div>`;
+    return;
+  }
+  const diff = data.diff || {};
+  const summary = diff.summary || { added: 0, updated: 0, removed: 0 };
+  const diagram = buildConstructorPayloadBlockDiagram(data.payload_preview || {});
+  box.innerHTML = `
+    ${diagram}
+    <div class="constructor-preview-meta">
+    <p><strong>Merge mode:</strong> ${esc(data.merge_mode || '')}</p>
+    <p><strong>Target:</strong> ${esc(data.target_domain || '-')} / ${esc(data.target_skill || '-')}</p>
+    <p><strong>Structural diff:</strong> added=${summary.added || 0}, updated=${summary.updated || 0}, removed=${summary.removed || 0}</p>
+    <p><strong>JSON patch ops:</strong> ${data.json_patch_ops || 0}</p>
+    </div>
+    <details><summary><strong>Upsert plan</strong></summary><pre class="mono">${esc(JSON.stringify(data.upsert_plan || {}, null, 2))}</pre></details>
+    <details><summary><strong>Payload (JSON)</strong></summary><pre class="mono">${esc(JSON.stringify(data.payload_preview || {}, null, 2))}</pre></details>
+  `;
+}
+
+async function previewCurrent() {
+  try {
+    const item = buildQueuedRequest();
+    const r = await fetch('/api/constructor/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        merge_mode: item.merge_mode,
+        target_domain: item.target_domain,
+        target_skill: item.target_skill,
+        payload: item.payload,
+      }),
+    });
+    const data = await r.json();
+    renderPreview(data);
+  } catch (e) {
+    renderPreview({ ok: false, error: e.message || String(e) });
+  }
+}
+
+async function previewQueueItem(idx) {
+  const item = queueItems[idx];
+  if (!item) return;
+  const r = await fetch('/api/constructor/preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      merge_mode: item.merge_mode,
+      target_domain: item.target_domain,
+      target_skill: item.target_skill,
+      payload: item.payload,
+    }),
+  });
+  renderPreview(await r.json(), 'queuePreviewBody');
+  setModalVisible('queuePreviewModal', true);
+}
+
+async function submitQueue() {
+  if (!queueItems.length) {
+    alert('Очередь пуста.');
+    return;
+  }
+  const body = document.getElementById('submitConfirmBody');
+  let html = '<p>Будут созданы следующие CR:</p><ol>';
+  queueItems.forEach((q) => {
+    html += `<li><strong>${esc(q.commit_title)}</strong><br><span class="reload-hint">${esc(q.commit_body || '(без описания)')}</span></li>`;
+  });
+  html += '</ol><p class="reload-hint">Далее работает стандартный workflow: submitted → comments/resolves → approve/reject → apply.</p>';
+  body.innerHTML = html;
+  setModalVisible('submitConfirmModal', true);
+}
+
+function closeSubmitConfirm() {
+  setModalVisible('submitConfirmModal', false);
+}
+
+function closeQueuePreview() {
+  setModalVisible('queuePreviewModal', false);
+}
+
+async function confirmSubmitQueue() {
+  if (submitInProgress) return;
+  submitInProgress = true;
+  const created = [];
+  try {
+    for (const q of queueItems) {
+      const r = await fetch('/api/changes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: q.commit_title,
+          note: q.commit_body,
+          submit_comment: q.commit_body || 'Submitted from constructor',
+          merge_mode: q.merge_mode,
+          target_domain: q.target_domain,
+          target_skill: q.target_skill,
+          payload: q.payload,
+        }),
+      });
+      const data = await r.json();
+      if (!data.ok) {
+        alert(`Ошибка отправки элемента: ${data.error || 'unknown'}`);
+        return;
+      }
+      created.push(data.id);
+    }
+    closeSubmitConfirm();
+    alert(`Отправлено ${created.length} CR: ${created.join(', ')}`);
+    clearQueue();
+  } finally {
+    submitInProgress = false;
+  }
+}
+
+async function reloadMeta(opts = {}) {
+  const silent = Boolean(opts && opts.silent);
+  const now = Date.now();
+  if (silent && now < metaRefreshSkipUntil) return;
+  const r = await fetch('/api/constructor/meta');
+  const data = await r.json();
+  if (!data.ok) {
+    if (silent) console.warn('Constructor meta refresh failed', data.error || 'unknown error');
+    else alert(data.error || 'Не удалось загрузить структуру');
+    return;
+  }
+  const prevLocked = JSON.parse(JSON.stringify(wizard.locked));
+  const prevPathComplete = Boolean(wizard.pathComplete);
+  constructorMeta = data;
+  if (!constructorMeta.constructor_levels) constructorMeta.constructor_levels = [];
+  if (!constructorMeta.constructor_tower || typeof constructorMeta.constructor_tower !== 'object') {
+    constructorMeta.constructor_tower = {};
+  }
+  if (!constructorMeta.matrix_column_schema) constructorMeta.matrix_column_schema = [];
+  if (!constructorMeta.unified_column_schema) constructorMeta.unified_column_schema = [];
+  if (constructorMeta.constructor_leaf_step_title == null) constructorMeta.constructor_leaf_step_title = '';
+  if (!constructorMeta.constructor_value_lists || typeof constructorMeta.constructor_value_lists !== 'object') {
+    constructorMeta.constructor_value_lists = {};
+  }
+  if (!constructorMeta.templates || !constructorMeta.templates.length) {
+    constructorMeta.templates = (constructorMeta.template_ids || []).map((tid) => ({
+      id: String(tid),
+      name: String(tid),
+    }));
+  }
+  if (!constructorMeta.constructor_value_lists.templates && constructorMeta.templates && constructorMeta.templates.length) {
+    constructorMeta.constructor_value_lists.templates = constructorMeta.templates;
+  }
+  if (!constructorMeta.constructor_value_lists.template_ids && constructorMeta.template_ids) {
+    constructorMeta.constructor_value_lists.template_ids = constructorMeta.template_ids;
+  }
+  if (!constructorMeta.sticker_grades || !constructorMeta.sticker_grades.length) {
+    constructorMeta.sticker_grades = ['junior', 'middle', 'senior'];
+  }
+  if (!constructorMeta.constructor_value_lists.sticker_grades) {
+    constructorMeta.constructor_value_lists.sticker_grades = constructorMeta.sticker_grades;
+  }
+  constructorMeta.template_ids = data.template_ids || [];
+  if (!towerStepCount()) {
+    setConstructorStatus('В ответе API нет уровней матрицы (matrix_levels / constructor_levels). Проверьте ui_config в источнике.', true);
+  }
+  applyConstructorSchema();
+  fillTemplateSelect('actionTemplateId', document.getElementById('actionTemplateId')?.value || defaultTemplateId(), true);
+  fillTemplateSelect('subactionTemplateId', document.getElementById('subactionTemplateId')?.value || defaultTemplateId(), true);
+  if (prevLocked.length > 0) {
+    wizard.locked = prevLocked;
+    wizard.phase = 'tower';
+    wizard.pathComplete = prevPathComplete;
+    renderWizardTower();
+    updateQueueToolbar();
+  } else if (!silent) {
+    wizardResetFull();
+  } else {
+    renderWizardTower();
+  }
+}
+
+function startMetaAutoRefresh() {
+  if (metaAutoRefreshTimer) clearInterval(metaAutoRefreshTimer);
+  metaAutoRefreshTimer = setInterval(() => {
+    reloadMeta({ silent: true }).catch((e) => console.warn('Constructor periodic refresh error', e));
+  }, META_AUTO_REFRESH_MS);
+}
+
+function stopMetaAutoRefresh() {
+  if (!metaAutoRefreshTimer) return;
+  clearInterval(metaAutoRefreshTimer);
+  metaAutoRefreshTimer = null;
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  applySpellLang();
+  await reloadMeta({ silent: false });
+  metaRefreshSkipUntil = Date.now() + 8000;
+  startMetaAutoRefresh();
+  renderQueue();
+  updateQueueToolbar();
+  const propsModal = document.getElementById('constructorPropsModal');
+  if (propsModal) {
+    propsModal.addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'constructorPropsModal') closeConstructorPropsModal();
+    });
+  }
+  const modal = document.getElementById('submitConfirmModal');
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'submitConfirmModal') closeSubmitConfirm();
+    });
+  }
+  const previewModal = document.getElementById('queuePreviewModal');
+  if (previewModal) {
+    previewModal.addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'queuePreviewModal') closeQueuePreview();
+    });
+  }
+  syncConstructorPathVizToolbar();
+  applyConstructorPathVizZoom();
+  const pathVp = document.getElementById('constructorPathVizViewport');
+  if (pathVp) {
+    pathVp.addEventListener(
+      'wheel',
+      (e) => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        e.preventDefault();
+        const d = e.deltaY > 0 ? -0.1 : 0.1;
+        constructorPathVizZoomDelta(d);
+      },
+      { passive: false },
+    );
+  }
+});
+
+window.addEventListener('beforeunload', stopMetaAutoRefresh);
+</script>
+{% endblock %}

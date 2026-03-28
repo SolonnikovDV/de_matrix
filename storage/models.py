@@ -21,6 +21,9 @@ def utcnow():
     return datetime.now(timezone.utc)
 
 
+MATRIX_STRUCT_SCHEMA = "matrix_struct"
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -36,101 +39,50 @@ class User(Base):
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    presence_sessions: Mapped[list["UserPresenceSession"]] = relationship("UserPresenceSession", back_populates="user")
 
 
-class Domain(Base):
-    __tablename__ = "domains"
+class MatrixNode(Base):
+    """
+    Дерево матрицы произвольной глубины. Лист — узел без дочерних строк; leaf_view задаётся в JSON узла.
+    Подписи уровней и схема колонок — в ui_config (matrix_levels / matrix_column_schema), не в DDL.
+    """
+
+    __tablename__ = "matrix_nodes"
+    __table_args__ = {"schema": MATRIX_STRUCT_SCHEMA}
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    skills: Mapped[list["Skill"]] = relationship("Skill", cascade="all, delete-orphan", back_populates="domain")
-
-    __table_args__ = (
-        UniqueConstraint("name", name="uq_domains_name"),
-        UniqueConstraint("code", name="uq_domains_code"),
+    parent_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey(f"{MATRIX_STRUCT_SCHEMA}.matrix_nodes.id", ondelete="CASCADE"), nullable=True
     )
-
-
-class Skill(Base):
-    __tablename__ = "skills"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    domain_id: Mapped[int] = mapped_column(ForeignKey("domains.id", ondelete="CASCADE"), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    depth: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    title: Mapped[str] = mapped_column(Text, default="", nullable=False)
     code: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-    domain: Mapped["Domain"] = relationship("Domain", back_populates="skills")
-    actions: Mapped[list["Action"]] = relationship("Action", cascade="all, delete-orphan", back_populates="skill")
-
-    __table_args__ = (
-        UniqueConstraint("domain_id", "name", name="uq_skills_domain_name"),
-        UniqueConstraint("domain_id", "code", name="uq_skills_domain_code"),
-    )
-
-
-class Action(Base):
-    __tablename__ = "actions"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    skill_id: Mapped[int] = mapped_column(ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
-    code: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    text: Mapped[str] = mapped_column(Text, nullable=False)
+    responsible: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    level_sticker: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     template_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     level_tag: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    level_tags: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    leaf_view: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     review_questions: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-    skill: Mapped["Skill"] = relationship("Skill", back_populates="actions")
-    subactions: Mapped[list["Subaction"]] = relationship(
-        "Subaction", cascade="all, delete-orphan", back_populates="action"
-    )
-    review_question_rows: Mapped[list["ActionReviewQuestion"]] = relationship(
-        "ActionReviewQuestion", cascade="all, delete-orphan", back_populates="action"
-    )
+    excel_path_key: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
 
-class Subaction(Base):
-    __tablename__ = "subactions"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    action_id: Mapped[int] = mapped_column(ForeignKey("actions.id", ondelete="CASCADE"), nullable=False)
-    code: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-    template_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    level_tag: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
-    review_questions: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+class MatrixLevelRegistry(Base):
+    """Реестр таблиц уровней: display_name из импорта, sql_table — латинский идентификатор."""
 
-    action: Mapped["Action"] = relationship("Action", back_populates="subactions")
-    review_question_rows: Mapped[list["SubactionReviewQuestion"]] = relationship(
-        "SubactionReviewQuestion", cascade="all, delete-orphan", back_populates="subaction"
-    )
-
-
-class ActionReviewQuestion(Base):
-    __tablename__ = "action_review_questions"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    action_id: Mapped[int] = mapped_column(ForeignKey("actions.id", ondelete="CASCADE"), nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    question: Mapped[str] = mapped_column(Text, nullable=False)
-
-    action: Mapped["Action"] = relationship("Action", back_populates="review_question_rows")
-    __table_args__ = (UniqueConstraint("action_id", "sort_order", name="uq_action_review_questions_pos"),)
-
-
-class SubactionReviewQuestion(Base):
-    __tablename__ = "subaction_review_questions"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    subaction_id: Mapped[int] = mapped_column(ForeignKey("subactions.id", ondelete="CASCADE"), nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    question: Mapped[str] = mapped_column(Text, nullable=False)
-
-    subaction: Mapped["Subaction"] = relationship("Subaction", back_populates="review_question_rows")
-    __table_args__ = (UniqueConstraint("subaction_id", "sort_order", name="uq_subaction_review_questions_pos"),)
+    __tablename__ = "matrix_level_registry"
+    __table_args__ = {"schema": MATRIX_STRUCT_SCHEMA}
+    depth: Mapped[int] = mapped_column(Integer, primary_key=True)
+    display_name: Mapped[str] = mapped_column(Text, nullable=False)
+    sql_table: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
 
 
 class ActionTemplate(Base):
     __tablename__ = "action_templates"
+    __table_args__ = {"schema": MATRIX_STRUCT_SCHEMA}
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     is_parent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -156,61 +108,77 @@ class ActionTemplate(Base):
 
 class ActionTemplateMinimalRequirement(Base):
     __tablename__ = "action_template_min_requirements"
+    __table_args__ = (
+        UniqueConstraint("template_id", "sort_order", name="uq_template_min_req_pos"),
+        {"schema": MATRIX_STRUCT_SCHEMA},
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    template_id: Mapped[str] = mapped_column(ForeignKey("action_templates.id", ondelete="CASCADE"), nullable=False)
+    template_id: Mapped[str] = mapped_column(ForeignKey(f"{MATRIX_STRUCT_SCHEMA}.action_templates.id", ondelete="CASCADE"), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
 
     template: Mapped["ActionTemplate"] = relationship("ActionTemplate", back_populates="minimal_requirements")
-    __table_args__ = (UniqueConstraint("template_id", "sort_order", name="uq_template_min_req_pos"),)
 
 
 class ActionTemplateAntipattern(Base):
     __tablename__ = "action_template_antipatterns"
+    __table_args__ = (
+        UniqueConstraint("template_id", "sort_order", name="uq_template_antipattern_pos"),
+        {"schema": MATRIX_STRUCT_SCHEMA},
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    template_id: Mapped[str] = mapped_column(ForeignKey("action_templates.id", ondelete="CASCADE"), nullable=False)
+    template_id: Mapped[str] = mapped_column(ForeignKey(f"{MATRIX_STRUCT_SCHEMA}.action_templates.id", ondelete="CASCADE"), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
 
     template: Mapped["ActionTemplate"] = relationship("ActionTemplate", back_populates="antipatterns")
-    __table_args__ = (UniqueConstraint("template_id", "sort_order", name="uq_template_antipattern_pos"),)
 
 
 class ActionTemplateStackRef(Base):
     __tablename__ = "action_template_stack_refs"
+    __table_args__ = (
+        UniqueConstraint("template_id", "sort_order", name="uq_template_stack_ref_pos"),
+        {"schema": MATRIX_STRUCT_SCHEMA},
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    template_id: Mapped[str] = mapped_column(ForeignKey("action_templates.id", ondelete="CASCADE"), nullable=False)
+    template_id: Mapped[str] = mapped_column(ForeignKey(f"{MATRIX_STRUCT_SCHEMA}.action_templates.id", ondelete="CASCADE"), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     stack_key: Mapped[str] = mapped_column(String(128), nullable=False)
 
     template: Mapped["ActionTemplate"] = relationship("ActionTemplate", back_populates="stack_refs")
-    __table_args__ = (UniqueConstraint("template_id", "sort_order", name="uq_template_stack_ref_pos"),)
 
 
 class ActionTemplateExampleRef(Base):
     __tablename__ = "action_template_example_refs"
+    __table_args__ = (
+        UniqueConstraint("template_id", "sort_order", name="uq_template_example_ref_pos"),
+        {"schema": MATRIX_STRUCT_SCHEMA},
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    template_id: Mapped[str] = mapped_column(ForeignKey("action_templates.id", ondelete="CASCADE"), nullable=False)
+    template_id: Mapped[str] = mapped_column(ForeignKey(f"{MATRIX_STRUCT_SCHEMA}.action_templates.id", ondelete="CASCADE"), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     example_ref: Mapped[str] = mapped_column(String(128), nullable=False)
 
     template: Mapped["ActionTemplate"] = relationship("ActionTemplate", back_populates="example_refs")
-    __table_args__ = (UniqueConstraint("template_id", "sort_order", name="uq_template_example_ref_pos"),)
 
 
 class ActionTemplateLiteratureRef(Base):
     __tablename__ = "action_template_literature_refs"
+    __table_args__ = (
+        UniqueConstraint("template_id", "sort_order", name="uq_template_literature_ref_pos"),
+        {"schema": MATRIX_STRUCT_SCHEMA},
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    template_id: Mapped[str] = mapped_column(ForeignKey("action_templates.id", ondelete="CASCADE"), nullable=False)
+    template_id: Mapped[str] = mapped_column(ForeignKey(f"{MATRIX_STRUCT_SCHEMA}.action_templates.id", ondelete="CASCADE"), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     literature_id: Mapped[str] = mapped_column(String(128), nullable=False)
 
     template: Mapped["ActionTemplate"] = relationship("ActionTemplate", back_populates="literature_refs")
-    __table_args__ = (UniqueConstraint("template_id", "sort_order", name="uq_template_literature_ref_pos"),)
 
 
 class ActionExample(Base):
     __tablename__ = "action_examples"
+    __table_args__ = (UniqueConstraint("example_id", name="uq_action_examples_example_id"), {"schema": MATRIX_STRUCT_SCHEMA})
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     example_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     title: Mapped[str] = mapped_column(String(255), default="", nullable=False)
@@ -219,17 +187,17 @@ class ActionExample(Base):
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
-    __table_args__ = (UniqueConstraint("example_id", name="uq_action_examples_example_id"),)
-
 
 class UiConfig(Base):
     __tablename__ = "ui_config"
+    __table_args__ = {"schema": MATRIX_STRUCT_SCHEMA}
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
 
 class UiSectionTitle(Base):
     __tablename__ = "ui_section_titles"
+    __table_args__ = {"schema": MATRIX_STRUCT_SCHEMA}
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -237,6 +205,7 @@ class UiSectionTitle(Base):
 
 class UiSetting(Base):
     __tablename__ = "ui_settings"
+    __table_args__ = {"schema": MATRIX_STRUCT_SCHEMA}
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     value: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
@@ -350,6 +319,22 @@ class NotificationLog(Base):
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class UserPresenceSession(Base):
+    __tablename__ = "user_presence_sessions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    username: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    session_token: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    ip_address: Mapped[str] = mapped_column(String(128), default="", nullable=False)
+    user_agent: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    login_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    logout_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_reason: Mapped[str] = mapped_column(String(32), default="", nullable=False)  # logout/expired/system
+
+    user: Mapped[Optional["User"]] = relationship("User", back_populates="presence_sessions")
+
+
 class StagingBatch(Base):
     __tablename__ = "staging_batches"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -361,78 +346,4 @@ class StagingBatch(Base):
     status: Mapped[str] = mapped_column(String(32), default="parsed", nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-
-
-class StagingDomain(Base):
-    __tablename__ = "staging_domains"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    batch_id: Mapped[int] = mapped_column(ForeignKey("staging_batches.id", ondelete="CASCADE"), nullable=False)
-    code: Mapped[str] = mapped_column(String(255), nullable=False)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-    __table_args__ = (UniqueConstraint("batch_id", "code", name="uq_staging_domain_code"),)
-
-
-class StagingSkill(Base):
-    __tablename__ = "staging_skills"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    batch_id: Mapped[int] = mapped_column(ForeignKey("staging_batches.id", ondelete="CASCADE"), nullable=False)
-    domain_code: Mapped[str] = mapped_column(String(255), nullable=False)
-    code: Mapped[str] = mapped_column(String(255), nullable=False)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-    __table_args__ = (UniqueConstraint("batch_id", "domain_code", "code", name="uq_staging_skill_code"),)
-
-
-class StagingAction(Base):
-    __tablename__ = "staging_actions"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    batch_id: Mapped[int] = mapped_column(ForeignKey("staging_batches.id", ondelete="CASCADE"), nullable=False)
-    skill_code: Mapped[str] = mapped_column(String(255), nullable=False)
-    code: Mapped[str] = mapped_column(String(255), nullable=False)
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-    template_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    level_tag: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-    __table_args__ = (UniqueConstraint("batch_id", "skill_code", "code", name="uq_staging_action_code"),)
-
-
-class StagingSubaction(Base):
-    __tablename__ = "staging_subactions"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    batch_id: Mapped[int] = mapped_column(ForeignKey("staging_batches.id", ondelete="CASCADE"), nullable=False)
-    action_code: Mapped[str] = mapped_column(String(255), nullable=False)
-    code: Mapped[str] = mapped_column(String(255), nullable=False)
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-    template_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    level_tag: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-    __table_args__ = (UniqueConstraint("batch_id", "action_code", "code", name="uq_staging_subaction_code"),)
-
-
-class StagingActionReviewQuestion(Base):
-    __tablename__ = "staging_action_review_questions"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    batch_id: Mapped[int] = mapped_column(ForeignKey("staging_batches.id", ondelete="CASCADE"), nullable=False)
-    action_code: Mapped[str] = mapped_column(String(255), nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    question: Mapped[str] = mapped_column(Text, nullable=False)
-
-    __table_args__ = (UniqueConstraint("batch_id", "action_code", "sort_order", name="uq_staging_action_q_pos"),)
-
-
-class StagingSubactionReviewQuestion(Base):
-    __tablename__ = "staging_subaction_review_questions"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    batch_id: Mapped[int] = mapped_column(ForeignKey("staging_batches.id", ondelete="CASCADE"), nullable=False)
-    subaction_code: Mapped[str] = mapped_column(String(255), nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    question: Mapped[str] = mapped_column(Text, nullable=False)
-
-    __table_args__ = (UniqueConstraint("batch_id", "subaction_code", "sort_order", name="uq_staging_subaction_q_pos"),)
 

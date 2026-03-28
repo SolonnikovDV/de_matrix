@@ -1,19 +1,46 @@
 # -*- coding: utf-8 -*-
 """
 Единый источник данных: JSON, YAML, Excel.
-Источник — только текстовая структура: domains + action_templates (текст), literature, examples, ui_config.
+Структура матрицы — только дерево ``nodes``; action_templates, literature, examples, ui_config — как раньше.
 Стили (name, icon, color) и инструменты (tools) не в источнике: загружаются из config/metadata.yaml,
 инструменты привязываются к листьям по совпадению паттернов в тексте.
 Валидация структуры — core/schema.py.
 """
 import json
+import math
+from copy import deepcopy
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
-from .tree import build_tree_from_matrix_data
+from .tree import strip_transient_node_fields, tabular_hierarchy_to_nodes
 from .schema import validate_source, ValidationResult, SCHEMA_VERSION
+from .matrix_schema import normalize_level_tags, normalize_responsible_value
+from .excel_unified_relational import try_load_unified_relational_xlsx
 
 # Ключи в источнике (без stack_labels и action_tools — они в config/metadata.yaml).
+
+
+def excel_cell_str(value: Any) -> str:
+    """
+    Безопасная строка из ячейки Excel.
+    pandas/openpyxl отдают int/float; выражение (v or '').strip() падает на truthy float (например 3.0).
+    """
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        if math.isnan(value):
+            return ""
+        if value.is_integer():
+            return str(int(value))
+        return str(value).strip()
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, int):
+        return str(value)
+    s = str(value).strip()
+    if s.lower() in ("nan", "none", "nat"):
+        return ""
+    return s
 META_KEYS = (
     "action_examples",
     "literature",
@@ -92,7 +119,7 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
         columns = [str(c) for c in df.columns]
         rows = []
         for _, row in df.iterrows():
-            rows.append({str(k): (row.get(k) or "").strip() for k in df.columns})
+            rows.append({str(k): excel_cell_str(row.get(k)) for k in df.columns})
     except ImportError:
         # 2) Фолбэк без pandas — только openpyxl
         try:
@@ -115,7 +142,7 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
             header_iter = ws.iter_rows(min_row=1, max_row=1, values_only=True)
             header_row = next(header_iter, None)
             if not header_row:
-                return {"domains": []}
+                return {"nodes": []}
 
             columns = [str(c).strip() if c is not None else "" for c in header_row]
             rows = []
@@ -129,7 +156,7 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
                     if not col_name:
                         continue
                     v = raw[i] if i < len(raw) else None
-                    s = "" if v is None else str(v).strip()
+                    s = excel_cell_str(v)
                     if s:
                         has_values = True
                     rec[col_name] = s
@@ -161,20 +188,26 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
     action_col = _col(columns, "Action", "action", "Действие")
     sub_col = _col(columns, "Subaction", "subaction", "Поддействие")
     desc_col = _col(columns, "Description", "description", "Описание навыка", "Описание")
+    owner_col = _col(columns, "Responsible", "responsible", "Ответственный", "Автор")
+    sticker_col = _col(columns, "Skill Sticker", "skill_sticker", "Level Sticker", "level_sticker", "Наклейка уровня")
     tpl_col = _col(columns, "Template ID", "template_id", "Template_ID")
     level_col = _col(columns, "Level Tag", "level_tag", "Level", "Уровень")
+    level_tags_col = _col(columns, "Level Tags", "level_tags", "Наклейки уровня")
+    action_level_tags_col = _col(columns, "Action Level Tags", "action_level_tags")
+    subaction_level_tags_col = _col(columns, "Subaction Level Tags", "subaction_level_tags")
     questions_col = _col(columns, "Review Questions", "review_questions", "Проверочные вопросы", "Вопросы")
 
     if domain_col and skill_col and action_col:
         domains_map: Dict[str, Dict] = {}
         for row in rows:
-            d_name = (row.get(domain_col) or "").strip()
-            s_name = (row.get(skill_col) or "").strip()
-            a_name = (row.get(action_col) or "").strip()
-            sub_name = (row.get(sub_col) or "").strip() if sub_col else ""
-            desc = (row.get(desc_col) or "").strip() if desc_col else ""
-            tpl = (row.get(tpl_col) or "").strip() or None if tpl_col else None
-            level_tag = _parse_level_tag(row.get(level_col)) if level_col else None
+            d_name = excel_cell_str(row.get(domain_col))
+            s_name = excel_cell_str(row.get(skill_col))
+            a_name = excel_cell_str(row.get(action_col))
+            sub_name = excel_cell_str(row.get(sub_col)) if sub_col else ""
+            desc = excel_cell_str(row.get(desc_col)) if desc_col else ""
+            responsible = excel_cell_str(row.get(owner_col)) if owner_col else ""
+            level_sticker = excel_cell_str(row.get(sticker_col)).lower() if sticker_col else ""
+            tpl = excel_cell_str(row.get(tpl_col)) or None if tpl_col else None
             review_questions = _parse_review_questions(row.get(questions_col)) if questions_col else []
 
             if not d_name and not s_name and not a_name:
@@ -184,43 +217,75 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
             if not a_name:
                 continue
 
+            def _row_tags_for_action() -> List[str]:
+                if action_level_tags_col:
+                    return normalize_level_tags(row.get(action_level_tags_col))
+                if sub_name:
+                    return []
+                if level_tags_col:
+                    return normalize_level_tags(row.get(level_tags_col))
+                return normalize_level_tags(row.get(level_col)) if level_col else []
+
+            def _row_tags_for_sub() -> List[str]:
+                if subaction_level_tags_col:
+                    return normalize_level_tags(row.get(subaction_level_tags_col))
+                if level_tags_col:
+                    return normalize_level_tags(row.get(level_tags_col))
+                return normalize_level_tags(row.get(level_col)) if level_col else []
+
             if d_name not in domains_map:
                 domains_map[d_name] = {"name": d_name, "skills": {}}
             skills = domains_map[d_name]["skills"]
             if s_name not in skills:
-                skills[s_name] = {"name": s_name, "description": "", "actions": []}
+                skills[s_name] = {"name": s_name, "description": "", "responsible": "", "level_sticker": "", "actions": []}
             if desc and not skills[s_name]["description"]:
                 skills[s_name]["description"] = desc
+            if responsible and not skills[s_name]["responsible"]:
+                skills[s_name]["responsible"] = responsible
+            if level_sticker and not skills[s_name]["level_sticker"]:
+                skills[s_name]["level_sticker"] = level_sticker
 
             if sub_name:
                 actions = skills[s_name]["actions"]
                 if not actions or "subactions" not in actions[-1]:
                     action_item = {"text": a_name, "template_id": tpl, "subactions": []}
-                    if level_tag:
-                        action_item["level_tag"] = level_tag
+                    at = _row_tags_for_action()
+                    if at:
+                        action_item["level_tags"] = at
                     if review_questions:
                         action_item["review_questions"] = review_questions
                     actions.append(action_item)
                 sub_item = {"text": sub_name, "template_id": tpl}
-                if level_tag:
-                    sub_item["level_tag"] = level_tag
+                st = _row_tags_for_sub()
+                if st:
+                    sub_item["level_tags"] = st
                 if review_questions:
                     sub_item["review_questions"] = review_questions
                 actions[-1]["subactions"].append(sub_item)
             else:
                 action_item = {"text": a_name, "template_id": tpl}
-                if level_tag:
-                    action_item["level_tag"] = level_tag
+                at = _row_tags_for_action()
+                if at:
+                    action_item["level_tags"] = at
                 if review_questions:
                     action_item["review_questions"] = review_questions
                 skills[s_name]["actions"].append(action_item)
 
         domains_list = []
         for d in domains_map.values():
-            skills_list = [{"name": s["name"], "description": s.get("description", ""), "actions": s["actions"]} for s in d["skills"].values()]
+            skills_list = [
+                {
+                    "name": s["name"],
+                    "description": s.get("description", ""),
+                    "responsible": s.get("responsible", ""),
+                    "level_sticker": s.get("level_sticker", ""),
+                    "actions": s["actions"],
+                }
+                for s in d["skills"].values()
+            ]
             domains_list.append({"name": d["name"], "skills": skills_list})
 
-        return {"domains": domains_list}
+        return {"nodes": _excel_domain_rows_as_nodes(domains_list)}
 
     # Вариант 2: Level (1-4), Name, Description, Template ID
     if "Level" in columns or "level" in columns:
@@ -242,9 +307,9 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
 
         for row in rows:
             level = parse_level(row.get(level_col, 0))
-            name = (row.get(name_col) or "").strip()
-            desc = (row.get(desc_col) or "").strip() if desc_col else ""
-            tpl = (row.get(tpl_col) or "").strip() or None if tpl_col else None
+            name = excel_cell_str(row.get(name_col))
+            desc = excel_cell_str(row.get(desc_col)) if desc_col else ""
+            tpl = excel_cell_str(row.get(tpl_col)) or None if tpl_col else None
             level_tag = _parse_level_tag(row.get(level_col)) if level_col else None
             review_questions = _parse_review_questions(row.get(questions_col)) if questions_col else []
             if not name:
@@ -263,21 +328,27 @@ def load_excel(path: str, sheet_name: Optional[str] = None) -> Dict:
             parent["children"].append(node)
             current.append(node)
 
-        # Преобразуем root в формат domains, если верхний уровень — домены
         if root.get("children"):
-            return _children_to_domains(root["children"])
-        return {"domains": []}
+            domain_rows = _level_outline_to_domain_rows(root["children"])
+            return {"nodes": _excel_domain_rows_as_nodes(domain_rows)}
+        return {"nodes": []}
 
-    return {"domains": []}
+    return {"nodes": []}
 
 
-def _children_to_domains(children: List[Dict]) -> Dict:
-    """Рекурсивно превращает узлы с children в legacy domains/skills/actions."""
+def _level_outline_to_domain_rows(children: List[Dict]) -> List[Dict]:
+    """Иерархия по колонке Level → промежуточные строки домен/навык/действие (только для Excel)."""
     domains = []
     for d in children:
         domain = {"name": d.get("name", ""), "skills": []}
         for s in d.get("children", []):
-            skill = {"name": s.get("name", ""), "description": s.get("description", ""), "actions": []}
+            skill = {
+                "name": s.get("name", ""),
+                "description": s.get("description", ""),
+                "responsible": s.get("responsible", ""),
+                "level_sticker": s.get("level_sticker", ""),
+                "actions": [],
+            }
             for a in s.get("children", []):
                 if a.get("children"):
                     action = {"text": a.get("name", ""), "template_id": a.get("template_id"), "subactions": []}
@@ -305,7 +376,33 @@ def _children_to_domains(children: List[Dict]) -> Dict:
                     skill["actions"].append(action_item)
             domain["skills"].append(skill)
         domains.append(domain)
-    return {"domains": domains}
+    return domains
+
+
+def _normalize_domain_rows_for_sheet(domains_list: List[Dict]) -> List[Dict]:
+    """Нормализует промежуточные domain/skill/action-строки из классического Excel."""
+    normalized_domains: List[Dict] = []
+    for d in domains_list:
+        if not isinstance(d, dict):
+            continue
+        domain = {k: v for k, v in d.items() if k != "skills"}
+        domain["skills"] = []
+        for s in d.get("skills", []):
+            if not isinstance(s, dict):
+                continue
+            skill = {k: v for k, v in s.items() if k != "actions"}
+            skill["actions"] = [_normalize_action(a) for a in s.get("actions", [])]
+            domain["skills"].append(skill)
+        normalized_domains.append(domain)
+    _sanitize_responsible_fields_in_domains(normalized_domains)
+    return normalized_domains
+
+
+def _excel_domain_rows_as_nodes(domains_list: List[Dict]) -> List[Dict]:
+    """Классический Excel → generic ``nodes`` (без id/path/is_leaf)."""
+    norm = _normalize_domain_rows_for_sheet(domains_list)
+    raw = tabular_hierarchy_to_nodes(norm)
+    return strip_transient_node_fields(raw)
 
 
 def _empty_unified() -> Dict:
@@ -313,11 +410,67 @@ def _empty_unified() -> Dict:
     return {
         "schema_version": SCHEMA_VERSION,
         "domains": [],
+        "nodes": [],
         "action_examples": [],
         "literature": {},
         "action_templates": {},
         "ui_config": {},
     }
+
+
+def _normalize_generic_node(n: Dict) -> Dict:
+    """Узел дерева произвольной глубины для unified (имена из файла / JSON)."""
+    if not isinstance(n, dict):
+        return {"name": "", "children": []}
+    name = (n.get("name") or n.get("text") or "").strip()
+    out: Dict = {"name": name, "children": []}
+    for key in ("description", "responsible", "level_sticker", "code", "template_id", "excel_path_key"):
+        if key in n and n[key]:
+            if key == "excel_path_key":
+                out[key] = str(n[key]).strip()
+            elif key == "level_sticker":
+                out[key] = str(n[key]).strip().lower()
+            else:
+                out[key] = str(n[key]).strip() if isinstance(n[key], str) else n[key]
+    ltags = normalize_level_tags(n.get("level_tags") or n.get("level_tag"))
+    if ltags:
+        out["level_tags"] = ltags
+        if len(ltags) == 1:
+            out["level_tag"] = ltags[0]
+    elif n.get("level_tag"):
+        out["level_tag"] = _parse_level_tag(n.get("level_tag"))
+    ch = n.get("children") or []
+    if ch:
+        out["children"] = [_normalize_generic_node(x) for x in ch if isinstance(x, dict)]
+    lv = n.get("leaf_view")
+    if isinstance(lv, dict) and lv:
+        out["leaf_view"] = deepcopy(lv)
+    rq = _parse_review_questions(n.get("review_questions"))
+    if rq:
+        out["review_questions"] = rq
+    return out
+
+
+def _sanitize_responsible_fields_in_domains(domains: List[Dict]) -> None:
+    """Убирает заглушки вроде «не указан» из полей responsible (импорт / нормализация)."""
+    for d in domains:
+        if not isinstance(d, dict):
+            continue
+        if "responsible" in d:
+            d["responsible"] = normalize_responsible_value(d.get("responsible"))
+        for s in d.get("skills") or []:
+            if not isinstance(s, dict):
+                continue
+            if "responsible" in s:
+                s["responsible"] = normalize_responsible_value(s.get("responsible"))
+            for act in s.get("actions") or []:
+                if not isinstance(act, dict):
+                    continue
+                if "responsible" in act:
+                    act["responsible"] = normalize_responsible_value(act.get("responsible"))
+                for sub in act.get("subactions") or []:
+                    if isinstance(sub, dict) and "responsible" in sub:
+                        sub["responsible"] = normalize_responsible_value(sub.get("responsible"))
 
 
 def _normalize_action(a: Dict) -> Dict:
@@ -329,18 +482,27 @@ def _normalize_action(a: Dict) -> Dict:
             "subactions": [_normalize_subaction(s) for s in (a.get("items") or [])],
         }
     subactions = a.get("subactions")
-    normalized_level = _parse_level_tag(a.get("level_tag"))
+    ltags = normalize_level_tags(a.get("level_tags") or a.get("level_tag"))
     normalized_questions = _parse_review_questions(a.get("review_questions"))
     if subactions:
         out = {**a, "subactions": [_normalize_subaction(s) for s in subactions]}
     else:
         out = dict(a)
-    if normalized_level:
-        out["level_tag"] = normalized_level
+    if ltags:
+        out["level_tags"] = ltags
+        if len(ltags) == 1:
+            out["level_tag"] = ltags[0]
+        else:
+            out.pop("level_tag", None)
+    else:
+        out.pop("level_tags", None)
     if normalized_questions:
         out["review_questions"] = normalized_questions
     elif "review_questions" in out and not out["review_questions"]:
         out.pop("review_questions", None)
+    lv = a.get("leaf_view")
+    if isinstance(lv, dict) and lv:
+        out["leaf_view"] = lv
     return out
 
 
@@ -348,11 +510,19 @@ def _normalize_subaction(s: Dict) -> Dict:
     """Приводит поддействие к формату {text, template_id?, level_tag?, review_questions?}."""
     if isinstance(s, dict):
         out = {"text": s.get("text", s.get("name", "")), "template_id": s.get("template_id")}
-        if s.get("level_tag"):
+        stags = normalize_level_tags(s.get("level_tags") or s.get("level_tag"))
+        if stags:
+            out["level_tags"] = stags
+            if len(stags) == 1:
+                out["level_tag"] = stags[0]
+        elif s.get("level_tag"):
             out["level_tag"] = _parse_level_tag(s.get("level_tag"))
         questions = _parse_review_questions(s.get("review_questions"))
         if questions:
             out["review_questions"] = questions
+        lv = s.get("leaf_view")
+        if isinstance(lv, dict) and lv:
+            out["leaf_view"] = lv
         return out
     return {"text": str(s), "template_id": None}
 
@@ -363,16 +533,12 @@ def _normalize_unified(data: Dict) -> Dict:
         return _empty_unified()
     out = _empty_unified()
     out["schema_version"] = data.get("schema_version", SCHEMA_VERSION)
-    domains = data.get("domains") or []
+    nodes_in = data.get("nodes")
+    if isinstance(nodes_in, list) and nodes_in:
+        out["nodes"] = [_normalize_generic_node(x) for x in nodes_in if isinstance(x, dict)]
+    else:
+        out["nodes"] = []
     out["domains"] = []
-    for d in domains:
-        domain = {k: v for k, v in d.items() if k != "skills"}
-        domain["skills"] = []
-        for s in d.get("skills", []):
-            skill = {k: v for k, v in s.items() if k != "actions"}
-            skill["actions"] = [_normalize_action(a) for a in s.get("actions", [])]
-            domain["skills"].append(skill)
-        out["domains"].append(domain)
     for key in META_KEYS:
         if key in data and data[key] is not None:
             default = [] if key == "action_examples" else {}
@@ -387,8 +553,7 @@ def load_unified_source(
 ) -> Dict:
     """
     Загружает единый источник данных (JSON, YAML или Excel).
-    Один файл содержит структуру (domains) и метаданные (шаблоны, литература, стек, ui_config).
-    Уровни вложенности (domain → skill → action → subactions) сохраняются.
+    Структура — ``nodes``; метаданные — шаблоны, литература, стек, ui_config.
     Для Excel загружается только структура; мета при необходимости — из того же файла (листы) или пустая.
     Если validate=True, при ошибках валидации выбрасывается ValueError с текстом ошибок.
     """
@@ -444,16 +609,25 @@ def load_unified_source_with_validation(
 
 
 def _load_excel_as_unified(path: str) -> Dict:
-    """Читает Excel: первый лист — структура (domains), остальные листы — опционально мета."""
+    """Читает Excel: формат Unified_Relational_Span или классические колонки Domain/Skill/Action."""
+    ur = try_load_unified_relational_xlsx(path)
+    if ur:
+        return {
+            "nodes": ur.get("nodes") or [],
+            "ui_config": ur.get("ui_config") or {},
+        }
     structure = load_excel(path)
-    # При необходимости можно читать листы "action_templates", "literature" и т.д.
-    return {"domains": structure.get("domains", [])}
+    return {"nodes": structure.get("nodes", [])}
+
+
+def load_excel_for_matrix_import(path: str) -> Dict:
+    """Предпросмотр/импорт Excel: сначала unified relational (enriched), иначе классический лист."""
+    return _load_excel_as_unified(path)
 
 
 def load_matrix(source_path: str, source_type: Optional[str] = None) -> Dict:
     """
     Загружает матрицу из файла (только структура). Для единого источника используйте load_unified_source.
-    Возвращает dict с domains (и при необходимости nodes), готовый для build_tree_from_matrix_data.
     """
     unified = load_unified_source(source_path, source_type)
-    return {"domains": unified.get("domains", [])}
+    return {"nodes": unified.get("nodes") or []}

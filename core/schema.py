@@ -8,23 +8,77 @@ from typing import Dict, Any, List, Optional, Set
 SCHEMA_VERSION = 1
 
 # Допустимые ключи верхнего уровня
-ROOT_KEYS = {"schema_version", "domains", "action_examples", "literature", "action_templates", "ui_config"}
+ROOT_KEYS = {
+    "schema_version",
+    "domains",
+    "nodes",
+    "action_examples",
+    "literature",
+    "action_templates",
+    "ui_config",
+}
 
 # Допустимые ключи в domain
-DOMAIN_KEYS = {"name", "skills"}
+DOMAIN_KEYS = {"name", "skills", "description", "responsible", "level_tag", "level_tags"}
 
 # Допустимые ключи в skill
-SKILL_KEYS = {"name", "description", "actions"}
+SKILL_KEYS = {"name", "description", "responsible", "level_sticker", "level_tag", "level_tags", "actions"}
 
 # Допустимые ключи в action (стандартный формат)
-ACTION_KEYS = {"text", "template_id", "subactions", "level_tag", "review_questions"}
+ACTION_KEYS = {
+    "text",
+    "template_id",
+    "subactions",
+    "level_tag",
+    "level_tags",
+    "leaf_view",
+    "review_questions",
+    "code",
+    "description",
+    "responsible",
+    "excel_path_key",
+}
 # Допустимые ключи в action (формат группы: type="group")
 ACTION_GROUP_KEYS = {"type", "name", "items"}
 
 # Допустимые ключи в subaction
-SUBACTION_KEYS = {"text", "template_id", "level_tag", "review_questions"}
+SUBACTION_KEYS = {
+    "text",
+    "template_id",
+    "level_tag",
+    "level_tags",
+    "leaf_view",
+    "review_questions",
+    "code",
+    "description",
+    "responsible",
+    "excel_path_key",
+}
 
 ALLOWED_LEVEL_TAGS = {"junior", "middle", "senior"}
+ALLOWED_SKILL_STICKERS = {"junior", "middle", "senior"}
+
+# Узлы generic-дерева (nodes)
+NODE_KEYS = {
+    "name",
+    "text",
+    "children",
+    "description",
+    "responsible",
+    "template_id",
+    "level_tag",
+    "level_tags",
+    "level_sticker",
+    "leaf_view",
+    "review_questions",
+    "code",
+    "excel_path_key",
+    "type",
+    "items",
+    "id",
+    "path",
+    "is_leaf",
+}
 
 
 @dataclass
@@ -50,6 +104,84 @@ def _path_str(path: List[str]) -> str:
     return " → ".join(path) if path else "корень"
 
 
+def _node_children(node: Dict[str, Any]) -> List[Any]:
+    if node.get("type") == "group" and isinstance(node.get("items"), list):
+        return node["items"]
+    ch = node.get("children")
+    return ch if isinstance(ch, list) else []
+
+
+def _validate_generic_nodes(
+    nodes: List[Any],
+    path: List[str],
+    result: ValidationResult,
+    templates: Dict[str, Any],
+) -> None:
+    """Рекурсивная проверка дерева nodes (name/children)."""
+    if not isinstance(nodes, list):
+        result.errors.append(f"{_path_str(path)}: nodes должен быть массивом")
+        result.ok = False
+        return
+    for i, raw in enumerate(nodes):
+        np = path + [f"[{i}]"]
+        if not isinstance(raw, dict):
+            result.errors.append(f"{_path_str(np)}: узел должен быть объектом")
+            result.ok = False
+            continue
+        unknown_n = set(raw.keys()) - NODE_KEYS
+        if unknown_n:
+            result.warnings.append(f"{_path_str(np)}: неизвестные ключи: {', '.join(sorted(unknown_n))}")
+        ch = _node_children(raw)
+        is_leaf = len(ch) == 0
+        label = (raw.get("name") or raw.get("text") or "").strip() if not is_leaf else (raw.get("name") or raw.get("text") or "")
+        if not str(label or "").strip() and not is_leaf:
+            result.warnings.append(f"{_path_str(np)}: пустое имя внутреннего узла")
+        if raw.get("type") == "group":
+            items = raw.get("items")
+            if items is not None and not isinstance(items, list):
+                result.errors.append(f"{_path_str(np)}: items должен быть массивом")
+                result.ok = False
+        else:
+            cc = raw.get("children")
+            if cc is not None and not isinstance(cc, list):
+                result.errors.append(f"{_path_str(np)}: children должен быть массивом")
+                result.ok = False
+        sticker = raw.get("level_sticker")
+        if sticker not in (None, ""):
+            sv = str(sticker).strip().lower()
+            if sv not in ALLOWED_SKILL_STICKERS:
+                result.errors.append(
+                    f"{_path_str(np)}: level_sticker должен быть одним из {', '.join(sorted(ALLOWED_SKILL_STICKERS))}"
+                )
+                result.ok = False
+        slt = raw.get("level_tags")
+        if slt not in (None, "", []):
+            if not isinstance(slt, list):
+                result.errors.append(f"{_path_str(np)}: level_tags должен быть массивом строк")
+                result.ok = False
+            else:
+                for j, x in enumerate(slt):
+                    v = str(x).strip().lower()
+                    if v not in ALLOWED_LEVEL_TAGS:
+                        result.errors.append(
+                            f"{_path_str(np + [f'level_tags[{j}]'])}: допустимы только {', '.join(sorted(ALLOWED_LEVEL_TAGS))}"
+                        )
+                        result.ok = False
+        if is_leaf:
+            nm = str(raw.get("name") or raw.get("text") or "").strip()
+            if not nm:
+                result.errors.append(f"{_path_str(np)}: у листа должно быть непустое name или text")
+                result.ok = False
+            tpl_id = raw.get("template_id")
+            if tpl_id and templates and str(tpl_id) not in templates:
+                result.recommendations.append(
+                    f"{_path_str(np)}: template_id '{tpl_id}' не найден в action_templates."
+                )
+            _validate_leaf_meta(np, raw, result)
+        else:
+            _validate_generic_nodes(ch, np, result, templates)
+
+
 def _validate_leaf_meta(path: List[str], node: Dict[str, Any], result: ValidationResult) -> None:
     """Проверяет level_tag и review_questions для листового элемента."""
     level_tag = node.get("level_tag")
@@ -59,6 +191,26 @@ def _validate_leaf_meta(path: List[str], node: Dict[str, Any], result: Validatio
             result.errors.append(
                 f"{_path_str(path)}: level_tag должен быть одним из {', '.join(sorted(ALLOWED_LEVEL_TAGS))}"
             )
+            result.ok = False
+
+    lt = node.get("level_tags")
+    if lt not in (None, "", []):
+        if not isinstance(lt, list):
+            result.errors.append(f"{_path_str(path)}: level_tags должен быть массивом строк")
+            result.ok = False
+        else:
+            for i, x in enumerate(lt):
+                v = str(x).strip().lower()
+                if v not in ALLOWED_LEVEL_TAGS:
+                    result.errors.append(
+                        f"{_path_str(path + [f'level_tags[{i}]'])}: допустимы только {', '.join(sorted(ALLOWED_LEVEL_TAGS))}"
+                    )
+                    result.ok = False
+
+    lv = node.get("leaf_view")
+    if lv not in (None, "", {}):
+        if not isinstance(lv, dict):
+            result.errors.append(f"{_path_str(path)}: leaf_view должен быть объектом")
             result.ok = False
 
     review_questions = node.get("review_questions")
@@ -92,22 +244,34 @@ def validate_source(data: Any) -> ValidationResult:
     if unknown:
         result.warnings.append(f"Неизвестные ключи верхнего уровня: {', '.join(sorted(unknown))}. Будут проигнорированы.")
 
-    # domains — обязателен
+    # domains — устаревший контейнер (после нормализации всегда []); nodes — основное дерево
     domains = data.get("domains")
     if domains is None:
-        result.errors.append("Отсутствует ключ 'domains'")
-        return result
+        domains = []
     if not isinstance(domains, list):
         result.ok = False
         result.errors.append("'domains' должен быть массивом")
         return result
 
+    nodes = data.get("nodes")
+    if nodes is None:
+        nodes = []
+    if not isinstance(nodes, list):
+        result.ok = False
+        result.errors.append("'nodes' должен быть массивом")
+        return result
+
+    has_nodes = len(nodes) > 0
+
     templates = data.get("action_templates") or {}
     if not isinstance(templates, dict):
         templates = {}
 
+    if has_nodes:
+        _validate_generic_nodes(nodes, ["nodes"], result, templates)
+
     seen_domains: Set[str] = set()
-    for di, domain in enumerate(domains):
+    for di, domain in (enumerate(domains) if domains else enumerate([])):
         path = [f"domains[{di}]"]
         if not isinstance(domain, dict):
             result.errors.append(f"{_path_str(path)}: домен должен быть объектом")
@@ -127,6 +291,19 @@ def validate_source(data: Any) -> ValidationResult:
         unknown_d = set(domain.keys()) - DOMAIN_KEYS
         if unknown_d:
             result.warnings.append(f"{_path_str(path)}: неизвестные ключи: {', '.join(sorted(unknown_d))}")
+        dlt = domain.get("level_tags")
+        if dlt not in (None, "", []):
+            if not isinstance(dlt, list):
+                result.errors.append(f"{_path_str(path)}: level_tags должен быть массивом строк")
+                result.ok = False
+            else:
+                for i, x in enumerate(dlt):
+                    v = str(x).strip().lower()
+                    if v not in ALLOWED_LEVEL_TAGS:
+                        result.errors.append(
+                            f"{_path_str(path + [f'level_tags[{i}]'])}: допустимы только {', '.join(sorted(ALLOWED_LEVEL_TAGS))}"
+                        )
+                        result.ok = False
 
         skills = domain.get("skills")
         if skills is None:
@@ -160,6 +337,27 @@ def validate_source(data: Any) -> ValidationResult:
             unknown_s = set(skill.keys()) - SKILL_KEYS
             if unknown_s:
                 result.warnings.append(f"{_path_str(spath)}: неизвестные ключи: {', '.join(sorted(unknown_s))}")
+            sticker = skill.get("level_sticker")
+            if sticker not in (None, ""):
+                sticker_value = str(sticker).strip().lower()
+                if sticker_value not in ALLOWED_SKILL_STICKERS:
+                    result.errors.append(
+                        f"{_path_str(spath)}: level_sticker должен быть одним из {', '.join(sorted(ALLOWED_SKILL_STICKERS))}"
+                    )
+                    result.ok = False
+            slt = skill.get("level_tags")
+            if slt not in (None, "", []):
+                if not isinstance(slt, list):
+                    result.errors.append(f"{_path_str(spath)}: level_tags должен быть массивом строк")
+                    result.ok = False
+                else:
+                    for i, x in enumerate(slt):
+                        v = str(x).strip().lower()
+                        if v not in ALLOWED_LEVEL_TAGS:
+                            result.errors.append(
+                                f"{_path_str(spath + [f'level_tags[{i}]'])}: допустимы только {', '.join(sorted(ALLOWED_LEVEL_TAGS))}"
+                            )
+                            result.ok = False
 
             actions = skill.get("actions")
             if actions is None:
@@ -240,8 +438,10 @@ def validate_source(data: Any) -> ValidationResult:
                                     f"{_path_str(subpath)}: неизвестные ключи: {', '.join(sorted(unknown_sub))}"
                                 )
 
-    if not domains and result.ok:
-        result.recommendations.append("Источник пуст: нет доменов. Добавьте хотя бы одну строку Domain/Skill/Action для загрузки.")
+    if not domains and not has_nodes and result.ok:
+        result.recommendations.append(
+            "Источник пуст: нет узлов в nodes. Добавьте данные матрицы."
+        )
 
     return result
 
@@ -251,11 +451,60 @@ def get_schema_info() -> Dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "root_keys": list(ROOT_KEYS),
-        "required_root": ["domains"],
+        "required_root": ["nodes"],
         "structure": {
-            "domain": {"required": ["name", "skills"], "optional": []},
-            "skill": {"required": ["name", "actions"], "optional": ["description"]},
-            "action": {"required": ["text"], "optional": ["template_id", "subactions", "level_tag", "review_questions"]},
-            "subaction": {"required": ["text"], "optional": ["template_id", "level_tag", "review_questions"]},
+            "domain": {
+                "required": ["name", "skills"],
+                "optional": ["description", "responsible", "level_tag", "level_tags"],
+            },
+            "skill": {
+                "required": ["name", "actions"],
+                "optional": ["description", "responsible", "level_sticker", "level_tag", "level_tags"],
+            },
+            "action": {
+                "required": ["text"],
+                "optional": [
+                    "template_id",
+                    "subactions",
+                    "level_tag",
+                    "level_tags",
+                    "leaf_view",
+                    "review_questions",
+                    "code",
+                    "description",
+                    "responsible",
+                    "excel_path_key",
+                ],
+                "notes": {
+                    "level_tags": "Список грейдов (junior, middle, senior); приоритет над устаревшим level_tag.",
+                    "leaf_view": "Объект блоков листа: ключи из заголовков (leaf_view) в Excel, значения — строки или списки строк.",
+                    "excel_path_key": "Внутренний ключ пути item-колонок (разделитель U+001F); для симметричного экспорта в unified relational.",
+                },
+            },
+            "subaction": {
+                "required": ["text"],
+                "optional": [
+                    "template_id",
+                    "level_tag",
+                    "level_tags",
+                    "leaf_view",
+                    "review_questions",
+                    "code",
+                    "description",
+                    "responsible",
+                    "excel_path_key",
+                ],
+                "notes": {
+                    "level_tags": "Как у action.",
+                    "leaf_view": "Как у action; для листа-поддействия.",
+                    "excel_path_key": "Как у action.",
+                },
+            },
+        },
+        "ui_config": {
+            "matrix_levels": "Иерархия уровней и теги (item / leaf_view / skill_sticker).",
+            "matrix_column_schema": "Описание колонок импорта, в т.ч. leaf_view_key для подписей блоков.",
+            "constructor_extra_leaf_steps": "Число доп. шагов башни после последней строки matrix_levels (по умолчанию 1) — выбор/создание дочернего узла в subactions; 0 = башня строго по matrix_levels.",
+            "constructor_leaf_step_title": "Заголовок первого доп. шага башни (лист/подуровень).",
         },
     }

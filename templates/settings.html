@@ -143,14 +143,14 @@
             <button class="restore-btn" id="btnRollbackLast">
                 <i class="fas fa-history"></i> Откатить последнее изменение
             </button>
-            <button class="restore-btn" id="btnRollbackStable" style="background:#27ae60;">
+            <button class="restore-btn status-btn-green" id="btnRollbackStable">
                 <i class="fas fa-shield-alt"></i> Откат к stable
             </button>
-            <button class="restore-btn" id="btnCheckAutoscale" style="background:#8e44ad;">
+            <button class="restore-btn status-btn-purple" id="btnCheckAutoscale">
                 <i class="fas fa-project-diagram"></i> Проверить автоскейл
             </button>
         </div>
-        <div id="autoscaleResult" class="autoscale-result" style="display:none;"></div>
+        <div id="autoscaleResult" class="autoscale-result display-none"></div>
         <ul class="backup-list" id="backupList">
             <li class="backup-empty" id="backupEmpty">Загрузка списка бэкапов...</li>
         </ul>
@@ -189,8 +189,8 @@ async function loadBackups() {
                     <span class="backup-id"><span class="backup-version">v${b.version || '?'}</span>${escapeHtml(b.id)} ${stableBadge}</span>
                     <div class="backup-meta">${b.source_file ? 'Источник: ' + escapeHtml(b.source_file) : ''} ${b.created ? ' • ' + escapeHtml(b.created) : ''}${schemaInfo}${changeInfo}${noteInfo}</div>
                 </div>
-                <div style="display:flex; gap:8px;">
-                    <button class="restore-btn mark-stable-btn" data-backup-id="${escapeHtml(b.id)}" title="Сделать стабильным" style="background:#27ae60;">
+                <div class="backup-actions">
+                    <button class="restore-btn mark-stable-btn status-btn-green" data-backup-id="${escapeHtml(b.id)}" title="Сделать стабильным">
                         <i class="fas fa-star"></i> Stable
                     </button>
                     <button class="restore-btn restore-backup-btn" data-backup-id="${escapeHtml(b.id)}" title="Восстановить конфиг и источник">

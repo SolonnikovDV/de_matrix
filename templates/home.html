@@ -39,11 +39,13 @@
             <span>Граф</span>
             <small>Визуализация дерева</small>
         </a>
-        <a href="/import" class="home-action-card">
+        {% if current_role == 'admin' %}
+        <a href="/admin/import" class="home-action-card">
             <i class="fas fa-upload"></i>
-            <span>Импорт</span>
-            <small>Догрузка JSON/Excel</small>
+            <span>Импорт Excel</span>
+            <small>Админ: полная переинициализация</small>
         </a>
+        {% endif %}
     </div>
     {% if domains %}
     <div class="home-quick-domains">

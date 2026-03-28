@@ -1,14 +1,11 @@
-Flask
-Jinja2
-Werkzeug
-certifi
-itsdangerous
-click
-blinker
-MarkupSafe
-PyYAML
-pandas
-openpyxl
-SQLAlchemy
-psycopg[binary]
-pymongo
+# de_matrix — прямые зависимости (Python 3.12+).
+# Подпакеты Flask (Jinja2, Werkzeug, …) ставятся автоматически.
+
+Flask>=3.0,<4
+PyYAML>=6.0
+pandas>=2.0,<3
+openpyxl>=3.1
+SQLAlchemy>=2.0,<3
+psycopg[binary]>=3.1,<4
+pymongo>=4.6,<5
+deep-translator>=1.11,<2

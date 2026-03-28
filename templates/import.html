@@ -1,123 +1,282 @@
 {% extends "base.html" %}
 
-{% block title %}Импорт данных{% endblock %}
+{% block title %}Админ-импорт Excel{% endblock %}
 
-{% block header_title %}Догрузка данных{% endblock %}
+{% block header_title %}Админ-импорт Excel{% endblock %}
 
-{% block footer_hint %}JSON или Excel. Формат: Domain, Skill, Action, Subaction, Description, Template ID, Level Tag, Review Questions{% endblock %}
+{% block footer_hint %}Только admin: снос текущей структуры и инициализация новой из Excel{% endblock %}
 
 {% block extra_css %}
 <style>
-    .import-container { padding: 20px; max-width: 800px; margin: 0 auto; }
-    .import-section {
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-        padding: 24px;
-        margin-bottom: 24px;
-        border: 1px solid #eef2f6;
+    .import-page .import-container { padding: var(--space-md) var(--space-lg); max-width: 1100px; margin: 0 auto; }
+    .import-page .import-section {
+        background: var(--surface);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-card);
+        padding: var(--space-lg);
+        margin-bottom: var(--space-lg);
+        border: 1px solid var(--border-soft);
     }
-    .import-section h2 { color: #2c3e50; margin-bottom: 16px; font-size: 1.25em; display: flex; align-items: center; gap: 10px; }
-    .import-section h2 i { color: #3498db; }
-    .reload-hint { font-size: 13px; color: #7f8c8d; margin-top: 12px; padding: 10px; background: #f8f9fa; border-radius: 6px; }
-    .upload-section { margin-bottom: 16px; }
-    .upload-section input[type="file"] { margin-right: 10px; }
-    .upload-btn { padding: 10px 20px; background: #27ae60; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
-    .upload-btn:hover { background: #219a52; }
-    #uploadModal .modal-box { width: min(900px, 96vw); }
-    .preview-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
-    .preview-table th, .preview-table td { padding: 8px 12px; border: 1px solid #eef2f6; text-align: left; }
-    .preview-table th { background: #2c3e50; color: white; }
-    .validation-block { padding: 12px; border-radius: 8px; margin-bottom: 12px; }
-    .validation-errors { background: #fadbd8; border: 1px solid #e74c3c; }
-    .validation-warnings { background: #fef9e7; border: 1px solid #f39c12; }
-    .validation-recommendations { background: #e8f6f3; border: 1px solid #1abc9c; }
-    .validation-block h4 { margin: 0 0 8px 0; font-size: 14px; }
-    .validation-block ul { margin: 0; padding-left: 20px; }
-    .modal-actions { margin-top: 20px; }
-    .btn-primary { padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 8px; cursor: pointer; }
-    .btn-secondary { padding: 10px 20px; background: #95a5a6; color: white; border: none; border-radius: 8px; cursor: pointer; }
-    .merge-options select { padding: 8px 12px; border-radius: 6px; border: 1px solid #ddd; min-width: 280px; }
-    .template-block { margin-bottom: 16px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef; }
-    .template-code-start { margin-left: 6px; }
-    .template-download-link {
-        margin-left: 12px;
-        padding: 6px 12px;
-        background: #3498db;
-        color: white;
-        text-decoration: none;
-        border-radius: 6px;
+    .import-page .import-section h2 {
+        color: var(--text-main);
+        margin-bottom: var(--space-md);
+        font-size: 1.2em;
+        display: flex;
+        align-items: center;
+        gap: 10px;
     }
-    .merge-options { margin-bottom: 16px; }
-    .merge-mode-label { display: block; margin-bottom: 8px; font-weight: 600; }
-    .merge-help { margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 0.9em; color: #5d6d7e; }
-    .target-wrap { margin-top: 10px; }
-    .target-new-label { margin-left: 10px; color: #7f8c8d; }
-    .target-new-input { margin-left: 6px; padding: 6px; width: 200px; }
-    .skeleton-gap-10 { margin-top: 10px; }
+    .import-page .import-section h2 i { color: var(--bg-accent); }
+    .import-page .reload-hint {
+        font-size: 0.9rem;
+        color: var(--text-muted);
+        margin-top: var(--space-sm);
+        padding: var(--space-sm) var(--space-md);
+        background: var(--surface-soft);
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-soft);
+    }
+    .import-page .upload-section { margin-bottom: var(--space-md); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); }
+    .import-page .template-block {
+        margin-bottom: var(--space-md);
+        padding: var(--space-md);
+        background: var(--surface-soft);
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-soft);
+    }
+    .import-page .import-template-lead { margin: 0 0 var(--space-md) 0; line-height: 1.55; color: var(--text-main); }
+    .import-page .import-template-lead code { font-size: 0.88em; }
+    .import-page .import-template-actions { margin-bottom: 0; }
+    .import-page .merge-options select {
+        padding: 8px 12px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-soft);
+        min-width: 280px;
+        background: var(--surface);
+        color: var(--text-main);
+    }
+    .import-page .merge-options { margin-bottom: var(--space-md); }
+    .import-page .merge-mode-label { display: block; margin-bottom: var(--space-sm); font-weight: 600; color: var(--text-main); }
+    .import-page .merge-help {
+        margin-top: var(--space-sm);
+        padding: var(--space-sm) var(--space-md);
+        background: var(--surface-soft);
+        border-radius: var(--radius-sm);
+        font-size: 0.9em;
+        color: var(--text-muted);
+        border: 1px solid var(--border-soft);
+    }
+    .import-page .target-wrap { margin-top: var(--space-sm); }
+    .import-page .target-new-label { margin-left: 10px; color: var(--text-muted); }
+    .import-page .target-new-input { margin-left: 6px; padding: 6px; width: 200px; border-radius: var(--radius-sm); border: 1px solid var(--border-soft); }
+    .import-page .skeleton-gap-10 { margin-top: 10px; }
+    .import-page .danger-confirm-block {
+        margin-top: var(--space-md);
+        padding: var(--space-md);
+        border-radius: var(--radius-sm);
+        border: 1px solid rgba(231, 76, 60, 0.45);
+        background: rgba(253, 241, 239, 0.85);
+    }
+    .import-page .danger-confirm-title { margin: 0 0 8px 0; color: #c0392b; font-weight: 700; }
+    .import-page .danger-confirm-check { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; }
+    .import-page .validation-block {
+        padding: 12px 14px;
+        border-radius: var(--radius-sm);
+        margin-bottom: 12px;
+        border: 1px solid var(--border-soft);
+        background: var(--surface-soft);
+    }
+    .import-page .validation-errors { background: rgba(231, 76, 60, 0.1); border-color: rgba(231, 76, 60, 0.45); }
+    .import-page .validation-warnings { background: rgba(243, 156, 18, 0.12); border-color: rgba(243, 156, 18, 0.4); }
+    .import-page .validation-recommendations { background: rgba(26, 188, 156, 0.1); border-color: rgba(26, 188, 156, 0.35); }
+    .import-page .validation-block h4 { margin: 0 0 8px 0; font-size: 14px; }
+    .import-page .validation-block ul { margin: 0; padding-left: 20px; }
+    /* Модалка импорта — как changes / constructor: шапка с закрытием, секции внутри modal-body */
+    #uploadModal .import-modal-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding-right: 8px;
+    }
+    #uploadModal .import-modal-header h3 { flex: 1; margin: 0; }
+    #uploadModal .import-modal-dismiss {
+        flex-shrink: 0;
+        min-width: 36px;
+        padding: 6px 10px;
+        font-size: 1.25rem;
+        line-height: 1;
+    }
+    #uploadModal .import-modal-section {
+        margin-bottom: var(--space-md);
+    }
+    #uploadModal .import-modal-section:last-child { margin-bottom: 0; }
+    #uploadModal .import-modal-section-title {
+        margin: 0 0 var(--space-sm) 0;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--text-main);
+    }
+    #uploadModal .preview-table-wrap {
+        overflow: auto;
+        max-width: 100%;
+        border: 1px solid var(--border-soft);
+        border-radius: var(--radius-sm);
+        background: var(--surface);
+    }
+    #uploadModal .merge-help { margin-top: var(--space-sm); }
+    #replaceRiskModal { z-index: 10050; }
+    .import-page .import-inline-error {
+        margin-top: 10px;
+        padding: 10px 12px;
+        border-radius: var(--radius-sm);
+        border: 1px solid rgba(231, 76, 60, 0.5);
+        background: rgba(231, 76, 60, 0.08);
+        color: #922b21;
+        font-size: 0.9rem;
+    }
+    .import-page .import-inline-error.is-hidden { display: none; }
+    /* Блоки валидации внутри модалки — те же секции, что и режим/предпросмотр */
+    #uploadModal .validation-block {
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-soft);
+        background: var(--surface-soft);
+        padding: 12px 14px;
+        margin-bottom: 0;
+    }
+    #uploadModal .validation-errors {
+        background: rgba(231, 76, 60, 0.08);
+        border-color: rgba(231, 76, 60, 0.45);
+    }
+    #uploadModal .validation-warnings {
+        background: rgba(243, 156, 18, 0.1);
+        border-color: rgba(243, 156, 18, 0.4);
+    }
+    #uploadModal .validation-recommendations {
+        background: rgba(26, 188, 156, 0.08);
+        border-color: rgba(26, 188, 156, 0.35);
+    }
+    #uploadModal .import-modal-validation-wrap .validation-block + .validation-block {
+        margin-top: 10px;
+    }
+    #replaceRiskModal .modal-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding-right: 8px;
+    }
+    #replaceRiskModal .risk-modal-dismiss {
+        flex-shrink: 0;
+        min-width: 36px;
+        padding: 6px 10px;
+        font-size: 1.25rem;
+        line-height: 1;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
+<div class="import-page">
 <div class="import-container">
     <div class="import-section">
-        <h2><i class="fas fa-upload"></i> Догрузка данных</h2>
+        <h2><i class="fas fa-file-excel"></i> Импорт структуры и данных из Excel (admin)</h2>
         <div class="template-block">
-            <strong>Единый шаблон Excel:</strong>
-            <code class="template-code-start">Domain</code>, <code>Skill</code>, <code>Action</code>, <code>Subaction</code>, <code>Description</code>, <code>Template ID</code>, <code>Level Tag</code>, <code>Review Questions</code>
-            <a href="/api/import/template" class="btn btn-sm template-download-link">
-                <i class="fas fa-download"></i> Скачать шаблон
-            </a>
+            <p class="import-template-lead">
+                <strong>Основной сценарий</strong> — файл в формате <strong>unified relational</strong>: лист
+                <code>Unified_Relational_Span</code>, в первой строке заголовки с тегами
+                <code>(item)</code>, <code>(leaf_view)</code>, <code>(skill_sticker)</code>.
+                Кнопка ниже скачивает пустой шаблон, у которого <strong>строка заголовков совпадает с зарегистрированной структурой матрицы</strong>
+                (<code>ui_config.matrix_column_schema</code> в БД; если схемы ещё нет — строится из уровней <code>matrix_levels</code>).
+            </p>
+            <div class="view-toolbar import-template-actions">
+                <a href="/api/import/template/unified" class="btn btn-primary"><i class="fas fa-download"></i> Скачать шаблон для импорта</a>
+            </div>
         </div>
         <p class="reload-hint">
-            Загрузите JSON или Excel. Поддерживаются также русские заголовки: Домен, Навык, Действие, Поддействие.
-            Перед применением создаётся бэкап.
+            Загрузите Excel с новой структурой матрицы. Импорт выполняется как <strong>полная переинициализация</strong>:
+            текущая структура будет заменена данными из файла (включая значения внутри Excel). Перед применением создаётся бэкап.
         </p>
         <div class="upload-section">
-            <input type="file" id="uploadFile" accept=".json,.xlsx,.xls">
-            <button type="button" class="upload-btn" onclick="previewUpload()">
+            <input type="file" id="uploadFile" accept=".xlsx,.xls" class="form-input">
+            <button type="button" id="importPreviewBtn" class="btn btn-success" onclick="previewUpload()">
                 <i class="fas fa-eye"></i> Предпросмотр и валидация
             </button>
         </div>
     </div>
 </div>
+</div>
 
-<div class="modal-overlay is-hidden" id="uploadModal">
-    <div class="modal-box">
-        <div class="modal-header">
-            <h3><i class="fas fa-table"></i> Предпросмотр догрузки</h3>
+<div class="modal-overlay is-hidden" id="uploadModal" aria-hidden="true">
+    <div class="modal-box modal-preview-box" role="dialog" aria-modal="true" aria-labelledby="uploadModalTitle">
+        <div class="modal-header import-modal-header">
+            <h3 id="uploadModalTitle"><i class="fas fa-table"></i> Предпросмотр и валидация</h3>
+            <button type="button" class="btn btn-secondary btn-sm import-modal-dismiss" onclick="closeUploadModal()" aria-label="Закрыть">&times;</button>
         </div>
         <div class="modal-body">
-        <div class="merge-options">
-            <label class="merge-mode-label">Режим загрузки:</label>
-            <select id="mergeMode" onchange="toggleTargetSelects()">
-                <option value="append">Инкрементальная — добавить к существующим (автоскейл)</option>
-                <option value="append_to_domain">В указанный домен</option>
-                <option value="append_to_skill">В указанный навык</option>
-                <option value="replace_all">Полная замена матрицы</option>
-            </select>
-            <div id="mergeModeHelp" class="merge-help"></div>
-            <div id="targetDomainWrap" class="target-wrap is-hidden">
-                <label>Домен:</label>
-                <select id="targetDomain"></select>
-                <span class="target-new-label">или новый:</span>
-                <input type="text" id="targetDomainNew" class="target-new-input" placeholder="Название домена">
+            <div class="import-modal-section merge-options">
+                <div class="import-modal-section-title">Режим загрузки</div>
+                <label class="merge-mode-label" for="mergeMode">Сценарий</label>
+                <select id="mergeMode" onchange="toggleTargetSelects()">
+                    <option value="replace_all">Полная замена матрицы (Excel → новая структура)</option>
+                </select>
+                <div id="mergeModeHelp" class="merge-help"></div>
+                <div id="targetDomainWrap" class="target-wrap is-hidden">
+                    <label>Домен:</label>
+                    <select id="targetDomain"></select>
+                    <span class="target-new-label">или новый:</span>
+                    <input type="text" id="targetDomainNew" class="target-new-input" placeholder="Название домена">
+                </div>
+                <div id="targetSkillWrap" class="target-wrap is-hidden">
+                    <label>Навык:</label>
+                    <select id="targetSkill"></select>
+                </div>
             </div>
-            <div id="targetSkillWrap" class="target-wrap is-hidden">
-                <label>Навык:</label>
-                <select id="targetSkill"></select>
+            <div class="import-modal-section">
+                <div class="import-modal-section-title">Предпросмотр данных</div>
+                <div id="previewContent"></div>
             </div>
-        </div>
-        <div id="previewContent"></div>
-        <div id="validationContent"></div>
+            <div class="import-modal-section">
+                <div class="import-modal-section-title">Результат проверки</div>
+                <div id="validationContent"></div>
+            </div>
+            <div id="importModalError" class="import-inline-error is-hidden" role="alert"></div>
+            <div class="import-modal-section danger-confirm-block">
+                <p class="danger-confirm-title"><i class="fas fa-triangle-exclamation"></i> Опасная операция</p>
+                <p class="reload-hint">
+                    После применения текущая структура матрицы будет заменена данными из Excel. Это влияет на все связанные представления.
+                </p>
+                <label class="danger-confirm-check">
+                    <input type="checkbox" id="confirmReplaceAll">
+                    <span>Подтверждаю, что понимаю последствия полной переинициализации и хочу отправить это изменение на апрув.</span>
+                </label>
+            </div>
         </div>
         <div class="modal-footer">
-        <div class="modal-actions">
-            <button type="button" class="btn-primary" id="btnDoUpload" onclick="doUpload()">
-                <i class="fas fa-upload"></i> Загрузить
-            </button>
-            <button type="button" class="btn-secondary" onclick="closeUploadModal()">Отмена</button>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-primary" id="btnDoUpload" onclick="doUpload()">
+                    <i class="fas fa-upload"></i> Загрузить
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="closeUploadModal()">Отмена</button>
+            </div>
         </div>
+    </div>
+</div>
+
+<div class="modal-overlay is-hidden" id="replaceRiskModal" aria-hidden="true">
+    <div class="modal-box mw-560" role="dialog" aria-modal="true" aria-labelledby="replaceRiskTitle">
+        <div class="modal-header">
+            <h3 id="replaceRiskTitle"><i class="fas fa-exclamation-triangle"></i> Риски полной замены матрицы</h3>
+            <button type="button" class="btn btn-secondary btn-sm risk-modal-dismiss" onclick="closeReplaceRiskModal()" aria-label="Закрыть">&times;</button>
+        </div>
+        <div class="modal-body confirm-body">
+            <p>Текущие данные матрицы будут заменены содержимым файла. Выполняется резервная копия, но откат может потребовать ручного вмешательства.</p>
+            <p class="reload-hint" style="margin-top: 10px;">Продолжить и отправить загрузку на апрув?</p>
+        </div>
+        <div class="modal-footer">
+            <div class="modal-actions">
+                <button type="button" class="btn btn-primary" onclick="acceptReplaceRiskAndUpload()">ОК (принять)</button>
+                <button type="button" class="btn btn-secondary" onclick="closeReplaceRiskModal()">Отменить (отказаться)</button>
+            </div>
         </div>
     </div>
 </div>
@@ -127,6 +286,21 @@
 <script>
 let pendingUploadFile = null;
 let domainsData = [];
+
+function openModalById(id) {
+    const m = document.getElementById(id);
+    if (!m) return;
+    m.classList.remove('is-hidden');
+    m.style.display = 'flex';
+    m.setAttribute('aria-hidden', 'false');
+}
+function closeModalById(id) {
+    const m = document.getElementById(id);
+    if (!m) return;
+    m.classList.add('is-hidden');
+    m.style.display = 'none';
+    m.setAttribute('aria-hidden', 'true');
+}
 
 function getFreshSelectedFile() {
     const input = document.getElementById('uploadFile');
@@ -151,24 +325,18 @@ async function loadDomainsForUpload() {
 }
 
 const MERGE_MODE_HELP = {
-    append: 'Данные объединяются с текущей матрицей. Новые домены/навыки создаются, существующие дополняются. Дубликаты действий не добавляются.',
-    append_to_domain: 'Все загруженные навыки и действия будут помещены в выбранный домен. Существующие навыки дополняются.',
-    append_to_skill: 'Все загруженные действия будут добавлены в выбранный навык указанного домена.',
     replace_all: 'ВНИМАНИЕ: Текущая матрица будет полностью заменена загруженными данными. Действия, литература и шаблоны из текущего источника будут утеряны. Создаётся бэкап перед заменой.'
 };
 
 function toggleTargetSelects() {
-    const mode = document.getElementById('mergeMode').value;
+    const mode = 'replace_all';
     const domainWrap = document.getElementById('targetDomainWrap');
     const skillWrap = document.getElementById('targetSkillWrap');
     const helpEl = document.getElementById('mergeModeHelp');
-    domainWrap.style.display = (mode === 'append_to_domain' || mode === 'append_to_skill') ? 'block' : 'none';
-    skillWrap.style.display = mode === 'append_to_skill' ? 'block' : 'none';
+    domainWrap.style.display = 'none';
+    skillWrap.style.display = 'none';
     if (helpEl) helpEl.textContent = MERGE_MODE_HELP[mode] || '';
-    if (mode === 'append_to_domain' || mode === 'append_to_skill') {
-        fillDomainSelect();
-        if (mode === 'append_to_skill') fillSkillSelect();
-    }
+    // Для admin Excel-импорта используется только replace_all.
 }
 
 function fillDomainSelect() {
@@ -203,7 +371,7 @@ function fillSkillSelect() {
 }
 
 document.getElementById('targetDomain')?.addEventListener('change', function() {
-    if (document.getElementById('mergeMode').value === 'append_to_skill') fillSkillSelect();
+    // В admin Excel-import режимах выбор skill/domain не используется.
 });
 document.addEventListener('DOMContentLoaded', function() {
     toggleTargetSelects();
@@ -233,7 +401,12 @@ async function previewUpload() {
         }
         return;
     }
-    const triggerBtn = document.querySelector('.upload-btn');
+    const lowerName = (selectedFile.name || '').toLowerCase();
+    if (!(lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls'))) {
+        alert('Поддерживаются только Excel-файлы (.xlsx, .xls).');
+        return;
+    }
+    const triggerBtn = document.getElementById('importPreviewBtn');
     if (triggerBtn) {
         triggerBtn.disabled = true;
         triggerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Анализ файла...';
@@ -264,7 +437,8 @@ async function previewUpload() {
         await loadDomainsForUpload();
         toggleTargetSelects();
         renderPreview(data);
-        document.getElementById('uploadModal').style.display = 'flex';
+        clearImportModalError();
+        openModalById('uploadModal');
     } catch (e) {
         if (e && e.name === 'AbortError') {
             alert('Анализ файла занял слишком много времени. Попробуйте уменьшить файл или проверьте структуру Excel.');
@@ -289,15 +463,53 @@ function escapeHtml(s) {
 
 function renderPreview(data) {
     const v = data.validation || {};
+    const ctx = data.preview_context || {};
     let html = '';
-    if (data.preview && data.preview.length) {
-        html += `<p>Доменов: ${data.domains_count || 0}, записей: ${data.preview.length}</p>`;
-        html += `<table class="preview-table"><thead><tr><th>Домен</th><th>Навык</th><th>Действие</th><th>Поддействие</th><th>Template ID</th><th>Уровень</th><th>Проверочные вопросы</th></tr></thead><tbody>`;
+    const pu = data.preview_unified;
+    if (pu && Array.isArray(pu.headers) && pu.headers.length && Array.isArray(pu.rows) && pu.rows.length) {
+        const total = typeof pu.total_rows === 'number' ? pu.total_rows : pu.rows.length;
+        html += `<p>Корней матрицы: ${data.matrix_roots ?? data.domains_count ?? 0}, строк unified (листья): ${total}</p>`;
+        if (ctx.note) {
+            html += `<p class="reload-hint" style="margin-bottom:12px;">${escapeHtml(ctx.note)}</p>`;
+        }
+        if (ctx.has_ui_config) {
+            html += `<p class="reload-hint">В файле есть ui_config: уровни (${ctx.matrix_levels_count || 0}), колонок в схеме (${ctx.matrix_column_schema_count || 0}). Предпросмотр по заголовкам из файла.</p>`;
+        }
+        html += '<div class="preview-table-wrap"><table class="preview-table"><thead><tr>';
+        pu.headers.forEach((h) => { html += `<th>${escapeHtml(String(h || ''))}</th>`; });
+        html += '</tr></thead><tbody>';
+        const show = Math.min(50, pu.rows.length);
+        for (let i = 0; i < show; i += 1) {
+            const row = pu.rows[i] || [];
+            html += '<tr>';
+            for (let j = 0; j < pu.headers.length; j += 1) {
+                const cell = row[j] != null ? row[j] : '';
+                html += `<td>${escapeHtml(String(cell))}</td>`;
+            }
+            html += '</tr>';
+        }
+        const cs = pu.headers.length;
+        if (pu.rows.length > 50) {
+            html += `<tr><td colspan="${cs}">… ещё ${pu.rows.length - 50} строк в ответе API</td></tr>`;
+        }
+        if (pu.truncated && typeof pu.total_rows === 'number' && pu.total_rows > pu.rows.length) {
+            html += `<tr><td colspan="${cs}">… всего в файле ${pu.total_rows} строк; в ответе первые ${pu.rows.length}</td></tr>`;
+        }
+        html += '</tbody></table></div>';
+    } else if (data.preview && data.preview.length) {
+        html += `<p>Корней матрицы: ${data.matrix_roots ?? data.domains_count ?? 0}, записей: ${data.preview.length}</p>`;
+        if (ctx.note) {
+            html += `<p class="reload-hint" style="margin-bottom:12px;">${escapeHtml(ctx.note)}</p>`;
+        }
+        if (ctx.has_ui_config) {
+            html += `<p class="reload-hint">В файле есть ui_config: уровни матрицы (${ctx.matrix_levels_count || 0}), описание колонок (${ctx.matrix_column_schema_count || 0}) — сохраняется при импорте.</p>`;
+        }
+        html += `<div class="preview-table-wrap"><table class="preview-table"><thead><tr><th>Домен</th><th>Навык</th><th>Ответств.</th><th>Накл. навыка</th><th>Действие</th><th>Поддействие</th><th>Template</th><th>Уровень</th><th>J/M/S</th><th>Блоки листа</th><th>Вопросы</th></tr></thead><tbody>`;
         data.preview.slice(0, 50).forEach(row => {
-            html += `<tr><td>${escapeHtml(row.domain)}</td><td>${escapeHtml(row.skill)}</td><td>${escapeHtml(row.action)}</td><td>${escapeHtml(row.subaction)}</td><td>${escapeHtml(row.template_id || '')}</td><td>${escapeHtml(row.level_tag || '')}</td><td>${escapeHtml(row.review_questions || '')}</td></tr>`;
+            html += `<tr><td>${escapeHtml(row.domain)}</td><td>${escapeHtml(row.skill)}</td><td>${escapeHtml(row.skill_responsible || '')}</td><td>${escapeHtml(row.skill_level_sticker || '')}</td><td>${escapeHtml(row.action)}</td><td>${escapeHtml(row.subaction)}</td><td>${escapeHtml(row.template_id || '')}</td><td>${escapeHtml(row.level_tag || '')}</td><td>${escapeHtml(row.level_tags || '')}</td><td>${escapeHtml(row.leaf_view_keys || '')}</td><td>${escapeHtml(row.review_questions || '')}</td></tr>`;
         });
-        if (data.preview.length > 50) html += `<tr><td colspan="7">... и ещё ${data.preview.length - 50} записей</td></tr>`;
-        html += '</tbody></table>';
+        if (data.preview.length > 50) html += `<tr><td colspan="11">... и ещё ${data.preview.length - 50} записей</td></tr>`;
+        html += '</tbody></table></div>';
     } else if (v.ok) {
         html = '<p>Файл успешно прочитан, но данных для догрузки пока нет (пустой шаблон).</p>';
     }
@@ -320,38 +532,66 @@ function renderPreview(data) {
         valHtml += '</ul></div>';
     }
     if (!valHtml) valHtml = '<div class="validation-block validation-recommendations"><p>Структура файла корректна.</p></div>';
-    document.getElementById('validationContent').innerHTML = valHtml;
+    document.getElementById('validationContent').innerHTML =
+        '<div class="import-modal-section import-modal-validation-wrap">' + valHtml + '</div>';
 
     document.getElementById('btnDoUpload').disabled = !v.ok;
 }
 
+function clearImportModalError() {
+    const el = document.getElementById('importModalError');
+    if (!el) return;
+    el.textContent = '';
+    el.classList.add('is-hidden');
+}
+
+function showImportModalError(msg) {
+    const el = document.getElementById('importModalError');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.classList.toggle('is-hidden', !String(msg || '').trim());
+}
+
 function closeUploadModal() {
-    document.getElementById('uploadModal').style.display = 'none';
+    clearImportModalError();
+    closeModalById('replaceRiskModal');
+    closeModalById('uploadModal');
+    const confirmBox = document.getElementById('confirmReplaceAll');
+    if (confirmBox) confirmBox.checked = false;
     pendingUploadFile = null;
 }
 
+function closeReplaceRiskModal() {
+    closeModalById('replaceRiskModal');
+}
+
+function acceptReplaceRiskAndUpload() {
+    closeReplaceRiskModal();
+    void performReplaceUpload();
+}
+
 async function doUpload() {
+    clearImportModalError();
     if (!pendingUploadFile) {
-        alert('Сначала выберите файл и выполните предпросмотр/валидацию.');
+        showImportModalError('Сначала выберите файл и выполните предпросмотр/валидацию.');
         return;
     }
-    const mode = document.getElementById('mergeMode').value;
-    if (mode === 'replace_all' && !confirm('Полная замена матрицы. Текущие данные будут утеряны (создаётся бэкап). Продолжить?')) {
+    const confirmBox = document.getElementById('confirmReplaceAll');
+    if (!confirmBox || !confirmBox.checked) {
+        showImportModalError('Отметьте галочку: вы подтверждаете последствия полной переинициализации.');
         return;
     }
+    openModalById('replaceRiskModal');
+}
+
+async function performReplaceUpload() {
+    if (!pendingUploadFile) return;
+    const mode = 'replace_all';
     const formData = new FormData();
     formData.append('file', pendingUploadFile);
     formData.append('merge_mode', mode);
-    if (mode === 'append_to_domain' || mode === 'append_to_skill') {
-        const domainNew = document.getElementById('targetDomainNew')?.value?.trim();
-        const domain = domainNew || document.getElementById('targetDomain')?.value || '';
-        if (domain) formData.append('target_domain', domain);
-        if (mode === 'append_to_skill') {
-            const skill = document.getElementById('targetSkill').value;
-            if (skill) formData.append('target_skill', skill);
-        }
-    }
-    document.getElementById('btnDoUpload').disabled = true;
+    const btn = document.getElementById('btnDoUpload');
+    if (btn) btn.disabled = true;
     try {
         const r = await fetch('/api/source/upload', { method: 'POST', body: formData });
         const data = await r.json();
@@ -369,7 +609,7 @@ async function doUpload() {
             alert('Ошибка: ' + (data.error || 'Unknown'));
         }
     } catch (e) { alert('Ошибка: ' + e.message); }
-    finally { document.getElementById('btnDoUpload').disabled = false; }
+    finally { if (btn) btn.disabled = false; }
 }
 </script>
 {% endblock %}

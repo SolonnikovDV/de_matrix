@@ -91,7 +91,7 @@ function handleActionClick(e) {
     
     if (domainId !== undefined && skillId !== undefined && actionIdx !== undefined) {
         // Переходим на детальную страницу действия
-        window.location.href = `/action/${domainId}/${skillId}/${actionIdx}`;
+        window.location.href = `/leaf/${domainId}/${skillId}/${actionIdx}`;
     } else {
         console.error('Отсутствуют данные для перехода', {domainId, skillId, actionIdx});
     }

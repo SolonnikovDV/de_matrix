@@ -16,7 +16,6 @@
     .lit-link-domain.expanded > .lit-link-domain-body, .lit-link-skill.expanded > .lit-link-skill-body { display: block; }
     .lit-link-leaf { display: flex; align-items: center; gap: 8px; margin: 4px 0; cursor: pointer; font-weight: normal; }
     .is-hidden { display: none; }
-    .lit-link-modal { max-width: 560px !important; }
     .lit-link-section { margin-bottom: 12px; }
     .lit-link-select { width: 100%; padding: 8px; }
     .lit-link-tree-title { margin-bottom: 8px; font-weight: 600; }
@@ -28,26 +27,6 @@
         padding: 10px;
         background: #fbfdff;
     }
-    .lit-link-actions { margin-top: 15px; }
-    .literature-preview-modal { max-width: 900px; }
-    .lit-preview-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin-bottom: 12px;
-    }
-    .lit-preview-title { margin: 0 0 6px 0; }
-    .lit-preview-meta { margin: 0; font-size: 0.9em; color: #7f8c8d; }
-    .lit-preview-content { min-height: 400px; }
-    .lit-preview-iframe {
-        width: 100%;
-        height: 70vh;
-        border: 1px solid #d8e2f3;
-        border-radius: 8px;
-        background: #fff;
-    }
-    .lit-preview-link { margin-top: 10px; }
-    .lit-preview-note { margin-top: 8px; color: #7f8c8d; font-size: 0.9em; }
     .footer-sep { margin: 0 8px; }
     .footer-inline-link {
         color: inherit;
@@ -71,6 +50,14 @@
             <button class="sidebar-close" id="sidebarClose" aria-label="Закрыть"><i class="fas fa-times"></i></button>
         </div>
         <nav class="sidebar-nav">
+            {% if is_authenticated %}
+            <div class="sidebar-section">
+                <a href="/account" class="sidebar-nav-item sidebar-account-item {% if request.path.startswith('/account') %}active{% endif %}">
+                    <i class="fas fa-user"></i>
+                    <span>Личный кабинет</span>
+                </a>
+            </div>
+            {% endif %}
             <div class="sidebar-section">
                 <div class="sidebar-section-label">Навигация</div>
                 <a href="/" class="sidebar-nav-item {% if request.path == '/' %}active{% endif %}">
@@ -85,54 +72,84 @@
                     <i class="fas fa-project-diagram"></i>
                     <span>Граф</span>
                 </a>
-                <a href="/export" class="sidebar-nav-item {% if request.path == '/export' %}active{% endif %}">
-                    <i class="fas fa-table"></i>
-                    <span>Экспорт</span>
-                </a>
                 <a href="/literature" class="sidebar-nav-item {% if request.path == '/literature' %}active{% endif %}">
                     <i class="fas fa-book"></i>
                     <span>Литература</span>
                 </a>
-                <a href="/import" class="sidebar-nav-item {% if request.path == '/import' %}active{% endif %}">
-                    <i class="fas fa-upload"></i>
-                    <span>Импорт</span>
-                </a>
                 <a href="/changes" class="sidebar-nav-item {% if request.path == '/changes' %}active{% endif %}">
                     <i class="fas fa-clipboard-check"></i>
-                    <span>Изменения</span>
+                    <span class="sidebar-nav-label">Изменения
+                        {% if sidebar_badges.changes_pending %}
+                        <span class="sidebar-nav-badge" title="Добавлены, но еще не смержены">{{ sidebar_badges.changes_pending }}</span>
+                        {% endif %}
+                    </span>
                 </a>
-                {% if current_role == 'admin' %}
-                <a href="/admin/users" class="sidebar-nav-item {% if request.path.startswith('/admin/users') %}active{% endif %}">
-                    <i class="fas fa-user-shield"></i>
-                    <span>Админка пользователей</span>
-                </a>
-                <a href="/admin/sql-console" class="sidebar-nav-item {% if request.path.startswith('/admin/sql-console') %}active{% endif %}">
-                    <i class="fas fa-code"></i>
-                    <span>SQL консоль БД</span>
-                </a>
-                <a href="/admin/tree-editor" class="sidebar-nav-item {% if request.path.startswith('/admin/tree-editor') %}active{% endif %}">
-                    <i class="fas fa-sitemap"></i>
-                    <span>Редактор дерева</span>
-                </a>
-                <a href="/admin/notifications" class="sidebar-nav-item {% if request.path.startswith('/admin/notifications') %}active{% endif %}">
-                    <i class="fas fa-envelope-open-text"></i>
-                    <span>Уведомления</span>
-                </a>
-                {% endif %}
-                <a href="/settings" class="sidebar-nav-item {% if request.path == '/settings' %}active{% endif %}">
-                    <i class="fas fa-cog"></i>
-                    <span>Настройки</span>
-                </a>
+            </div>
+            <div class="sidebar-section sidebar-collapsible is-collapsed" data-sidebar-group="user-tools">
+                <button type="button" class="sidebar-section-toggle" aria-expanded="false">
+                    <span class="sidebar-section-label">User tools</span>
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+                <div class="sidebar-section-content">
+                    <a href="/constructor" class="sidebar-nav-item {% if request.path == '/constructor' %}active{% endif %}">
+                        <i class="fas fa-diagram-project"></i>
+                        <span>Конструктор изменений</span>
+                    </a>
+                    <a href="/export" class="sidebar-nav-item {% if request.path == '/export' %}active{% endif %}">
+                        <i class="fas fa-table"></i>
+                        <span>Экспорт</span>
+                    </a>
+                </div>
+            </div>
+            {% if current_role == 'admin' %}
+            <div class="sidebar-section sidebar-collapsible is-collapsed" data-sidebar-group="admin-tools">
+                <button type="button" class="sidebar-section-toggle" aria-expanded="false">
+                    <span class="sidebar-section-label">Admin tools</span>
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+                <div class="sidebar-section-content">
+                    <a href="/admin/users" class="sidebar-nav-item {% if request.path.startswith('/admin/users') %}active{% endif %}">
+                        <i class="fas fa-user-shield"></i>
+                        <span>Админка пользователей</span>
+                    </a>
+                    <a href="/admin/sql-console" class="sidebar-nav-item {% if request.path.startswith('/admin/sql-console') %}active{% endif %}">
+                        <i class="fas fa-code"></i>
+                        <span>SQL консоль БД</span>
+                    </a>
+                    <a href="/admin/tree-editor" class="sidebar-nav-item {% if request.path.startswith('/admin/tree-editor') %}active{% endif %}">
+                        <i class="fas fa-sitemap"></i>
+                        <span>Редактор дерева</span>
+                    </a>
+                    <a href="/admin/notifications" class="sidebar-nav-item {% if request.path.startswith('/admin/notifications') %}active{% endif %}">
+                        <i class="fas fa-envelope-open-text"></i>
+                        <span class="sidebar-nav-label">Уведомления
+                            {% if sidebar_badges.notifications_unsent %}
+                            <span class="sidebar-nav-badge" title="Неудачные/неотправленные уведомления">{{ sidebar_badges.notifications_unsent }}</span>
+                            {% endif %}
+                        </span>
+                    </a>
+                    <a href="/admin/presence" class="sidebar-nav-item {% if request.path.startswith('/admin/presence') %}active{% endif %}">
+                        <i class="fas fa-user-clock"></i>
+                        <span class="sidebar-nav-label">Присутствие пользователей
+                            <span class="sidebar-nav-badge" title="Пользователей online сейчас">{{ sidebar_badges.presence_online or 0 }}</span>
+                        </span>
+                    </a>
+                    <a href="/admin/import" class="sidebar-nav-item {% if request.path == '/admin/import' or request.path == '/import' %}active{% endif %}">
+                        <i class="fas fa-file-excel"></i>
+                        <span>Импорт Excel (admin)</span>
+                    </a>
+                    <a href="/settings" class="sidebar-nav-item {% if request.path == '/settings' %}active{% endif %}">
+                        <i class="fas fa-cog"></i>
+                        <span>Настройки</span>
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+            <div class="sidebar-section">
                 <a href="/about" class="sidebar-nav-item {% if request.path == '/about' %}active{% endif %}">
                     <i class="fas fa-circle-info"></i>
                     <span>О приложении</span>
                 </a>
-                {% if is_authenticated %}
-                <a href="/account" class="sidebar-nav-item {% if request.path.startswith('/account') %}active{% endif %}">
-                    <i class="fas fa-user"></i>
-                    <span>Личный кабинет</span>
-                </a>
-                {% endif %}
                 {% if is_authenticated %}
                 <a href="/logout" class="sidebar-nav-item">
                     <i class="fas fa-right-from-bracket"></i>
@@ -145,30 +162,54 @@
                 </a>
                 {% endif %}
             </div>
-            <div class="sidebar-section">
-                <div class="sidebar-section-label">Домены</div>
-            {% for d in sidebar_domains %}
-            <div class="sidebar-domain-group {% if current_domain_index is defined and current_domain_index == d.index %}expanded{% endif %}" data-domain-id="{{ d.index }}">
-                <a href="/domain/{{ d.index }}" class="sidebar-domain {% if current_domain_index is defined and current_domain_index == d.index and current_skill_index is not defined %}active{% endif %}" style="--domain-color: {{ d.color }}">
-                    <i class="fas fa-chevron-right sidebar-expand-icon"></i>
-                    <i class="fas fa-{{ d.icon }}"></i>
-                    <span class="sidebar-label">{{ d.name }}</span>
-                    <span class="sidebar-count" title="Навыков: {{ d.skills_count }}">{{ d.skills_count }}</span>
-                </a>
-                <div class="sidebar-skills">
-                    {% for s in d.skills %}
-                    <a href="/domain/{{ d.index }}/skill/{{ s.index }}" class="sidebar-skill {% if current_domain_index is defined and current_skill_index is defined and current_domain_index == d.index and current_skill_index == s.index %}active{% endif %}" style="--skill-color: {{ s.color }}" title="Действий: {{ s.actions_count }}">
-                        <i class="fas fa-{{ s.icon }}"></i>
-                        <span class="sidebar-label">{{ s.name }}</span>
-                        <span class="sidebar-count">{{ s.actions_count }}</span>
+            <div class="sidebar-section sidebar-collapsible is-collapsed" data-sidebar-group="domains">
+                <button type="button" class="sidebar-section-toggle" aria-expanded="false">
+                    <span class="sidebar-section-label">Домены</span>
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+                <div class="sidebar-section-content">
+                {% for d in sidebar_domains %}
+                <div class="sidebar-domain-group {% if current_domain_index is defined and current_domain_index == d.index %}expanded{% endif %}" data-domain-id="{{ d.index }}">
+                    <a href="/domain/{{ d.index }}" class="sidebar-domain node-color-domain {% if current_domain_index is defined and current_domain_index == d.index and current_skill_index is not defined %}active{% endif %}" data-domain-color="{{ d.color }}">
+                        <i class="fas fa-chevron-right sidebar-expand-icon"></i>
+                        <i class="fas fa-{{ d.icon }}"></i>
+                        <span class="sidebar-label">{{ d.name }}</span>
+                        <span class="sidebar-count" title="Навыков: {{ d.skills_count }}">{{ d.skills_count }}</span>
                     </a>
-                    {% endfor %}
+                    <div class="sidebar-skills">
+                        {% for s in d.skills %}
+                        <a href="/domain/{{ d.index }}/skill/{{ s.index }}" class="sidebar-skill node-color-skill {% if current_domain_index is defined and current_skill_index is defined and current_domain_index == d.index and current_skill_index == s.index %}active{% endif %}" data-skill-color="{{ s.color }}" title="Действий: {{ s.actions_count }}">
+                            <i class="fas fa-{{ s.icon }}"></i>
+                            <span class="sidebar-label">{{ s.name }}</span>
+                            <span class="sidebar-count">{{ s.actions_count }}</span>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+                {% if not sidebar_domains %}
+                <p class="sidebar-empty">Нет доменов</p>
+                {% endif %}
                 </div>
             </div>
-            {% endfor %}
-            {% if not sidebar_domains %}
-            <p class="sidebar-empty">Нет доменов</p>
-            {% endif %}
+            <div class="sidebar-section">
+                <div class="sidebar-online-footer">
+                    <button type="button" id="sidebarOnlineToggle" class="sidebar-online-toggle" aria-expanded="false">
+                        <span>Пользователей онлайн: <span class="sidebar-online-count">{{ sidebar_badges.presence_online or 0 }}</span></span>
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                    <div id="sidebarOnlineList" class="sidebar-online-list is-hidden">
+                        {% if sidebar_badges.online_usernames %}
+                        <ul class="sidebar-online-names">
+                            {% for username in sidebar_badges.online_usernames %}
+                            <li>{{ username }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <p class="sidebar-online-empty">Сейчас нет пользователей онлайн</p>
+                        {% endif %}
+                    </div>
+                </div>
             </div>
         </nav>
     </aside>
@@ -370,6 +411,14 @@
     </script>
     <script>
     (function() {
+        document.querySelectorAll('[data-domain-color]').forEach(function(el) {
+            const c = el.getAttribute('data-domain-color');
+            if (c) el.style.setProperty('--domain-color', c);
+        });
+        document.querySelectorAll('[data-skill-color]').forEach(function(el) {
+            const c = el.getAttribute('data-skill-color');
+            if (c) el.style.setProperty('--skill-color', c);
+        });
         var sidebar = document.getElementById('sidebar');
         var toggle = document.getElementById('sidebarToggle');
         var closeBtn = document.getElementById('sidebarClose');
@@ -406,8 +455,53 @@
                 if (window.matchMedia('(max-width: 900px)').matches) closeSidebar();
             });
         });
+        document.querySelectorAll('.sidebar-collapsible').forEach(function(section) {
+            var toggleBtn = section.querySelector('.sidebar-section-toggle');
+            if (!toggleBtn) return;
+            var groupKey = section.dataset.sidebarGroup || '';
+            var storageKey = groupKey ? ('de_matrix.sidebar.group.' + groupKey) : '';
+            var setExpandedState = function(isExpanded) {
+                section.classList.toggle('is-collapsed', !isExpanded);
+                toggleBtn.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+                if (storageKey) {
+                    try {
+                        sessionStorage.setItem(storageKey, isExpanded ? '1' : '0');
+                    } catch (e) {
+                        console.debug('Sidebar state save skipped', e);
+                    }
+                }
+            };
+            var shouldExpand = !section.classList.contains('is-collapsed');
+            if (storageKey) {
+                try {
+                    var stored = sessionStorage.getItem(storageKey);
+                    if (stored === '1') shouldExpand = true;
+                    else if (stored === '0') shouldExpand = false;
+                } catch (e) {
+                    console.debug('Sidebar state load skipped', e);
+                }
+            }
+            setExpandedState(shouldExpand);
+            toggleBtn.addEventListener('click', function() {
+                var isCollapsed = section.classList.contains('is-collapsed');
+                setExpandedState(isCollapsed);
+            });
+        });
+        var onlineToggle = document.getElementById('sidebarOnlineToggle');
+        var onlineList = document.getElementById('sidebarOnlineList');
+        if (onlineToggle && onlineList) {
+            onlineToggle.addEventListener('click', function() {
+                var nextExpanded = onlineToggle.getAttribute('aria-expanded') !== 'true';
+                onlineToggle.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
+                onlineList.classList.toggle('is-hidden', !nextExpanded);
+            });
+        }
     })();
     </script>
+    <script>
+    window.__matrixColumnSchema = {{ unified_column_schema|default([])|tojson }};
+    </script>
+    <script src="{{ url_for('static', filename='js/matrix_schema_display.js') }}"></script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

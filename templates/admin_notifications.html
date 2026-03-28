@@ -9,9 +9,9 @@
     <div class="import-section">
         <h2><i class="fas fa-envelope-open-text"></i> Notification logs</h2>
         <p class="reload-hint">История отправок email с фильтрацией по статусу и retry failed/skipped событий.</p>
-        <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap: wrap;">
+        <div class="view-toolbar">
             <label for="statusFilter">Статус:</label>
-            <select id="statusFilter" class="form-input" style="max-width:220px;">
+            <select id="statusFilter" class="form-input mw-220">
                 <option value="">all</option>
                 <option value="pending">pending</option>
                 <option value="sent">sent</option>
@@ -19,18 +19,18 @@
                 <option value="skipped">skipped</option>
             </select>
             <label for="searchInput">Поиск:</label>
-            <input id="searchInput" class="form-input" type="text" placeholder="event/recipient/error/created_by" style="min-width:280px;">
-            <label style="display:flex; align-items:center; gap:6px;">
+            <input id="searchInput" class="form-input minw-280" type="text" placeholder="event/recipient/error/created_by">
+            <label class="view-stack">
                 <input id="onlyFailedInput" type="checkbox">
                 Only failed/skipped
             </label>
             <label for="limitInput">Limit:</label>
-            <input id="limitInput" class="form-input" type="number" min="1" max="500" value="100" style="max-width:110px;">
-            <label style="display:flex; align-items:center; gap:6px;">
+            <input id="limitInput" class="form-input mw-110" type="number" min="1" max="500" value="100">
+            <label class="view-stack">
                 <input id="autoRefreshInput" type="checkbox" checked>
                 Auto refresh
             </label>
-            <select id="refreshSecInput" class="form-input" style="max-width:110px;">
+            <select id="refreshSecInput" class="form-input mw-110">
                 <option value="5">5s</option>
                 <option value="10" selected>10s</option>
                 <option value="20">20s</option>

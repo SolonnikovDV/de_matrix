@@ -4,7 +4,7 @@
 
 {% block header_title %}Граф домена: {{ domain.name }}{% endblock %}
 
-{% block footer_hint %}Граф навыков и технологий домена • Двойной клик для перехода{% endblock %}
+{% block footer_hint %}Навигация по графу домена: клик по узлу показывает детали, двойной клик открывает полную страницу листа.{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css">
@@ -217,70 +217,68 @@
         </div>
         <div class="legend-items">
             <div class="legend-item">
-                <div class="legend-color" style="background: {{ domain.name|domain_color }}; border-radius: 50%;"></div>
+                <div class="legend-color legend-circle node-color-domain" data-domain-color="{{ domain.name|domain_color }}"></div>
                 <span>Домен (корневой)</span>
             </div>
             <div class="legend-item">
-                <div class="legend-color" style="background: #2ecc71; border-radius: 50%;"></div>
+                <div class="legend-color legend-circle legend-skill"></div>
                 <span>Навыки</span>
             </div>
             <div class="legend-item">
-                <div class="legend-color" style="background: #f39c12; border-radius: 50%;"></div>
+                <div class="legend-color legend-circle legend-action"></div>
                 <span>Действия</span>
             </div>
             <div class="legend-item">
-                <div class="legend-color" style="background: #9b59b6; border-radius: 50%;"></div>
+                <div class="legend-color legend-circle legend-stack"></div>
                 <span>Технологии</span>
             </div>
         </div>
     </div>
     
-    <div class="graph-modal-overlay" id="graphModalOverlay" style="display: none;">
-        <div class="graph-modal" id="graphModal">
-            <div class="graph-modal-header">
-                <h3 id="graphModalTitle"></h3>
+    <div class="modal-overlay graph-modal-overlay is-hidden" id="graphModalOverlay">
+        <div class="modal-box graph-modal" id="graphModal">
+            <div class="modal-header graph-modal-header">
+                <h3 id="graphModalTitle">Детали узла</h3>
                 <button type="button" class="graph-modal-close" id="graphModalClose">&times;</button>
             </div>
-            <div class="graph-modal-body" id="graphModalBody"></div>
-            <div class="graph-modal-footer" id="graphModalFooter">
+            <div class="modal-body graph-modal-body" id="graphModalBody"></div>
+            <div class="modal-footer graph-modal-footer" id="graphModalFooter">
                 <a href="#" class="btn btn-primary btn-sm" id="graphModalLink"><i class="fas fa-external-link-alt"></i> Открыть полную версию</a>
             </div>
         </div>
     </div>
 </div>
-<style>
-.graph-modal-overlay { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center; }
-.graph-modal { background: white; border-radius: 12px; max-width: 560px; width: 100%; max-height: 80vh; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
-.graph-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 1px solid #eee; }
-.graph-modal-close { background: none; border: none; font-size: 1.5em; cursor: pointer; }
-.graph-modal-body { padding: 20px; overflow-y: auto; max-height: 60vh; }
-.graph-modal-footer { padding: 15px 20px; border-top: 1px solid #eee; }
-.graph-modal-section { margin-bottom: 16px; }
-.graph-modal-type { display: inline-block; padding: 4px 10px; background: #ecf0f1; border-radius: 6px; font-size: 0.85em; font-weight: 600; color: #2c3e50; margin-bottom: 8px; }
-.graph-modal-desc { margin: 0 0 12px 0; color: #5d6d7e; font-size: 0.95em; line-height: 1.5; }
-.graph-modal-section-title { margin: 0 0 10px 0; font-size: 0.95em; color: #7f8c8d; display: flex; align-items: center; gap: 8px; }
-.graph-tree { background: #f8f9fa; border-radius: 8px; padding: 12px; border-left: 3px solid #3498db; }
-.graph-tree-item { padding: 4px 0; font-size: 0.9em; }
-.graph-tree-item[data-depth="0"] { font-weight: 600; color: #2c3e50; }
-.graph-tree-type { font-size: 0.8em; color: #7f8c8d; margin-right: 6px; }
-.graph-tree-level { font-size: 0.75em; color: #2f4f98; margin-left: 4px; }
-.graph-tree-desc { color: #95a5a6; font-size: 0.85em; }
-.graph-tree-leaf-link { color: #3498db; margin-left: 6px; }
-.graph-tree-stack-badge { display: inline-block; padding: 3px 10px; border-radius: 6px; color: white; font-size: 0.9em; }
-.graph-tools-section { background: linear-gradient(135deg, #f8f9fa 0%, #fff 100%); border-radius: 10px; padding: 16px; border: 1px solid #e9ecef; }
-.graph-tools-title { margin: 0 0 8px 0; font-size: 1em; color: #2c3e50; display: flex; align-items: center; gap: 8px; }
-.graph-tools-hint { margin: 0 0 16px 0; font-size: 0.9em; color: #7f8c8d; }
-.graph-tool-card { display: flex; align-items: flex-start; gap: 14px; padding: 14px; background: white; border-radius: 10px; border-left: 4px solid var(--tool-color, #9b59b6); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-.graph-tool-icon { width: 44px; height: 44px; border-radius: 10px; background: var(--tool-color, #9b59b6); color: white; display: flex; align-items: center; justify-content: center; font-size: 1.2em; flex-shrink: 0; }
-.graph-tool-info { flex: 1; }
-.graph-tool-desc { margin: 8px 0 0 0; font-size: 0.9em; color: #5d6d7e; line-height: 1.4; }
-</style>
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
 <script>
+function graphEsc(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function applyDomainGraphDataStyles(scope) {
+    const root = scope || document;
+    root.querySelectorAll('[data-domain-color]').forEach((el) => {
+        const c = el.getAttribute('data-domain-color');
+        if (c) el.style.background = c;
+    });
+    root.querySelectorAll('[data-stack-color]').forEach((el) => {
+        const c = el.getAttribute('data-stack-color');
+        if (c) el.style.setProperty('--stack-color', c);
+    });
+    root.querySelectorAll('[data-indent]').forEach((el) => {
+        const n = Number.parseInt(el.getAttribute('data-indent') || '0', 10);
+        if (!Number.isNaN(n)) el.style.marginLeft = `${n}px`;
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    applyDomainGraphDataStyles(document);
     console.log('Initializing domain graph for domain index:', {{ domain_idx }});
     window.domainGraph = new DomainGraph({{ domain_idx }});
 });
@@ -349,9 +347,17 @@ class DomainGraph {
                 full_name: node.full_name || node.name,
                 type: node.type,
                 description: node.description,
+                responsible: node.responsible,
+                level_sticker: node.level_sticker,
                 icon: node.icon,
                 color: node.color,
-                level_tag: node.level_tag
+                level_tag: node.level_tag,
+                level_tags: node.level_tags,
+                domain_idx: node.domain_idx,
+                skill_idx: node.skill_idx,
+                action_idx: node.action_idx,
+                sub_idx: node.sub_idx,
+                open_action_url: !!node.open_action_url,
             };
             
             switch(node.type) {
@@ -372,6 +378,7 @@ class DomainGraph {
                         heightConstraint: { minimum: 40 }
                     };
                 case 'skill':
+                case 'group':
                     return {
                         ...baseNode,
                         color: {
@@ -388,7 +395,9 @@ class DomainGraph {
                         heightConstraint: { minimum: 35 }
                     };
                 case 'action':
+                case 'branch':
                 case 'subaction':
+                case 'leaf':
                     return {
                         ...baseNode,
                         color: {
@@ -509,8 +518,8 @@ class DomainGraph {
                 const node = this.nodes.get(nodeId);
                 if (node.leaf_path) {
                     window.location.href = `/leaf/${node.leaf_path}`;
-                } else if (node.type === 'action' && node.domain_idx !== undefined) {
-                    window.location.href = `/action/${node.domain_idx}/${node.skill_idx}/${node.action_idx}`;
+                } else if (node.open_action_url && node.domain_idx !== undefined) {
+                    window.location.href = `/leaf/${node.domain_idx}/${node.skill_idx}/${node.action_idx}`;
                 } else if (node.type === 'domain_root') {
                     window.location.href = `/domain/${this.domainIdx}`;
                 }
@@ -537,20 +546,34 @@ class DomainGraph {
         let html = '';
         let linkHref = '';
         let linkText = '';
-        const typeLabels = { domain_root: 'Домен', skill: 'Навык', action: 'Действие', subaction: 'Поддействие', stack: 'Инструмент' };
+        const typeLabels = {
+            domain_root: 'Домен',
+            skill: 'Навык',
+            group: 'Раздел',
+            action: 'Действие',
+            branch: 'Узел',
+            subaction: 'Поддействие',
+            leaf: 'Лист',
+            stack: 'Инструмент'
+        };
         const typeLabel = typeLabels[node.type] || node.type || '';
         if (node.type === 'stack') {
             html = '<div class="graph-modal-section graph-tools-section">';
             html += '<h4 class="graph-tools-title"><i class="fas fa-tools"></i> Инструменты и технологии</h4>';
             html += '<p class="graph-tools-hint">Этот элемент представляет технологию или инструмент, используемый в компетенциях.</p>';
-            html += `<div class="graph-tool-card" style="--tool-color: ${node.color || '#9b59b6'}">`;
+            html += `<div class="graph-tool-card stack-tag-color" data-stack-color="${node.color || '#9b59b6'}">`;
             html += `<div class="graph-tool-icon"><i class="fas fa-${node.icon || 'cube'}"></i></div>`;
             html += `<div class="graph-tool-info"><strong>${node.label || node.full_name || ''}</strong>`;
             if (node.description) html += `<p class="graph-tool-desc">${node.description}</p>`;
             html += '</div></div></div>';
         } else {
+            let propCloud = '';
+            if (typeof window.matrixNodePropertyStickersHtml === 'function') {
+                propCloud = window.matrixNodePropertyStickersHtml(node, graphEsc) || '';
+            }
             html = `<div class="graph-modal-section"><span class="graph-modal-type">${typeLabel}</span>`;
-            if (node.description) html += `<p class="graph-modal-desc">${node.description}</p>`;
+            if (propCloud) html += `<div class="graph-modal-prop-cloud">${propCloud}</div>`;
+            if (node.description) html += `<p class="graph-modal-desc">${graphEsc(node.description)}</p>`;
             html += '</div>';
             html += '<div class="graph-modal-section"><h4 class="graph-modal-section-title"><i class="fas fa-sitemap"></i> Состав дерева до листьев</h4>';
             const subtree = this.buildSubtree(node.id);
@@ -558,12 +581,13 @@ class DomainGraph {
             if (node.leaf_path) {
                 linkHref = `/leaf/${node.leaf_path}`;
                 linkText = 'Открыть полную версию';
-            } else if (node.domain_idx !== undefined) {
-                linkHref = `/action/${node.domain_idx}/${node.skill_idx}/${node.action_idx}`;
+            } else if (node.open_action_url && node.domain_idx !== undefined) {
+                linkHref = `/leaf/${node.domain_idx}/${node.skill_idx}/${node.action_idx}`;
                 linkText = 'Открыть полную версию';
             }
         }
         bodyEl.innerHTML = html;
+        applyDomainGraphDataStyles(bodyEl);
         if (linkHref && linkEl) {
             linkEl.href = linkHref;
             linkEl.innerHTML = '<i class="fas fa-external-link-alt"></i> ' + (linkText || 'Открыть полную версию');
@@ -600,18 +624,30 @@ class DomainGraph {
         depth = depth || 0;
         const { node, children } = subtree;
         const indent = depth * 16;
-        const typeLabels = { domain_root: 'Домен', skill: 'Навык', action: 'Действие', subaction: 'Поддействие', stack: 'Инструмент' };
+        const typeLabels = {
+            domain_root: 'Домен',
+            skill: 'Навык',
+            group: 'Раздел',
+            action: 'Действие',
+            branch: 'Узел',
+            subaction: 'Поддействие',
+            leaf: 'Лист',
+            stack: 'Инструмент'
+        };
         const typeLabel = typeLabels[node.type] || node.type || '';
         const isLeaf = node.leaf_path && children.length === 0;
-        let html = `<div class="graph-tree-item" style="margin-left: ${indent}px;" data-depth="${depth}" data-type="${node.type}">`;
+        let html = `<div class="graph-tree-item graph-tree-indent" data-indent="${indent}" data-depth="${depth}" data-type="${node.type}">`;
         html += `<span class="graph-tree-node"><span class="graph-tree-type">${typeLabel}</span> `;
         if (node.type === 'stack') {
-            html += `<span class="graph-tree-stack-badge" style="background: ${node.color || '#9b59b6'};"><i class="fas fa-${node.icon || 'cube'}"></i> ${node.label || node.full_name || ''}</span>`;
+            html += `<span class="graph-tree-stack-badge stack-tag-color" data-stack-color="${node.color || '#9b59b6'}"><i class="fas fa-${node.icon || 'cube'}"></i> ${node.label || node.full_name || ''}</span>`;
         } else {
             html += (node.label || node.full_name || '');
+            let stickers = '';
+            if (typeof window.matrixNodePropertyStickersHtml === 'function') {
+                stickers = window.matrixNodePropertyStickersHtml(node, graphEsc) || '';
+            }
+            if (stickers) html += stickers;
         }
-        if (node.level_tag) html += ` <span class="graph-tree-level">[${String(node.level_tag).toUpperCase()}]</span>`;
-        if (node.description && node.type !== 'stack') html += ` <span class="graph-tree-desc">— ${node.description.substring(0, 80)}${node.description.length > 80 ? '…' : ''}</span>`;
         if (isLeaf) html += ` <a href="/leaf/${node.leaf_path}" class="graph-tree-leaf-link" target="_blank"><i class="fas fa-external-link-alt"></i></a>`;
         html += `</span>`;
         if (children.length) {
@@ -649,17 +685,25 @@ class DomainGraph {
                 desc = div.textContent || div.innerText || '';
             }
             if (desc.length > 400) desc = desc.substring(0, 397) + '…';
-            let extra = '';
-            if (data.level_tag) {
-                extra += `<p><strong>Уровень:</strong> ${String(data.level_tag).toUpperCase()}</p>`;
+            const stickerNode = {
+                description: desc,
+                responsible: data.responsible || '',
+                level_tags: data.level_tags,
+                level_tag: data.level_tag,
+            };
+            let propCloud = '';
+            if (typeof window.matrixNodePropertyStickersHtml === 'function') {
+                propCloud = window.matrixNodePropertyStickersHtml(stickerNode, graphEsc) || '';
             }
+            let extra = '';
             if (data.literature && data.literature.length) {
                 const titles = data.literature.map(l => l.title || l.id || '').filter(Boolean);
                 if (titles.length) {
                     extra += `<p><strong>Литература:</strong> ${titles.join('; ')}</p>`;
                 }
             }
-            bodyEl.innerHTML = desc ? `${desc.replace(/\n/g, '<br>')}${extra}` : `<p>Нет краткого описания.</p>${extra}`;
+            const cloudBlock = propCloud ? `<div class="graph-modal-prop-cloud">${propCloud}</div>` : '';
+            bodyEl.innerHTML = cloudBlock + (desc ? `<div class="section-content">${desc.replace(/\n/g, '<br>')}</div>` : `<p>Нет краткого описания.</p>`) + extra;
         } catch (e) {
             bodyEl.innerHTML = '<p class="error-message">Не удалось загрузить описание.</p>';
         }

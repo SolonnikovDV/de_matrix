@@ -29,9 +29,14 @@ CREATE TABLE IF NOT EXISTS actions (
     text TEXT NOT NULL,
     template_id VARCHAR(128),
     level_tag VARCHAR(16),
+    level_tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+    leaf_view JSONB NOT NULL DEFAULT '{}'::jsonb,
     review_questions JSONB NOT NULL DEFAULT '[]'::jsonb,
     sort_order INTEGER NOT NULL DEFAULT 0
 );
+
+ALTER TABLE actions ADD COLUMN IF NOT EXISTS level_tags JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE actions ADD COLUMN IF NOT EXISTS leaf_view JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS subactions (
     id SERIAL PRIMARY KEY,
@@ -39,9 +44,14 @@ CREATE TABLE IF NOT EXISTS subactions (
     text TEXT NOT NULL,
     template_id VARCHAR(128),
     level_tag VARCHAR(16),
+    level_tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+    leaf_view JSONB NOT NULL DEFAULT '{}'::jsonb,
     review_questions JSONB NOT NULL DEFAULT '[]'::jsonb,
     sort_order INTEGER NOT NULL DEFAULT 0
 );
+
+ALTER TABLE subactions ADD COLUMN IF NOT EXISTS level_tags JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE subactions ADD COLUMN IF NOT EXISTS leaf_view JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS action_templates (
     id VARCHAR(128) PRIMARY KEY,
@@ -139,6 +149,8 @@ CREATE TABLE IF NOT EXISTS notification_logs (
 
 ALTER TABLE domains ADD COLUMN IF NOT EXISTS code VARCHAR(255);
 ALTER TABLE skills ADD COLUMN IF NOT EXISTS code VARCHAR(255);
+ALTER TABLE skills ADD COLUMN IF NOT EXISTS responsible VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE skills ADD COLUMN IF NOT EXISTS level_sticker VARCHAR(16);
 ALTER TABLE actions ADD COLUMN IF NOT EXISTS code VARCHAR(255);
 ALTER TABLE subactions ADD COLUMN IF NOT EXISTS code VARCHAR(255);
 ALTER TABLE action_templates ADD COLUMN IF NOT EXISTS name VARCHAR(255) NOT NULL DEFAULT '';
@@ -247,9 +259,13 @@ CREATE TABLE IF NOT EXISTS staging_skills (
     code VARCHAR(255) NOT NULL,
     name VARCHAR(255) NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    responsible VARCHAR(255) NOT NULL DEFAULT '',
+    level_sticker VARCHAR(16),
     sort_order INTEGER NOT NULL DEFAULT 0,
     CONSTRAINT uq_staging_skill_code UNIQUE (batch_id, domain_code, code)
 );
+ALTER TABLE staging_skills ADD COLUMN IF NOT EXISTS responsible VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE staging_skills ADD COLUMN IF NOT EXISTS level_sticker VARCHAR(16);
 
 CREATE TABLE IF NOT EXISTS staging_actions (
     id SERIAL PRIMARY KEY,
@@ -259,9 +275,14 @@ CREATE TABLE IF NOT EXISTS staging_actions (
     text TEXT NOT NULL,
     template_id VARCHAR(128),
     level_tag VARCHAR(16),
+    level_tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+    leaf_view JSONB NOT NULL DEFAULT '{}'::jsonb,
     sort_order INTEGER NOT NULL DEFAULT 0,
     CONSTRAINT uq_staging_action_code UNIQUE (batch_id, skill_code, code)
 );
+
+ALTER TABLE staging_actions ADD COLUMN IF NOT EXISTS level_tags JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE staging_actions ADD COLUMN IF NOT EXISTS leaf_view JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS staging_subactions (
     id SERIAL PRIMARY KEY,
@@ -271,9 +292,14 @@ CREATE TABLE IF NOT EXISTS staging_subactions (
     text TEXT NOT NULL,
     template_id VARCHAR(128),
     level_tag VARCHAR(16),
+    level_tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+    leaf_view JSONB NOT NULL DEFAULT '{}'::jsonb,
     sort_order INTEGER NOT NULL DEFAULT 0,
     CONSTRAINT uq_staging_subaction_code UNIQUE (batch_id, action_code, code)
 );
+
+ALTER TABLE staging_subactions ADD COLUMN IF NOT EXISTS level_tags JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE staging_subactions ADD COLUMN IF NOT EXISTS leaf_view JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS staging_action_review_questions (
     id SERIAL PRIMARY KEY,
@@ -304,4 +330,18 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255) NOT NULL DEFAULT '
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255) NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE TABLE IF NOT EXISTS user_presence_sessions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    username VARCHAR(64) NOT NULL DEFAULT '',
+    session_token VARCHAR(128) UNIQUE NOT NULL,
+    ip_address VARCHAR(128) NOT NULL DEFAULT '',
+    user_agent VARCHAR(512) NOT NULL DEFAULT '',
+    login_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    logout_at TIMESTAMPTZ,
+    ended_reason VARCHAR(32) NOT NULL DEFAULT ''
+);
 

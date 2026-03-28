@@ -7,6 +7,8 @@
 from typing import Dict, List, Any, Optional, Tuple
 import re
 
+from core.matrix_schema import normalize_level_tags
+
 
 def _normalize_children(
     items: List[Dict],
@@ -42,10 +44,20 @@ def _normalize_children(
                 "level": level,
                 "is_leaf": False,
             }
-            if item.get("level_tag"):
+            if (item.get("description") or "").strip():
+                node["description"] = str(item.get("description") or "").strip()
+            if (item.get("responsible") or "").strip():
+                node["responsible"] = str(item.get("responsible") or "").strip()
+            ltags = normalize_level_tags(item.get("level_tags") or item.get("level_tag"))
+            if ltags:
+                node["level_tags"] = ltags
+            elif item.get("level_tag"):
                 node["level_tag"] = item.get("level_tag")
             if item.get("review_questions"):
                 node["review_questions"] = item.get("review_questions")
+            lv = item.get("leaf_view")
+            if isinstance(lv, dict) and lv:
+                node["leaf_view"] = lv
             out.append(node)
         else:
             node = {
@@ -57,34 +69,83 @@ def _normalize_children(
                 "level": level,
                 "is_leaf": True,
             }
-            if item.get("level_tag"):
+            if (item.get("description") or "").strip():
+                node["description"] = str(item.get("description") or "").strip()
+            if (item.get("responsible") or "").strip():
+                node["responsible"] = str(item.get("responsible") or "").strip()
+            ltags = normalize_level_tags(item.get("level_tags") or item.get("level_tag"))
+            if ltags:
+                node["level_tags"] = ltags
+            elif item.get("level_tag"):
                 node["level_tag"] = item.get("level_tag")
             if item.get("review_questions"):
                 node["review_questions"] = item.get("review_questions")
+            lv = item.get("leaf_view")
+            if isinstance(lv, dict) and lv:
+                node["leaf_view"] = lv
             out.append(node)
     return out
 
 
-def _normalize_legacy_domains(domains: List[Dict]) -> List[Dict]:
-    """Преобразует legacy-формат (domains -> skills -> actions [-> subactions]) в универсальные узлы с children. Автоскейл по дочерним."""
+def strip_transient_node_fields(nodes: List[Dict]) -> List[Dict]:
+    """Удаляет id, path, is_leaf из узлов перед сохранением снапшота (CR / merge)."""
+    out: List[Dict] = []
+    for n in nodes or []:
+        if not isinstance(n, dict):
+            continue
+        c = {k: v for k, v in n.items() if k not in ("id", "path", "is_leaf")}
+        ch = n.get("children")
+        if isinstance(ch, list) and ch:
+            c["children"] = strip_transient_node_fields(ch)
+        else:
+            c["children"] = []
+        out.append(c)
+    return out
+
+
+def assign_paths_to_generic_nodes(nodes: List[Dict], base: Optional[List[int]] = None) -> None:
+    """Проставляет path (индексы для /leaf/...) узлам generic-дерева { name, children }."""
+    base = base or []
+    for i, node in enumerate(nodes):
+        if not isinstance(node, dict):
+            continue
+        path = base + [i]
+        node["path"] = path
+        ch = node.get("children") or []
+        if ch:
+            assign_paths_to_generic_nodes(ch, path)
+
+
+def tabular_hierarchy_to_nodes(domains: List[Dict]) -> List[Dict]:
+    """Табличная иерархия домен→навык→действие (внутренний формат парсера Excel) → дерево с id/path для снятия полей."""
     result = []
     for di, domain in enumerate(domains):
         node = {
             "id": f"d{di}",
             "name": domain.get("name", ""),
+            "description": domain.get("description", ""),
+            "responsible": domain.get("responsible", ""),
             "path": [di],
             "children": [],
             "level": 0,
         }
+        dtags = normalize_level_tags(domain.get("level_tags") or domain.get("level_tag"))
+        if dtags:
+            node["level_tags"] = dtags
         for si, skill in enumerate(domain.get("skills", [])):
             skill_node = {
                 "id": f"d{di}s{si}",
                 "name": skill.get("name", ""),
                 "description": skill.get("description", ""),
+                "responsible": skill.get("responsible", ""),
+                "level_sticker": skill.get("level_sticker", ""),
                 "path": [di, si],
                 "children": [],
                 "level": 1,
             }
+            stags = normalize_level_tags(skill.get("level_tags") or skill.get("level_sticker") or skill.get("level_tag"))
+            if stags:
+                skill_node["level_tags"] = stags
             actions = skill.get("actions", [])
             skill_node["children"] = _normalize_children(actions, [di, si], f"d{di}s{si}a", 2)
             node["children"].append(skill_node)
@@ -102,28 +163,17 @@ def _ensure_leaves_flag(nodes: List[Dict]) -> None:
 
 
 def build_tree_from_matrix_data(data: Dict) -> List[Dict]:
-    """
-    Строит дерево из данных матрицы.
-    Поддерживает:
-    - legacy: { "domains": [ { "name", "skills": [ { "name", "actions": [...] } ] } ] }
-    - generic: { "nodes": [ { "name", "children": [...] } ] } — произвольная глубина
-    """
-    if "nodes" in data:
-        # Уже generic-дерево
-        nodes = data["nodes"]
-        _ensure_leaves_flag(nodes)
-        return nodes
-
-    if "domains" in data:
-        nodes = _normalize_legacy_domains(data["domains"])
-        _ensure_leaves_flag(nodes)
-        return nodes
-
-    return []
+    """Строит дерево из `nodes` (пути и is_leaf). Пустой список, если узлов нет."""
+    nodes = (data or {}).get("nodes") or []
+    if not isinstance(nodes, list) or not nodes:
+        return []
+    assign_paths_to_generic_nodes(nodes)
+    _ensure_leaves_flag(nodes)
+    return nodes
 
 
 def collect_leaves(nodes: List[Dict], base_path: Optional[List[int]] = None) -> List[Dict]:
-    """Собирает все листья с полными path (path уже задан в узлах при legacy-нормализации)."""
+    """Собирает все листья с полными path (path задаётся assign_paths_to_generic_nodes / билдером дерева)."""
     base_path = base_path or []
     leaves = []
     for i, node in enumerate(nodes):
@@ -156,15 +206,15 @@ def path_to_url(path: List[int]) -> str:
 
 
 def get_ancestors(nodes: List[Dict], path: List[int]) -> List[Dict]:
-    """Возвращает список предков от корня до узла по path (не включая сам узел)."""
+    """Предки узла по path: от корня до родителя; сам узел path в список не входит."""
     if not path:
         return []
     idx = int(path[0])
     if idx < 0 or idx >= len(nodes):
         return []
     node = nodes[idx]
-    ancestors = [node]
     if len(path) == 1:
-        return ancestors
+        return []
+    ancestors = [node]
     ancestors.extend(get_ancestors(node.get("children", []), path[1:]))
     return ancestors

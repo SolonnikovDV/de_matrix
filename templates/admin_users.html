@@ -9,17 +9,181 @@
     <div class="import-section">
         <h2><i class="fas fa-user-shield"></i> Пользователи и роли</h2>
         <p class="reload-hint">Управление учетными записями: добавить, изменить роль, переименовать, удалить.</p>
-        <div style="display:flex; gap:10px; margin-bottom:14px;">
-            <button class="btn btn-primary" onclick="createUser()"><i class="fas fa-user-plus"></i> Добавить</button>
+        <div class="view-toolbar">
+            <button class="btn btn-primary" onclick="openCreateUserModal()"><i class="fas fa-user-plus"></i> Добавить</button>
             <button class="btn btn-secondary" onclick="loadUsers()"><i class="fas fa-sync"></i> Обновить</button>
         </div>
         <div id="usersList"></div>
+    </div>
+</div>
+
+<div class="modal-overlay is-hidden" id="createUserModal" aria-hidden="true">
+    <div class="modal-box mw-640">
+        <h3><i class="fas fa-user-plus"></i> Добавить пользователя</h3>
+        <p class="reload-hint">Имя пользователя (system name) задается вручную, имя профиля генерируется по правилам роли.</p>
+        <div class="form-group">
+            <label for="createUserUsername">Username</label>
+            <input id="createUserUsername" class="form-input" type="text" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label for="createUserEmail">Email</label>
+            <input id="createUserEmail" class="form-input" type="email" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label for="createUserRole">Role</label>
+            <select id="createUserRole" class="form-input">
+                <option value="user" selected>user</option>
+                <option value="admin">admin</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="createUserTempPassword">Temporary password (min 10 chars)</label>
+            <input id="createUserTempPassword" class="form-input" type="password" minlength="10" autocomplete="new-password">
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-primary" onclick="createUser()"><i class="fas fa-save"></i> Создать</button>
+            <button type="button" class="btn btn-secondary" onclick="closeCreateUserModal()">Отмена</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay is-hidden" id="editUserModal" aria-hidden="true">
+    <div class="modal-box mw-640">
+        <h3><i class="fas fa-user-pen"></i> Редактирование пользователя</h3>
+        <p id="editUserMeta" class="reload-hint"></p>
+        <div class="form-group">
+            <label for="editUserFullName">Имя</label>
+            <input id="editUserFullName" class="form-input" type="text">
+        </div>
+        <div class="form-group">
+            <label for="editUserEmail">Email</label>
+            <input id="editUserEmail" class="form-input" type="email">
+        </div>
+        <div class="form-group">
+            <label for="editUserRole">Role</label>
+            <select id="editUserRole" class="form-input">
+                <option value="user">user</option>
+                <option value="admin">admin</option>
+            </select>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-primary" onclick="saveUserEdit()"><i class="fas fa-save"></i> Сохранить</button>
+            <button type="button" class="btn btn-secondary" onclick="closeEditUserModal()">Отмена</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay is-hidden" id="resetPasswordModal" aria-hidden="true">
+    <div class="modal-box mw-640">
+        <h3><i class="fas fa-key"></i> Сброс временного пароля</h3>
+        <p id="resetPasswordMeta" class="reload-hint"></p>
+        <div class="form-group">
+            <label for="resetPasswordInput">Новый временный пароль (min 10 chars)</label>
+            <input id="resetPasswordInput" class="form-input" type="password" minlength="10" autocomplete="new-password">
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-warning" onclick="saveResetPassword()"><i class="fas fa-save"></i> Сбросить</button>
+            <button type="button" class="btn btn-secondary" onclick="closeResetPasswordModal()">Отмена</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay is-hidden" id="deleteUserModal" aria-hidden="true">
+    <div class="modal-box mw-560">
+        <h3><i class="fas fa-trash"></i> Удаление пользователя</h3>
+        <p id="deleteUserMeta" class="reload-hint"></p>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-danger" onclick="confirmDeleteUser()"><i class="fas fa-trash"></i> Удалить</button>
+            <button type="button" class="btn btn-secondary" onclick="closeDeleteUserModal()">Отмена</button>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+let currentEditUser = null;
+let currentResetUser = null;
+let currentDeleteUser = null;
+
+function isEmailMaskValid(email) {
+    const v = String(email || '').trim();
+    if (!v) return true;
+    return /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(v);
+}
+
+function setCreateModalVisible(visible) {
+    const modal = document.getElementById('createUserModal');
+    if (!modal) return;
+    modal.classList.toggle('is-hidden', !visible);
+    modal.style.display = visible ? 'flex' : 'none';
+    modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function openCreateUserModal() {
+    document.getElementById('createUserUsername').value = '';
+    document.getElementById('createUserEmail').value = '';
+    document.getElementById('createUserRole').value = 'user';
+    document.getElementById('createUserTempPassword').value = '';
+    setCreateModalVisible(true);
+}
+
+function closeCreateUserModal() {
+    setCreateModalVisible(false);
+}
+
+function setEditModalVisible(visible) {
+    const modal = document.getElementById('editUserModal');
+    if (!modal) return;
+    modal.classList.toggle('is-hidden', !visible);
+    modal.style.display = visible ? 'flex' : 'none';
+    modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function closeEditUserModal() {
+    currentEditUser = null;
+    setEditModalVisible(false);
+}
+
+function setResetPasswordModalVisible(visible) {
+    const modal = document.getElementById('resetPasswordModal');
+    if (!modal) return;
+    modal.classList.toggle('is-hidden', !visible);
+    modal.style.display = visible ? 'flex' : 'none';
+    modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function openResetPasswordModal(id, username) {
+    currentResetUser = { id, username };
+    document.getElementById('resetPasswordMeta').textContent = `Пользователь: ${username}`;
+    document.getElementById('resetPasswordInput').value = '';
+    setResetPasswordModalVisible(true);
+}
+
+function closeResetPasswordModal() {
+    currentResetUser = null;
+    setResetPasswordModalVisible(false);
+}
+
+function setDeleteUserModalVisible(visible) {
+    const modal = document.getElementById('deleteUserModal');
+    if (!modal) return;
+    modal.classList.toggle('is-hidden', !visible);
+    modal.style.display = visible ? 'flex' : 'none';
+    modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function openDeleteUserModal(id, username) {
+    currentDeleteUser = { id, username };
+    document.getElementById('deleteUserMeta').textContent = `Удалить пользователя ${username}?`;
+    setDeleteUserModalVisible(true);
+}
+
+function closeDeleteUserModal() {
+    currentDeleteUser = null;
+    setDeleteUserModalVisible(false);
+}
+
 async function loadUsers() {
     const el = document.getElementById('usersList');
     el.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i><p>Загрузка...</p></div>';
@@ -34,8 +198,10 @@ async function loadUsers() {
         el.innerHTML = '<p>Пользователей пока нет.</p>';
         return;
     }
-    let html = '<table class="preview-table"><thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Имя</th><th>Email</th><th>Активен</th><th>Смена пароля</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
+    let html = '<table class="preview-table"><thead><tr><th>ID</th><th>Username</th><th>Role</th><th>Имя</th><th>Email</th><th>Активен</th><th>Смена пароля</th><th>Created</th><th>Updated</th><th>Actions</th></tr></thead><tbody>';
     for (const u of items) {
+        const canEdit = (u.edit_mode || 'full') !== 'none';
+        const canResetPassword = (u.edit_mode || 'full') === 'full';
         html += `<tr>
             <td>${u.id}</td>
             <td>${u.username}</td>
@@ -45,10 +211,11 @@ async function loadUsers() {
             <td>${u.is_active ? 'yes' : 'no'}</td>
             <td>${u.must_change_password ? 'required' : 'ok'}</td>
             <td>${u.created_at || ''}</td>
+            <td>${u.updated_at || ''}</td>
             <td>
-                <button class="btn btn-sm btn-info" onclick='editUser(${JSON.stringify(u)})'>Edit</button>
-                <button class="btn btn-sm btn-warning" onclick='resetTempPassword(${u.id}, ${JSON.stringify(u.username)})'>Reset password</button>
-                <button class="btn btn-sm btn-danger" onclick='deleteUser(${u.id}, ${JSON.stringify(u.username)})'>Delete</button>
+                ${canEdit ? `<button class="btn btn-sm btn-info" onclick='editUser(${JSON.stringify(u)})'>Edit</button>` : ''}
+                ${canResetPassword ? `<button class="btn btn-sm btn-warning" onclick='openResetPasswordModal(${u.id}, ${JSON.stringify(u.username)})'>Reset password</button>` : ''}
+                <button class="btn btn-sm btn-danger" onclick='openDeleteUserModal(${u.id}, ${JSON.stringify(u.username)})'>Delete</button>
             </td>
         </tr>`;
     }
@@ -57,12 +224,22 @@ async function loadUsers() {
 }
 
 async function createUser() {
-    const username = (prompt('Username:', '') || '').trim();
-    if (!username) return;
-    const full_name = (prompt('Full name:', '') || '').trim();
-    const email = (prompt('Email:', '') || '').trim();
-    const role = ((prompt('Role (user/admin):', 'user') || 'user').trim().toLowerCase());
-    const temp_password = (prompt('Temporary password (min 10 chars):', '') || '').trim();
+    const username = (document.getElementById('createUserUsername').value || '').trim();
+    if (!username) {
+        alert('Username cannot be empty');
+        return;
+    }
+    const email = (document.getElementById('createUserEmail').value || '').trim();
+    const role = (document.getElementById('createUserRole').value || 'user').trim().toLowerCase();
+    const temp_password = (document.getElementById('createUserTempPassword').value || '').trim();
+    if (!role) {
+        alert('Role cannot be empty');
+        return;
+    }
+    if (!isEmailMaskValid(email)) {
+        alert('Invalid email format');
+        return;
+    }
     if (temp_password.length < 10) {
         alert('Temporary password must be at least 10 characters');
         return;
@@ -70,66 +247,134 @@ async function createUser() {
     const r = await fetch('/api/admin/users', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ username, role, full_name, email, temp_password }),
+        body: JSON.stringify({ username, role, email, temp_password }),
     });
     const data = await r.json();
-    if (data.ok) alert('Пользователь создан. Временный пароль выдан, обязательна смена при первом входе.');
-    else alert(data.error || 'Ошибка создания');
+    if (data.ok) {
+        closeCreateUserModal();
+        alert('Пользователь создан. Временный пароль выдан, обязательна смена при первом входе.');
+    } else {
+        alert(data.error || 'Ошибка создания');
+    }
     await loadUsers();
 }
 
 async function editUser(current) {
-    const username = prompt('New username:', current.username || '');
-    if (username === null) return;
-    const role = prompt('New role (user/admin):', current.role || 'user');
-    if (role === null) return;
-    const full_name = prompt('Full name:', current.full_name || '');
-    if (full_name === null) return;
-    const email = prompt('Email:', current.email || '');
-    if (email === null) return;
-    const is_active = confirm('Аккаунт активен? OK=yes, Cancel=no');
-    const r = await fetch(`/api/admin/users/${current.id}`, {
+    const mode = current.edit_mode || 'full';
+    if (mode === 'none') {
+        alert('E2E Admin не редактируется. Разрешено только удаление.');
+        return;
+    }
+    currentEditUser = current;
+    const fullNameInput = document.getElementById('editUserFullName');
+    const emailInput = document.getElementById('editUserEmail');
+    const roleInput = document.getElementById('editUserRole');
+    const meta = document.getElementById('editUserMeta');
+    const isEmailOnly = mode === 'email_only';
+    fullNameInput.value = current.full_name || '';
+    emailInput.value = current.email || '';
+    roleInput.value = (current.role || 'user').toLowerCase();
+    fullNameInput.disabled = isEmailOnly;
+    roleInput.disabled = isEmailOnly;
+    meta.textContent = `Username: ${current.username || ''} · ID: ${current.id} · mode: ${isEmailOnly ? 'email_only' : 'full'}`;
+    setEditModalVisible(true);
+}
+
+async function saveUserEdit() {
+    if (!currentEditUser) return;
+    const mode = currentEditUser.edit_mode || 'full';
+    const full_name = (document.getElementById('editUserFullName').value || '').trim();
+    const email = (document.getElementById('editUserEmail').value || '').trim();
+    const role = (document.getElementById('editUserRole').value || 'user').trim().toLowerCase();
+    if (!isEmailMaskValid(email)) {
+        alert('Invalid email format');
+        return;
+    }
+    const payload = { email };
+    if (mode !== 'email_only') {
+        if (!full_name) {
+            alert('Full name cannot be empty');
+            return;
+        }
+        if (!role) {
+            alert('Role cannot be empty');
+            return;
+        }
+        const nextRole = role;
+        const prevRole = String(currentEditUser.role || '').trim().toLowerCase();
+        const nextName = full_name;
+        const prevName = String(currentEditUser.full_name || '').trim();
+        payload.role = nextRole;
+        // If only role changed and name was not explicitly changed, backend applies role-default name.
+        if (!(nextRole !== prevRole && nextName === prevName)) {
+            payload.full_name = nextName;
+        }
+    }
+    const r = await fetch(`/api/admin/users/${currentEditUser.id}`, {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            username: username.trim(),
-            role: role.trim().toLowerCase(),
-            full_name: full_name.trim(),
-            email: email.trim(),
-            is_active,
-        }),
+        body: JSON.stringify(payload),
     });
     const data = await r.json();
-    if (!data.ok) alert(data.error || 'Ошибка обновления');
+    if (!data.ok) {
+        alert(data.error || 'Ошибка обновления');
+        return;
+    }
+    closeEditUserModal();
     await loadUsers();
 }
 
-async function resetTempPassword(id, username) {
-    const reset_temp_password = (prompt(`Новый временный пароль для ${username}:`, '') || '').trim();
+async function saveResetPassword() {
+    if (!currentResetUser) return;
+    const reset_temp_password = (document.getElementById('resetPasswordInput').value || '').trim();
     if (!reset_temp_password) return;
-    const r = await fetch(`/api/admin/users/${id}`, {
+    if (reset_temp_password.length < 10) {
+        alert('Temporary password must be at least 10 characters');
+        return;
+    }
+    const r = await fetch(`/api/admin/users/${currentResetUser.id}`, {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ reset_temp_password }),
     });
     const data = await r.json();
-    if (data.ok) alert('Временный пароль установлен. При следующем входе пользователь обязан сменить пароль.');
-    else alert(data.error || 'Ошибка сброса пароля');
+    if (data.ok) {
+        closeResetPasswordModal();
+        alert('Временный пароль установлен. При следующем входе пользователь обязан сменить пароль.');
+    } else {
+        alert(data.error || 'Ошибка сброса пароля');
+    }
     await loadUsers();
 }
 
-async function deleteUser(id, username) {
-    if (!confirm(`Удалить пользователя ${username}?`)) return;
-    const r = await fetch(`/api/admin/users/${id}`, {
+async function confirmDeleteUser() {
+    if (!currentDeleteUser) return;
+    const r = await fetch(`/api/admin/users/${currentDeleteUser.id}`, {
         method: 'DELETE',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({}),
     });
     const data = await r.json();
-    if (!data.ok) alert(data.error || 'Ошибка удаления');
+    if (!data.ok) {
+        alert(data.error || 'Ошибка удаления');
+        return;
+    }
+    closeDeleteUserModal();
     await loadUsers();
 }
 
 document.addEventListener('DOMContentLoaded', loadUsers);
+document.getElementById('createUserModal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'createUserModal') closeCreateUserModal();
+});
+document.getElementById('editUserModal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'editUserModal') closeEditUserModal();
+});
+document.getElementById('resetPasswordModal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'resetPasswordModal') closeResetPasswordModal();
+});
+document.getElementById('deleteUserModal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'deleteUserModal') closeDeleteUserModal();
+});
 </script>
 {% endblock %}

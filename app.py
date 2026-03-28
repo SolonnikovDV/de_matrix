@@ -1,4 +1,7 @@
 import json
+import csv
+import io
+import html as html_lib
 import os
 import re
 import hashlib
@@ -6,23 +9,39 @@ import sys
 import argparse
 import socket
 import smtplib
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timezone, timedelta
 from email.message import EmailMessage
-from flask import Flask, render_template, jsonify, abort, send_from_directory, request, session, redirect, url_for
+from flask import Flask, render_template, jsonify, abort, send_from_directory, request, session, redirect, url_for, Response
 from werkzeug.security import generate_password_hash, check_password_hash
 
+from copy import deepcopy
 from pathlib import Path as PathLib
 from typing import Dict, Optional, Tuple, Any, List, Set
 
 from core.tree import (
+    assign_paths_to_generic_nodes,
     build_tree_from_matrix_data,
     collect_leaves,
     get_node_by_path,
     get_ancestors,
     path_to_url,
+    strip_transient_node_fields,
 )
-from core.loaders import load_unified_source, load_excel, META_KEYS
+from core.loaders import load_unified_source, load_excel_for_matrix_import, META_KEYS
 from core.schema import validate_source, get_schema_info
+from core.matrix_schema import (
+    action_level_tags_for_json,
+    build_constructor_levels,
+    effective_matrix_column_schema,
+    matrix_roundtrip_header_cell,
+    merge_matrix_levels,
+    normalize_level_tags,
+    schema_entries_for_ui,
+    subaction_level_tags_for_json,
+    STICKER_GRADES,
+    TAG_SKILL_STICKER,
+)
 from core import config_loader as _config_loader
 from core.config_loader import load_app_config, load_metadata, invalidate_metadata_cache
 from core.tools_matcher import get_tools_for_text
@@ -43,11 +62,13 @@ from core.backup import (
     ensure_stable_backup,
 )
 from core.upload_merge import merge_upload_into_source
+from core.excel_unified_export import build_unified_export_table
 from core.diff_engine import build_revision_payload
 from storage.runtime import get_storage_mode, approval_required as storage_approval_required
 from storage.db import db_session, ENGINE
 from storage.models import (
     Base,
+    MATRIX_STRUCT_SCHEMA,
     ChangeRequest,
     ChangeRevision,
     ApprovalDecision,
@@ -55,8 +76,9 @@ from storage.models import (
     ChangeDiscussionThread,
     ChangeDiscussionMessage,
     NotificationLog,
+    UserPresenceSession,
 )
-from sqlalchemy import select, text, func, or_
+from sqlalchemy import select, text, func, or_, asc, desc
 from storage.approval_repo import (
     create_change_request,
     add_revision,
@@ -64,13 +86,12 @@ from storage.approval_repo import (
     get_latest_payload,
     list_change_requests,
     get_change_request_details,
+    leaf_path_hints_from_applied_changes,
 )
 from storage.postgres_repo import (
     load_unified_from_db,
     replace_unified_in_db,
-    list_domains as list_domains_from_db,
-    load_tree_projection,
-    upsert_from_staging_projection,
+    load_matrix_nodes_nested,
 )
 from storage.staging_repo import create_staging_batch, load_staging_tree_projection
 from storage.mongo_repo import (
@@ -89,12 +110,19 @@ REPOSITORY_URL = os.environ.get("DE_MATRIX_REPO_URL", "https://github.com/Solonn
 SECRET_KEY = os.environ.get("DE_MATRIX_SECRET_KEY") or hashlib.sha256(os.urandom(32)).hexdigest()
 ADMIN_USERNAME = os.environ.get("DE_MATRIX_ADMIN_USERNAME", "admin")
 ADMIN_BOOTSTRAP_PASSWORD = os.environ.get("DE_MATRIX_ADMIN_PASSWORD", "")
+ADMIN_DISPLAY_NAME = (os.environ.get("DE_MATRIX_ADMIN_FULL_NAME") or "System Administrator").strip() or "System Administrator"
+SYSTEM_ADMIN_NAME = "System Administrator"
+APP_USER_NAME = "App User"
+CUSTOM_ADMIN_NAME = "Custom Administrator"
+E2E_ADMIN_USERNAME = "e2e_admin"
 TRUST_REQUEST_ROLE = os.environ.get("DE_MATRIX_TRUST_REQUEST_ROLE", "0").strip().lower() in ("1", "true", "yes")
 AUTH_REQUIRED = os.environ.get("DE_MATRIX_AUTH_REQUIRED", "1").strip().lower() in ("1", "true", "yes")
 NOTIFICATIONS_ENABLED = os.environ.get("DE_MATRIX_NOTIFICATIONS_ENABLED", "1").strip().lower() in ("1", "true", "yes")
 SMTP_HOST = (os.environ.get("DE_MATRIX_SMTP_HOST") or "smtp").strip()
 SMTP_PORT = int((os.environ.get("DE_MATRIX_SMTP_PORT") or "1025").strip())
 SMTP_FROM = (os.environ.get("DE_MATRIX_SMTP_FROM") or "de-matrix@localhost").strip()
+PRESENCE_ONLINE_SECONDS = int((os.environ.get("DE_MATRIX_PRESENCE_ONLINE_SECONDS") or "120").strip())
+PRESENCE_AWAY_SECONDS = int((os.environ.get("DE_MATRIX_PRESENCE_AWAY_SECONDS") or "900").strip())
 app.config["SECRET_KEY"] = SECRET_KEY
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -142,13 +170,16 @@ def _ensure_admin_seed():
     with db_session() as db:
         admin = db.execute(select(User).where(User.username == ADMIN_USERNAME)).scalars().first()
         if admin:
+            if (admin.full_name or "").strip() != ADMIN_DISPLAY_NAME:
+                admin.full_name = ADMIN_DISPLAY_NAME
+                admin.updated_at = _utcnow()
             return
         password = ADMIN_BOOTSTRAP_PASSWORD.strip() or "admin12345"
         db.add(
             User(
                 username=ADMIN_USERNAME,
                 role="admin",
-                full_name="System Administrator",
+                full_name=ADMIN_DISPLAY_NAME,
                 email="",
                 password_hash=generate_password_hash(password),
                 must_change_password=True,
@@ -195,6 +226,86 @@ def _require_admin(data: Optional[Dict] = None):
     if role != "admin":
         return None, (jsonify({"ok": False, "error": "Admin role required"}), 403)
     return actor, None
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _is_valid_email_mask(email: str) -> bool:
+    value = (email or "").strip()
+    if not value:
+        return True
+    return bool(re.match(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", value))
+
+
+def _default_full_name_for_role(role: str) -> str:
+    return CUSTOM_ADMIN_NAME if (role or "").strip().lower() == "admin" else APP_USER_NAME
+
+
+def _is_system_admin_username(username: str) -> bool:
+    return (username or "").strip() == (ADMIN_USERNAME or "").strip()
+
+
+def _is_e2e_admin_username(username: str) -> bool:
+    return (username or "").strip().lower() == E2E_ADMIN_USERNAME
+
+
+def _client_ip() -> str:
+    forwarded = (request.headers.get("X-Forwarded-For") or "").strip()
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return (request.remote_addr or "").strip()
+
+
+def _ensure_presence_session(user: Optional[User]) -> None:
+    if not session.get("authenticated"):
+        return
+    actor = (session.get("actor") or "").strip()
+    if not actor:
+        return
+    now = _utcnow()
+    presence_id = session.get("presence_session_id")
+    with db_session() as db:
+        row = None
+        if presence_id:
+            try:
+                row = db.get(UserPresenceSession, int(presence_id))
+            except (TypeError, ValueError):
+                row = None
+            if row and row.logout_at is None:
+                row.last_seen_at = now
+                return
+        token = secrets.token_hex(16)
+        presence = UserPresenceSession(
+            user_id=user.id if user else None,
+            username=actor,
+            session_token=token,
+            ip_address=_client_ip(),
+            user_agent=(request.headers.get("User-Agent") or "")[:512],
+            login_at=now,
+            last_seen_at=now,
+            logout_at=None,
+            ended_reason="",
+        )
+        db.add(presence)
+        db.flush()
+        session["presence_session_id"] = int(presence.id)
+
+
+def _close_presence_session(reason: str = "logout") -> None:
+    sid = session.get("presence_session_id")
+    if not sid:
+        return
+    try:
+        sid_int = int(sid)
+    except (TypeError, ValueError):
+        return
+    with db_session() as db:
+        row = db.get(UserPresenceSession, sid_int)
+        if row and row.logout_at is None:
+            row.logout_at = _utcnow()
+            row.ended_reason = reason
 
 
 DISCUSSION_THREAD_STATUSES = {"open", "needs_author_response", "resolved"}
@@ -512,24 +623,21 @@ def _format_db_error(exc: Exception) -> Dict:
     return out
 
 
-def _collect_template_ids_from_domains(domains: List[Dict[str, Any]]) -> Set[str]:
+def _collect_template_ids_from_nodes(nodes: List[Dict[str, Any]]) -> Set[str]:
     out: Set[str] = set()
-    for domain in domains or []:
-        for skill in domain.get("skills") or []:
-            for action in skill.get("actions") or []:
-                tid = (action.get("template_id") or "").strip()
-                if tid:
-                    out.add(tid)
-                for sub in action.get("subactions") or []:
-                    stid = (sub.get("template_id") or "").strip()
-                    if stid:
-                        out.add(stid)
+    for n in nodes or []:
+        if not isinstance(n, dict):
+            continue
+        tid = str(n.get("template_id") or "").strip()
+        if tid:
+            out.add(tid)
+        out |= _collect_template_ids_from_nodes(n.get("children") or [])
     return out
 
 
-def _build_tree_edit_warnings(current_unified: Dict[str, Any], edited_domains: List[Dict[str, Any]]) -> Dict[str, Any]:
-    current_templates = _collect_template_ids_from_domains(current_unified.get("domains") or [])
-    edited_templates = _collect_template_ids_from_domains(edited_domains or [])
+def _build_tree_edit_warnings(current_unified: Dict[str, Any], edited_nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
+    current_templates = _collect_template_ids_from_nodes(current_unified.get("nodes") or [])
+    edited_templates = _collect_template_ids_from_nodes(edited_nodes or [])
     removed_templates = sorted(current_templates - edited_templates)
     template_defs = current_unified.get("action_templates") or {}
     removed_literature: Set[str] = set()
@@ -568,7 +676,17 @@ def _invalidate_caches():
 def _ensure_db_schema():
     global _admin_seed_checked
     if _is_db_mode():
+        if ENGINE.dialect.name == "postgresql":
+            with ENGINE.begin() as conn:
+                conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{MATRIX_STRUCT_SCHEMA}"'))
         Base.metadata.create_all(bind=ENGINE)
+        with db_session() as session:
+            session.execute(
+                text(
+                    "ALTER TABLE users "
+                    "ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+                    )
+                )
         if not _admin_seed_checked:
             _ensure_admin_seed()
             _admin_seed_checked = True
@@ -660,9 +778,8 @@ def _create_version_backup(change_type: str, note: str = "") -> str:
 
 def _ensure_data_loaded(force_source_filename: str = None):
     """
-    Загружает данные из единого источника: при совпадении с чекпоинтом — из чекпоинта;
-    иначе — из файла (структура + мета), пересборка дерева и сохранение чекпоинта.
-    Мета (шаблоны, литература, стек и т.д.) берётся только из этого источника.
+    Загружает матрицу и мета-ключи из PostgreSQL (единый unified-снимок).
+    Параметр force_source_filename зарезервирован для совместимости вызовов и игнорируется в DB-режиме.
     """
     global _matrix, _tree, _meta, _current_source_file
     if _matrix is not None and _tree is not None and not force_source_filename:
@@ -673,79 +790,12 @@ def _ensure_data_loaded(force_source_filename: str = None):
     path_cfg = _path_config()
     with db_session() as session:
         unified = load_unified_from_db(session, literature=load_literature_map())
-    domains = unified.get("domains") or []
-    _matrix = {"domains": domains}
+    nodes = unified.get("nodes") or []
+    _matrix = {"nodes": nodes, "domains": []}
     _tree = build_tree_from_matrix_data(_matrix)
     meta_from_source = {k: unified.get(k, {} if k != "action_examples" else []) for k in META_KEYS}
     _meta = {**path_cfg, **meta_from_source}
     _current_source_file = "db://postgres"
-    return
-    path_cfg = _path_config()
-    source_dir = _source_dir_path()
-    checkpoint_path = _checkpoint_path()
-    os.makedirs(os.path.dirname(checkpoint_path) or ".", exist_ok=True)
-    os.makedirs(source_dir, exist_ok=True)
-
-    checkpoint = load_checkpoint(PathLib(checkpoint_path))
-    if force_source_filename:
-        source_file = force_source_filename
-    elif checkpoint and checkpoint.get("source_file"):
-        source_file = checkpoint["source_file"]
-    else:
-        default = path_cfg.get("default_source")
-        candidates = _list_source_files()
-        source_file = default if default and default in candidates else (candidates[0] if candidates else None)
-
-    if not source_file:
-        _matrix = {"domains": []}
-        _tree = []
-        _meta = {**path_cfg, **{k: {} if k != "action_examples" else [] for k in META_KEYS}}
-        return
-
-    source_path = os.path.join(source_dir, source_file)
-    if not os.path.isfile(source_path):
-        _matrix = {"domains": []}
-        _tree = []
-        _meta = {**path_cfg, **{k: {} if k != "action_examples" else [] for k in META_KEYS}}
-        return
-
-    # Совпадает ли источник с чекпоинтом? Используем чекпоинт только если в нём есть полный meta (action_templates, literature).
-    meta_from_checkpoint = (checkpoint or {}).get("meta")
-    if isinstance(meta_from_checkpoint, dict):
-        pass
-    else:
-        meta_from_checkpoint = {}
-    has_meta = bool(meta_from_checkpoint.get("action_templates") or meta_from_checkpoint.get("literature"))
-    if (
-        checkpoint
-        and checkpoint.get("source_file") == source_file
-        and source_matches_checkpoint(PathLib(source_path), checkpoint)
-        and has_meta
-    ):
-        _matrix = checkpoint.get("matrix") or {"domains": []}
-        _tree = checkpoint.get("tree") or []
-        _meta = {**path_cfg, **meta_from_checkpoint}
-        _current_source_file = source_file
-        return
-
-    # Перезагрузка из единого источника: структура + мета в одном файле
-    try:
-        unified = load_unified_source(source_path)
-    except Exception as e:
-        print(f"Ошибка загрузки источника {source_path}: {e}")
-        _matrix = {"domains": []}
-        _tree = []
-        _meta = {**path_cfg, **{k: {} if k != "action_examples" else [] for k in META_KEYS}}
-        return
-    domains = unified.get("domains") or []
-    _matrix = {"domains": domains}
-    _tree = build_tree_from_matrix_data(_matrix)
-    meta_from_source = {k: unified.get(k, {} if k != "action_examples" else []) for k in META_KEYS}
-    _meta = {**path_cfg, **meta_from_source}
-    source_hash = get_source_content_hash(PathLib(source_path))
-    checkpoint_data = build_checkpoint_data(_tree, _matrix, meta_from_source, source_file, source_hash)
-    save_checkpoint(PathLib(checkpoint_path), checkpoint_data, use_yaml=checkpoint_path.lower().endswith((".yaml", ".yml")))
-    _current_source_file = source_file
 
 # ----- Вспомогательные функции для генерации иконок и цветов -----
 DOMAIN_ICONS = [
@@ -817,7 +867,21 @@ def get_meta():
 def get_matrix():
     """Структура матрицы из чекпоинта или файла-источника (source_dir). Сверка по хешу при каждой загрузке."""
     _ensure_data_loaded()
-    return _matrix if _matrix is not None else {"domains": []}
+    return _matrix if _matrix is not None else {"nodes": [], "domains": []}
+
+
+def _matrix_root_count(matrix: Optional[Dict]) -> int:
+    m = matrix or {}
+    return len(m.get("nodes") or [])
+
+
+def _parse_export_domain_idxs(raw: str) -> List[int]:
+    idxs: List[int] = []
+    for part in (raw or "").strip().split(","):
+        part = part.strip()
+        if part.isdigit():
+            idxs.append(int(part))
+    return idxs
 
 
 def get_tree():
@@ -826,20 +890,277 @@ def get_tree():
     return _tree if _tree is not None else []
 
 
-def _expected_leaf_paths_from_matrix(matrix: Dict) -> list:
-    """Ожидаемые leaf-path по структуре матрицы (для проверки автоскейла)."""
-    out = []
-    domains = (matrix or {}).get("domains") or []
-    for di, d in enumerate(domains):
-        for si, s in enumerate(d.get("skills") or []):
-            for ai, a in enumerate(s.get("actions") or []):
-                sub = a.get("subactions") or []
-                if sub:
-                    for subi, _ in enumerate(sub):
-                        out.append(f"{di}/{si}/{ai}/{subi}")
+def _count_leaves_under_node(node: Dict) -> int:
+    """Число листьев в поддереве generic-узла (для сайдбара)."""
+    if not isinstance(node, dict):
+        return 0
+    ch = node.get("children") or []
+    if not ch:
+        return 1
+    n = 0
+    for c in ch:
+        if isinstance(c, dict):
+            n += _count_leaves_under_node(c)
+    return n
+
+
+def _build_domain_graph_from_generic_tree(domain_idx: int, meta: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Граф домена для режима matrix_nodes: обход get_tree()[domain_idx] (path уже проставлены).
+    Листья — leaf_path для /leaf/...; типы узлов без легаси-имён: group / branch / leaf (не skill/action/subaction).
+    """
+    tree = get_tree()
+    if domain_idx < 0 or domain_idx >= len(tree):
+        return None
+    root_tn = tree[domain_idx]
+    if not isinstance(root_tn, dict):
+        return None
+    domain_name = root_tn.get("name", "") or ""
+    domain_color = get_domain_color(domain_name)
+    domain_icon = get_domain_icon(domain_name, domain_idx)
+    domain_root_id = f"dg_root_{domain_idx}"
+    nodes_out: List[Dict[str, Any]] = []
+    links_out: List[Dict[str, str]] = []
+    nodes_out.append(
+        {
+            "id": domain_root_id,
+            "name": domain_name,
+            "type": "domain_root",
+            "color": domain_color,
+            "icon": domain_icon,
+            "level": 0,
+            "description": str(root_tn.get("description") or "").strip(),
+            "responsible": root_tn.get("responsible") or "",
+            "level_tags": normalize_level_tags(root_tn.get("level_tags") or root_tn.get("level_tag")),
+            "open_action_url": False,
+        }
+    )
+    templates = meta.get("action_templates") or {}
+
+    def visit(parent_gid: str, tnode: Dict[str, Any], parent_type: str) -> None:
+        children = tnode.get("children") or []
+        if not isinstance(children, list):
+            return
+        for child in children:
+            if not isinstance(child, dict):
+                continue
+            cpath = child.get("path")
+            if not isinstance(cpath, list) or not cpath:
+                continue
+            cid = "dg_n_" + "_".join(str(p) for p in cpath)
+            chch = child.get("children") or []
+            has_ch = isinstance(chch, list) and bool(chch)
+            ln = len(cpath)
+            if ln == 2:
+                typ = "group"
+                vis_level = 1
+            elif not has_ch:
+                typ = "leaf"
+                vis_level = min(ln - 1, 3)
+            else:
+                typ = "branch"
+                vis_level = min(ln - 1, 3)
+            leaf_path_str: Optional[str] = None
+            if not has_ch:
+                leaf_path_str = "/".join(str(p) for p in cpath)
+            name = child.get("name") or ""
+            group_color_idx = int(cpath[1]) if ln > 1 else 0
+            tpl_id = child.get("template_id")
+            template = templates.get(tpl_id, {}) if tpl_id else {}
+            enriched = enrich_action(child, template if isinstance(template, dict) else {}, meta)
+            stack_labels = enriched.get("stack_labels") or []
+
+            if parent_type == "domain_root":
+                elbl = "содержит"
+            elif parent_type == "group":
+                elbl = "выполняет"
+            else:
+                elbl = "содержит"
+            links_out.append({"source": parent_gid, "target": cid, "label": elbl})
+
+            node_payload: Dict[str, Any] = {
+                "id": cid,
+                "name": name,
+                "full_name": name,
+                "type": typ,
+                "level": vis_level,
+                "path": list(cpath),
+                "leaf_path": leaf_path_str,
+                "description": str(child.get("description") or "").strip(),
+                "responsible": child.get("responsible") or "",
+                "level_tag": child.get("level_tag"),
+                "level_tags": action_level_tags_for_json(child),
+                "level_sticker": child.get("level_sticker") or "",
+                "open_action_url": False,
+            }
+            if typ == "group":
+                node_payload["color"] = get_skill_color(name, domain_color, group_color_idx)
+                node_payload["icon"] = get_skill_icon(name, group_color_idx)
+            else:
+                node_payload["color"] = "#f39c12"
+            nodes_out.append(node_payload)
+
+            if stack_labels:
+                for stack_idx, stack in enumerate(stack_labels):
+                    stack_id = f"dg_stack_{'_'.join(str(p) for p in cpath)}_{stack_idx}"
+                    if not any(n["id"] == stack_id for n in nodes_out):
+                        nodes_out.append(
+                            {
+                                "id": stack_id,
+                                "name": stack.get("name", stack.get("key", "Technology")),
+                                "type": "stack",
+                                "icon": stack.get("icon", "cube"),
+                                "color": stack.get("color", "#9b59b6"),
+                                "level": 4,
+                                "description": stack.get("description", ""),
+                                "open_action_url": False,
+                            }
+                        )
+                    links_out.append({"source": cid, "target": stack_id, "label": "использует"})
+
+            visit(cid, child, typ)
+
+    visit(domain_root_id, root_tn, "domain_root")
+    return {
+        "domain": {"name": domain_name, "color": domain_color, "icon": domain_icon},
+        "nodes": nodes_out,
+        "links": links_out,
+    }
+
+
+def _build_global_graph_from_generic_tree(meta: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Общий граф (/graph) для режима matrix_nodes: все корни get_tree() под синтетическим root.
+    Листья — leaf_path; типы group / branch / leaf (без skill/action/subaction в JSON).
+    """
+    tree = get_tree()
+    nodes_out: List[Dict[str, Any]] = [
+        {
+            "id": "root",
+            "name": "Middle Data Engineer",
+            "type": "root",
+            "level": 0,
+            "open_action_url": False,
+        }
+    ]
+    links_out: List[Dict[str, str]] = []
+    templates = meta.get("action_templates") or {}
+
+    for di, root_tn in enumerate(tree):
+        if not isinstance(root_tn, dict):
+            continue
+        did = f"d{di}"
+        domain_name = root_tn.get("name", "") or ""
+        domain_color = get_domain_color(domain_name)
+        domain_icon = get_domain_icon(domain_name, di)
+        nodes_out.append(
+            {
+                "id": did,
+                "name": domain_name,
+                "type": "domain",
+                "level": 1,
+                "color": domain_color,
+                "icon": domain_icon,
+                "description": str(root_tn.get("description") or "").strip(),
+                "responsible": root_tn.get("responsible") or "",
+                "level_tags": normalize_level_tags(root_tn.get("level_tags") or root_tn.get("level_tag")),
+                "open_action_url": False,
+            }
+        )
+        links_out.append({"source": "root", "target": did})
+
+        def visit(parent_id: str, tnode: Dict[str, Any], parent_type: str) -> None:
+            children = tnode.get("children") or []
+            if not isinstance(children, list):
+                return
+            for child in children:
+                if not isinstance(child, dict):
+                    continue
+                cpath = child.get("path")
+                if not isinstance(cpath, list) or not cpath:
+                    continue
+                cid = "g_" + "_".join(str(p) for p in cpath)
+                chch = child.get("children") or []
+                has_ch = isinstance(chch, list) and bool(chch)
+                ln = len(cpath)
+                if ln == 2:
+                    typ = "group"
+                elif not has_ch:
+                    typ = "leaf"
                 else:
-                    out.append(f"{di}/{si}/{ai}")
-    return out
+                    typ = "branch"
+                vis_level = ln
+                leaf_path_str: Optional[str] = None
+                if not has_ch:
+                    leaf_path_str = "/".join(str(p) for p in cpath)
+                name = child.get("name") or ""
+                group_color_idx = int(cpath[1]) if ln > 1 else 0
+
+                if parent_type == "domain":
+                    elbl = "содержит"
+                elif parent_type == "group":
+                    elbl = "выполняет"
+                else:
+                    elbl = "содержит"
+                links_out.append({"source": parent_id, "target": cid, "label": elbl})
+
+                tpl_id = child.get("template_id")
+                template = templates.get(tpl_id, {}) if tpl_id else {}
+                enriched = enrich_action(child, template if isinstance(template, dict) else {}, meta)
+                stack_labels = enriched.get("stack_labels") or []
+
+                node_payload: Dict[str, Any] = {
+                    "id": cid,
+                    "name": name,
+                    "full_name": name,
+                    "type": typ,
+                    "level": vis_level,
+                    "path": list(cpath),
+                    "leaf_path": leaf_path_str,
+                    "description": str(child.get("description") or "").strip(),
+                    "responsible": child.get("responsible") or "",
+                    "level_tag": child.get("level_tag"),
+                    "level_tags": action_level_tags_for_json(child),
+                    "level_sticker": child.get("level_sticker") or "",
+                    "open_action_url": False,
+                }
+                if typ == "group":
+                    node_payload["color"] = get_skill_color(name, domain_color, group_color_idx)
+                    node_payload["icon"] = get_skill_icon(name, group_color_idx)
+                else:
+                    node_payload["color"] = "#f39c12"
+                nodes_out.append(node_payload)
+
+                if stack_labels:
+                    for stack_idx, stack in enumerate(stack_labels):
+                        stack_id = f"gg_stack_{'_'.join(str(p) for p in cpath)}_{stack_idx}"
+                        if not any(n["id"] == stack_id for n in nodes_out):
+                            nodes_out.append(
+                                {
+                                    "id": stack_id,
+                                    "name": stack.get("name", stack.get("key", "Technology")),
+                                    "type": "stack",
+                                    "icon": stack.get("icon", "cube"),
+                                    "color": stack.get("color", "#9b59b6"),
+                                    "level": ln + 2,
+                                    "description": stack.get("description", ""),
+                                    "open_action_url": False,
+                                }
+                            )
+                        links_out.append({"source": cid, "target": stack_id, "label": "использует"})
+
+                visit(cid, child, typ)
+
+        visit(did, root_tn, "domain")
+
+    return {"nodes": nodes_out, "links": links_out}
+
+
+def _expected_leaf_paths_from_matrix(matrix: Dict) -> list:
+    """Ожидаемые leaf-path по дереву nodes (для проверки автоскейла)."""
+    tree = build_tree_from_matrix_data(matrix or {})
+    leaves = collect_leaves(tree)
+    return ["/".join(str(x) for x in (n.get("path") or [])) for n in leaves if n.get("path")]
 
 def save_meta(meta_dict):
     """Сохраняет метаданные в единый источник (текущий файл в source_dir). Обновляет чекпоинт при следующей загрузке."""
@@ -851,7 +1172,9 @@ def save_meta(meta_dict):
     _ensure_db_schema()
     with db_session() as session:
         unified = load_unified_from_db(session, literature=meta_dict.get("literature", {}) or {})
-        unified["domains"] = (get_matrix() or {}).get("domains", [])
+        mx = get_matrix() or {}
+        unified["domains"] = []
+        unified["nodes"] = mx.get("nodes") or []
         for k in META_KEYS:
             unified[k] = meta_dict.get(k, {} if k != "action_examples" else [])
         replace_unified_in_db(session, unified)
@@ -928,14 +1251,23 @@ def build_description(action_obj, template, domain, skill, meta):
     ui = meta.get('ui_config', {})
     titles = ui.get('section_titles', {})
 
-    if not minimal and not antipatterns:
-        return f"""
-            <h4>📋 Действие в контексте {domain['name']}</h4>
-            <p><strong>{action_obj['text']}</strong> относится к навыку <strong>{skill['name']}</strong>.</p>
-            <p>Описание пока не добавлено.</p>
-        """
+    node_note = (action_obj.get("description") or "").strip()
+    note_html = ""
+    if node_note:
+        note_esc = html_lib.escape(node_note).replace("\n", "<br>\n")
+        # Текст узла — полное описание; заголовок «Описание» задаётся в шаблоне модалки/страницы.
+        note_html = f'<div class="matrix-node-own-description">{note_esc}</div>'
 
-    html = f"<h4>📋 {template.get('name', 'Действие')}</h4>"
+    if not minimal and not antipatterns:
+        body = f"""
+            <h4>📋 Действие в контексте {html_lib.escape(domain.get('name') or '')}</h4>
+            <p><strong>{html_lib.escape(action_obj.get('text') or '')}</strong> относится к навыку <strong>{html_lib.escape(skill.get('name') or '')}</strong>.</p>
+        """
+        if node_note:
+            return note_html + body
+        return body + "<p>Описание пока не добавлено.</p>"
+
+    html = note_html + f"<h4>📋 {html_lib.escape(template.get('name', 'Действие'))}</h4>"
     if minimal:
         html += f"<h5>✅ {titles.get('minimal_requirements', 'Минимальный объем')}:</h5><ul>"
         for req in minimal:
@@ -946,7 +1278,7 @@ def build_description(action_obj, template, domain, skill, meta):
         for anti in antipatterns:
             html += f"<li>{anti}</li>"
         html += "</ul>"
-    html += f"<p><small>Контекст: <strong>{domain['name']}</strong> → <strong>{skill['name']}</strong></small></p>"
+    html += f"<p><small>Контекст: <strong>{html_lib.escape(domain.get('name') or '')}</strong> → <strong>{html_lib.escape(skill.get('name') or '')}</strong></small></p>"
     return html
 
 def resolve_leaf_by_path(path_str):
@@ -966,52 +1298,40 @@ def resolve_leaf_by_path(path_str):
     if not node or node.get("children"):
         return None
     ancestors = get_ancestors(tree, path)
-    if len(ancestors) < 2:
-        return None
-    domain = {"name": ancestors[0].get("name", "")}
-    skill = {"name": ancestors[1].get("name", ""), "description": ancestors[1].get("description", "")}
+    empty_skill = {
+        "name": "",
+        "description": "",
+        "responsible": "",
+        "level_sticker": "",
+    }
+    if len(ancestors) >= 2:
+        domain = {"name": ancestors[0].get("name", "")}
+        skill = {
+            "name": ancestors[1].get("name", ""),
+            "description": ancestors[1].get("description", ""),
+            "responsible": ancestors[1].get("responsible", ""),
+            "level_sticker": ancestors[1].get("level_sticker", ""),
+        }
+    elif len(ancestors) == 1:
+        domain = {"name": ancestors[0].get("name", "")}
+        skill = dict(empty_skill)
+    else:
+        domain = {"name": ""}
+        skill = dict(empty_skill)
     action = {
         "text": node.get("name", ""),
         "template_id": node.get("template_id"),
         "level_tag": node.get("level_tag"),
+        "level_tags": action_level_tags_for_json(node),
+        "leaf_view": dict(node.get("leaf_view") or {}),
         "review_questions": node.get("review_questions", []),
     }
-    parent_action_text = ancestors[2].get("name", "") if len(ancestors) > 3 else None
+    nd = (node.get("description") or "").strip()
+    if nd:
+        action["description"] = nd
+    # Подуровень: у листа есть минимум два предка над «действием» (домен → навык → … → родитель листа).
+    parent_action_text = ancestors[-1].get("name", "") if len(ancestors) >= 3 else None
     return (domain, skill, action, parent_action_text)
-
-def find_related_skills(data, domain_idx, skill_idx, action_idx):
-    related = []
-    try:
-        current_domain = data['domains'][domain_idx]
-        current_skill = current_domain['skills'][skill_idx]
-        current_action = current_skill['actions'][action_idx]
-        current_text = current_action.get('text', '').lower()
-        words = set(re.findall(r'\w+', current_text))
-        stop_words = {'и', 'в', 'на', 'с', 'для', 'по', 'от', 'за', 'через', 'при', 'из', 'у', 'к', 'о', 'об'}
-        words = words - stop_words
-
-        for di, d in enumerate(data['domains']):
-            for si, s in enumerate(d['skills']):
-                if di == domain_idx and si == skill_idx:
-                    continue
-                for ai, a in enumerate(s['actions']):
-                    a_text = a.get('text', '').lower()
-                    a_words = set(re.findall(r'\w+', a_text)) - stop_words
-                    common = words & a_words
-                    if len(common) >= 2:
-                        related.append({
-                            "domain_name": d['name'],
-                            "skill_name": s['name'],
-                            "action": a_text[:60] + "..." if len(a_text) > 60 else a_text,
-                            "url": f"/action/{di}/{si}/{ai}"
-                        })
-                        if len(related) >= 5:
-                            break
-                if len(related) >= 5:
-                    break
-    except Exception as e:
-        print(f"Ошибка поиска связанных навыков: {e}")
-    return related
 
 # РЕГИСТРАЦИЯ ФИЛЬТРОВ JINJA2
 app.jinja_env.filters['slugify'] = slugify
@@ -1032,33 +1352,101 @@ def domain_color_filter(domain_name):
 def skill_color_filter(skill_name, domain_color, index):
     return get_skill_color(skill_name, domain_color, index)
 
+
+@app.template_filter("matrix_schema_ui")
+def matrix_schema_ui_filter(schema):
+    """Схема колонок для UI: без суффиксов (item)/(leaf_view) в header/label."""
+    return schema_entries_for_ui(schema if isinstance(schema, list) else [])
+
+
 @app.context_processor
 def inject_globals():
     current_actor, current_role = _extract_actor_role()
-    domains = (get_matrix() or {}).get("domains", [])
+    sidebar_badges = {
+        "changes_pending": 0,
+        "notifications_unsent": 0,
+        "presence_online": 0,
+        "online_usernames": [],
+    }
+    if bool(session.get("authenticated")):
+        try:
+            _ensure_db_schema()
+            pending_statuses = ("draft", "submitted", "in_review", "approved")
+            online_cutoff = _utcnow() - timedelta(seconds=PRESENCE_ONLINE_SECONDS)
+            with db_session() as db:
+                sidebar_badges["changes_pending"] = int(
+                    db.execute(
+                        select(func.count(ChangeRequest.id)).where(ChangeRequest.status.in_(pending_statuses))
+                    ).scalar()
+                    or 0
+                )
+                online_rows = db.execute(
+                    select(func.distinct(UserPresenceSession.username))
+                    .select_from(UserPresenceSession)
+                    .join(User, User.username == UserPresenceSession.username)
+                    .where(
+                        User.is_active == True,
+                        UserPresenceSession.logout_at.is_(None),
+                        UserPresenceSession.last_seen_at.is_not(None),
+                        UserPresenceSession.last_seen_at >= online_cutoff,
+                        UserPresenceSession.username.is_not(None),
+                        UserPresenceSession.username != "",
+                    )
+                    .order_by(UserPresenceSession.username.asc())
+                ).scalars().all()
+                sidebar_badges["online_usernames"] = [u for u in online_rows if u]
+                sidebar_badges["presence_online"] = len(sidebar_badges["online_usernames"])
+                if current_role == "admin":
+                    sidebar_badges["notifications_unsent"] = int(
+                        db.execute(
+                            select(func.count(NotificationLog.id)).where(NotificationLog.status.in_(["failed", "skipped"]))
+                        ).scalar()
+                        or 0
+                    )
+        except Exception:
+            sidebar_badges = {
+                "changes_pending": 0,
+                "notifications_unsent": 0,
+                "presence_online": 0,
+                "online_usernames": [],
+            }
+    matrix = get_matrix() or {}
+    nodes = matrix.get("nodes") or []
     sidebar_domains = []
-    for i, d in enumerate(domains):
-        domain_color = get_domain_color(d.get("name", ""))
+    for i, root in enumerate(nodes):
+        if not isinstance(root, dict):
+            continue
+        domain_color = get_domain_color(root.get("name", ""))
         skills_list = []
-        for si, s in enumerate(d.get("skills", [])):
-            actions = s.get("actions", [])
-            skills_list.append({
+        for si, s in enumerate(root.get("children") or []):
+            if not isinstance(s, dict):
+                continue
+            skills_list.append(
+                {
                 "name": s.get("name", ""),
                 "index": si,
                 "color": get_skill_color(s.get("name", ""), domain_color, si),
                 "icon": get_skill_icon(s.get("name", ""), si),
-                "actions_count": len(actions),
-            })
-        sidebar_domains.append({
-            "name": d.get("name", ""),
+                    "actions_count": _count_leaves_under_node(s),
+                }
+            )
+        sidebar_domains.append(
+            {
+                "name": root.get("name", ""),
             "index": i,
             "color": domain_color,
-            "icon": get_domain_icon(d.get("name", ""), i),
+                "icon": get_domain_icon(root.get("name", ""), i),
             "skills_count": len(skills_list),
             "skills": skills_list,
-        })
+            }
+        )
+    _meta_ctx = get_meta()
+    _ui_ctx = _meta_ctx.get("ui_config") or {}
     return {
-        'ui_config': get_meta().get('ui_config', {}),
+        'ui_config': _ui_ctx,
+        'unified_column_schema': schema_entries_for_ui(
+            effective_matrix_column_schema(_ui_ctx), _ui_ctx
+        ),
         'sidebar_domains': sidebar_domains,
         'get_domain_icon': get_domain_icon,
         'get_skill_icon': get_skill_icon,
@@ -1070,6 +1458,9 @@ def inject_globals():
         'current_actor': current_actor,
         'current_role': current_role,
         'is_authenticated': bool(session.get("authenticated")),
+        'sidebar_badges': sidebar_badges,
+        'system_admin_username': ADMIN_USERNAME,
+        'e2e_admin_username': E2E_ADMIN_USERNAME,
     }
 
 # ----- ОСНОВНЫЕ МАРШРУТЫ -----
@@ -1099,6 +1490,7 @@ def login():
     session["actor"] = username
     session["role"] = user.role
     session["must_change_password"] = bool(user.must_change_password)
+    _ensure_presence_session(user)
     if user.must_change_password and request.path != "/account/password":
         return redirect(url_for("account_password"))
     if not _is_safe_next_url(next_url):
@@ -1108,6 +1500,7 @@ def login():
 
 @app.route('/logout', methods=['GET'])
 def logout():
+    _close_presence_session("logout")
     session.clear()
     return redirect(url_for('login'))
 
@@ -1151,6 +1544,17 @@ def enforce_password_change():
     return redirect(url_for("account_password"))
 
 
+@app.before_request
+def track_presence():
+    if not session.get("authenticated"):
+        return None
+    if request.path.startswith("/static/") or request.path.startswith("/library/"):
+        return None
+    user = _load_user((session.get("actor") or "").strip())
+    _ensure_presence_session(user)
+    return None
+
+
 @app.route('/account', methods=['GET'])
 def account_page():
     auth, auth_err = _require_authenticated()
@@ -1177,14 +1581,26 @@ def account_update_profile():
     data = request.get_json(silent=True) or request.form
     full_name = (data.get("full_name") or "").strip()
     email = (data.get("email") or "").strip()
-    if email and "@" not in email:
+    if not _is_valid_email_mask(email):
         return jsonify({"ok": False, "error": "Invalid email"}), 400
     with db_session() as db:
         user = db.execute(select(User).where(User.username == auth["actor"])).scalars().first()
         if not user:
             return jsonify({"ok": False, "error": "User not found"}), 404
-        user.full_name = full_name
-        user.email = email
+        if _is_e2e_admin_username(user.username):
+            return jsonify({"ok": False, "error": "e2e_admin profile cannot be edited"}), 403
+        changed = False
+        if not _is_system_admin_username(user.username):
+            if not full_name:
+                return jsonify({"ok": False, "error": "Full name cannot be empty"}), 400
+            if user.full_name != full_name:
+                user.full_name = full_name
+                changed = True
+        if user.email != email:
+            user.email = email
+            changed = True
+        if changed:
+            user.updated_at = _utcnow()
     return jsonify({"ok": True})
 
 
@@ -1222,128 +1638,119 @@ def account_password():
 def index():
     """Стартовая страница — дашборд."""
     matrix = get_matrix() or {}
-    domains = matrix.get("domains") or []
-    total_skills = sum(len(d.get("skills", [])) for d in domains)
-    total_actions = 0
-    for d in domains:
-        for s in d.get("skills", []):
-            total_actions += len(s.get("actions", []))
-    return render_template('home.html', domains=domains, stats={
-        "domains": len(domains),
+    nodes = matrix.get("nodes") or []
+    tree = build_tree_from_matrix_data({"nodes": nodes})
+    total_skills = sum(len(n.get("children") or []) for n in nodes if isinstance(n, dict))
+    total_leaves = len(collect_leaves(tree))
+    domains_for_tpl = [{"name": (n.get("name") or "").strip()} for n in nodes[:5] if isinstance(n, dict)]
+    return render_template(
+        "home.html",
+        domains=domains_for_tpl,
+        stats={
+            "domains": len(nodes),
         "skills": total_skills,
-        "actions": total_actions,
-    })
+            "actions": total_leaves,
+        },
+    )
 
 
 @app.route('/matrix')
 def matrix_view():
     """Матрица — сетка карточек доменов."""
-    return render_template('matrix.html', domains=get_matrix()['domains'])
+    _ensure_data_loaded()
+    m = get_matrix() or {}
+    has_data = bool(m.get("nodes"))
+    return render_template(
+        "matrix.html",
+        domains=[],
+        matrix_has_data=has_data,
+    )
 
 
 @app.route('/domain/<int:domain_idx>')
 def domain_view(domain_idx):
     """Вью домена: дерево элементов слева направо."""
     matrix = get_matrix()
-    domains = (matrix or {}).get("domains") or []
-    if domain_idx < 0 or domain_idx >= len(domains):
+    nodes = (matrix or {}).get("nodes") or []
+    if domain_idx < 0 or domain_idx >= _matrix_root_count(matrix):
         return render_template('404.html'), 404
-    domain = domains[domain_idx]
-    domain_color = get_domain_color(domain.get("name", ""))
-    domain_icon = get_domain_icon(domain.get("name", ""), domain_idx)
+    root = nodes[domain_idx]
+    if not isinstance(root, dict):
+        return render_template('404.html'), 404
+    domain_color = get_domain_color(root.get("name", ""))
+    domain_icon = get_domain_icon(root.get("name", ""), domain_idx)
     domain_data = {
         "index": domain_idx,
-        "name": domain.get("name", ""),
+        "name": root.get("name", ""),
         "color": domain_color,
         "icon": domain_icon,
-        "skills": []
+        "skills": [],
     }
-    for si, s in enumerate(domain.get("skills", [])):
-        skill_color = get_skill_color(s.get("name", ""), domain_color, si)
-        skill_icon = get_skill_icon(s.get("name", ""), si)
-        skill_data = {
+    for si, s in enumerate(root.get("children") or []):
+        if not isinstance(s, dict):
+            continue
+        domain_data["skills"].append(
+            {
             "index": si,
             "name": s.get("name", ""),
             "description": s.get("description", ""),
-            "color": skill_color,
-            "icon": skill_icon,
-            "actions": []
-        }
-        for ai, a in enumerate(s.get("actions", [])):
-            action_data = {
-                "index": ai,
-                "text": a.get("text", ""),
-                "template_id": a.get("template_id"),
-                "level_tag": a.get("level_tag"),
-                "review_questions": a.get("review_questions", []),
-                "subactions": []
+            "responsible": s.get("responsible", ""),
+            "level_sticker": s.get("level_sticker", ""),
+                "color": get_skill_color(s.get("name", ""), domain_color, si),
+                "icon": get_skill_icon(s.get("name", ""), si),
+                "actions": [],
             }
-            for subi, sub in enumerate(a.get("subactions", [])):
-                action_data["subactions"].append({
-                    "index": subi,
-                    "text": sub.get("text", ""),
-                    "level_tag": sub.get("level_tag"),
-                    "review_questions": sub.get("review_questions", []),
-                    "leaf_path": f"{domain_idx}/{si}/{ai}/{subi}"
-                })
-            if not action_data["subactions"]:
-                action_data["leaf_path"] = f"{domain_idx}/{si}/{ai}"
-            skill_data["actions"].append(action_data)
-        domain_data["skills"].append(skill_data)
-    return render_template('domain_view.html', domain=domain_data, current_domain_index=domain_idx, focus_skill=False)
+        )
+    return render_template(
+        "domain_view.html", domain=domain_data, current_domain_index=domain_idx, focus_skill=False
+    )
 
 
 @app.route('/domain/<int:domain_idx>/skill/<int:skill_idx>')
 def domain_skill_view(domain_idx, skill_idx):
     """Вью навыка: дерево элементов (зависимости от выбранного в сайдбаре)."""
     matrix = get_matrix()
-    domains = (matrix or {}).get("domains") or []
-    if domain_idx < 0 or domain_idx >= len(domains):
+    nodes = (matrix or {}).get("nodes") or []
+    if domain_idx < 0 or domain_idx >= _matrix_root_count(matrix):
         return render_template('404.html'), 404
-    domain = domains[domain_idx]
-    skills = domain.get("skills", [])
+    root = nodes[domain_idx]
+    if not isinstance(root, dict):
+        return render_template('404.html'), 404
+    skills = root.get("children") or []
     if skill_idx < 0 or skill_idx >= len(skills):
         return render_template('404.html'), 404
     skill = skills[skill_idx]
-    domain_color = get_domain_color(domain.get("name", ""))
-    domain_icon = get_domain_icon(domain.get("name", ""), domain_idx)
+    if not isinstance(skill, dict):
+        return render_template('404.html'), 404
+    domain_color = get_domain_color(root.get("name", ""))
+    domain_icon = get_domain_icon(root.get("name", ""), domain_idx)
     skill_color = get_skill_color(skill.get("name", ""), domain_color, skill_idx)
     skill_icon = get_skill_icon(skill.get("name", ""), skill_idx)
     domain_data = {
         "index": domain_idx,
-        "name": domain.get("name", ""),
+        "name": root.get("name", ""),
         "color": domain_color,
         "icon": domain_icon,
-        "skills": [{
+        "skills": [
+            {
             "index": skill_idx,
             "name": skill.get("name", ""),
             "description": skill.get("description", ""),
+            "responsible": skill.get("responsible", ""),
+            "level_sticker": skill.get("level_sticker", ""),
             "color": skill_color,
             "icon": skill_icon,
-            "actions": []
-        }]
+                "actions": [],
+            }
+        ],
     }
-    for ai, a in enumerate(skill.get("actions", [])):
-        action_data = {
-            "index": ai,
-            "text": a.get("text", ""),
-            "template_id": a.get("template_id"),
-            "level_tag": a.get("level_tag"),
-            "review_questions": a.get("review_questions", []),
-            "subactions": []
-        }
-        for subi, sub in enumerate(a.get("subactions", [])):
-            action_data["subactions"].append({
-                "index": subi,
-                "text": sub.get("text", ""),
-                "level_tag": sub.get("level_tag"),
-                "review_questions": sub.get("review_questions", []),
-                "leaf_path": f"{domain_idx}/{skill_idx}/{ai}/{subi}"
-            })
-        if not action_data["subactions"]:
-            action_data["leaf_path"] = f"{domain_idx}/{skill_idx}/{ai}"
-        domain_data["skills"][0]["actions"].append(action_data)
-    return render_template('domain_view.html', domain=domain_data, current_domain_index=domain_idx, current_skill_index=skill_idx, focus_skill=True)
+    return render_template(
+        "domain_view.html",
+        domain=domain_data,
+        current_domain_index=domain_idx,
+        current_skill_index=skill_idx,
+        focus_skill=True,
+    )
 
 
 @app.route('/api/matrix')
@@ -1353,7 +1760,28 @@ def api_matrix():
 @app.route('/api/tree')
 def api_tree():
     """Дерево матрицы (корень → листья), уровни определяются автоматически."""
-    return jsonify(get_tree())
+    from core.matrix_schema import annotate_matrix_tree
+
+    meta = get_meta()
+    return jsonify(annotate_matrix_tree(get_tree(), meta.get("ui_config") or {}))
+
+
+@app.route("/api/matrix/change-hints")
+def api_matrix_change_hints():
+    """leaf_path → автор последней применённой ревизии CR (для наклеек на дереве матрицы)."""
+    try:
+        matrix = get_matrix()
+        live_nodes = matrix.get("nodes") if isinstance(matrix, dict) else None
+        with db_session() as session:
+            hints = leaf_path_hints_from_applied_changes(
+                session,
+                live_nodes if isinstance(live_nodes, list) else None,
+                limit_crs=80,
+            )
+        return jsonify({"ok": True, "hints": hints})
+    except Exception:
+        return jsonify({"ok": True, "hints": {}})
+
 
 def _leaf_breadcrumb(tree_nodes, path: list) -> str:
     """Строка «Домен → Навык → Действие» для листа по path."""
@@ -1372,46 +1800,235 @@ def _leaf_breadcrumb(tree_nodes, path: list) -> str:
     return " → ".join(p for p in parts if p)
 
 
+_LEAF_VIEW_SOURCE_URL_RE = re.compile(r"https?://[^\s\]\)<>\"']+")
+
+
+def _coerce_leaf_source_dict(d: Any) -> Dict[str, str]:
+    if not isinstance(d, dict):
+        return {}
+    rid = str(d.get("id") or d.get("literature_id") or "").strip()
+    url = str(d.get("url") or d.get("link") or "").strip()
+    title = str(d.get("title") or d.get("name") or d.get("text") or "").strip()
+    raw = str(d.get("raw") or d.get("value") or "").strip()
+    return {
+        "literature_id": rid,
+        "url": url,
+        "title": title or raw,
+        "raw": raw or title or url,
+    }
+
+
+def _parse_line_to_source_entry(line: str) -> Optional[Dict[str, str]]:
+    line = (line or "").strip()
+    if not line:
+        return None
+    if line.startswith("{") and line.endswith("}"):
+        try:
+            obj = json.loads(line)
+            if isinstance(obj, dict):
+                return _coerce_leaf_source_dict(obj)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+    m = _LEAF_VIEW_SOURCE_URL_RE.search(line)
+    url = m.group(0) if m else ""
+    rest = line.replace(url, "").strip(" —–-|").strip() if url else line
+    title = rest or (url if url else line)
+    return _coerce_leaf_source_dict({"url": url, "title": title, "raw": line})
+
+
+def _parse_leaf_view_source_entries(sources_val: Any) -> List[Dict[str, str]]:
+    entries: List[Dict[str, str]] = []
+    if sources_val is None:
+        return entries
+    if isinstance(sources_val, dict):
+        d = _coerce_leaf_source_dict(sources_val)
+        if d.get("literature_id") or d.get("url") or d.get("title") or d.get("raw"):
+            entries.append(d)
+        return entries
+    if isinstance(sources_val, str):
+        for ln in re.split(r"[\n\r]+", sources_val):
+            e = _parse_line_to_source_entry(ln)
+            if e:
+                entries.append(e)
+        return entries
+    if isinstance(sources_val, list):
+        for x in sources_val:
+            if isinstance(x, dict):
+                d = _coerce_leaf_source_dict(x)
+            else:
+                d = _parse_line_to_source_entry(str(x))
+            if d and (d.get("literature_id") or d.get("url") or d.get("title") or d.get("raw")):
+                entries.append(d)
+    return entries
+
+
+def _match_literature_for_source_entry(entry: Dict[str, str], literature: Dict[str, Any]) -> Optional[str]:
+    lit = literature or {}
+    rid = (entry.get("literature_id") or "").strip()
+    if rid and rid in lit:
+        return rid
+    raw = (entry.get("raw") or "").strip()
+    if raw and raw in lit:
+        return raw
+    url = (entry.get("url") or "").strip()
+    if url:
+        for r, it in lit.items():
+            if (str(it.get("url") or "").strip()) == url:
+                return str(r)
+    title = (entry.get("title") or "").strip()
+    if title:
+        tl = title.lower()
+        for r, it in lit.items():
+            if (str(it.get("title") or "").strip().lower()) == tl:
+                return str(r)
+    return None
+
+
+def _resolve_matrix_sources(leaf_view: Optional[Dict[str, Any]], literature: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Слияние leaf_view.sources с каталогом литературы для предпросмотра (как у resource_ids)."""
+    lit = literature or {}
+    out: List[Dict[str, Any]] = []
+    seen: Set[Tuple[Optional[str], str, str]] = set()
+    for e in _parse_leaf_view_source_entries((leaf_view or {}).get("sources")):
+        rid = _match_literature_for_source_entry(e, lit)
+        if rid:
+            row = {"id": rid, **(lit.get(rid) or {})}
+        else:
+            url = (e.get("url") or "").strip()
+            title = (e.get("title") or e.get("raw") or url or "Источник").strip()
+            row = {
+                "title": title,
+                "chapter": "",
+                "pages": "",
+                "url": url,
+                "description": "",
+                "local_path": "",
+            }
+        key = (row.get("id"), str(row.get("url") or ""), str(row.get("title") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
+
+
+def _literature_linked_leaves(meta: Dict[str, Any]) -> Dict[str, List[Dict[str, str]]]:
+    """Для каждого id литературы — листы матрицы (path), где источник задан через шаблон или leaf_view.sources."""
+    tree = get_tree()
+    templates = meta.get("action_templates", {}) or {}
+    literature = meta.get("literature", {}) or {}
+    by_rid: Dict[str, List[Dict[str, str]]] = {}
+    seen_pairs: Set[Tuple[str, str]] = set()
+
+    def add(rid: str, path_str: str, crumb: str) -> None:
+        if rid not in literature:
+            return
+        k = (rid, path_str)
+        if k in seen_pairs:
+            return
+        seen_pairs.add(k)
+        by_rid.setdefault(rid, []).append({"path_str": path_str, "breadcrumb": crumb})
+
+    for leaf in collect_leaves(tree):
+        path = leaf.get("path") or []
+        path_str = "/".join(str(x) for x in path)
+        crumb = _leaf_breadcrumb(tree, path)
+        tid = leaf.get("template_id")
+        if tid and tid in templates:
+            for rid in templates[tid].get("resource_ids", []) or []:
+                add(str(rid), path_str, crumb)
+        lv = leaf.get("leaf_view") or {}
+        for e in _parse_leaf_view_source_entries(lv.get("sources")):
+            mrid = _match_literature_for_source_entry(e, literature)
+            if mrid:
+                add(mrid, path_str, crumb)
+    return by_rid
+
+
+def _matrix_only_source_catalog(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Источники только в leaf_view (без совпадения с каталогом) — виртуальные строки для /api/literature."""
+    tree = get_tree()
+    literature = meta.get("literature", {}) or {}
+    groups: Dict[str, Dict[str, Any]] = {}
+
+    for leaf in collect_leaves(tree):
+        path = leaf.get("path") or []
+        path_str = "/".join(str(x) for x in path)
+        crumb = _leaf_breadcrumb(tree, path)
+        lv = leaf.get("leaf_view") or {}
+        for e in _parse_leaf_view_source_entries(lv.get("sources")):
+            if _match_literature_for_source_entry(e, literature):
+                continue
+            url = (e.get("url") or "").strip()
+            title = (e.get("title") or e.get("raw") or "").strip() or url
+            if not title and not url:
+                continue
+            gk = url or title
+            if gk not in groups:
+                h = hashlib.md5(gk.encode("utf-8")).hexdigest()[:12]
+                display_title = title if (title and title != url) else (url or title)
+                groups[gk] = {
+                    "id": f"matrix_inline_{h}",
+                    "title": display_title or "Источник",
+                    "chapter": "",
+                    "pages": "",
+                    "url": url,
+                    "description": "Указано в колонке «Источники» матрицы; отдельной записи в каталоге нет.",
+                    "local_path": "",
+                    "from_matrix_only": True,
+                    "linked_templates": [],
+                    "linked_leaves": [],
+                }
+            gl = groups[gk]["linked_leaves"]
+            if not any(x.get("path_str") == path_str for x in gl):
+                gl.append({"path_str": path_str, "breadcrumb": crumb})
+    return list(groups.values())
+
+
 @app.route('/api/tree-for-link')
 def api_tree_for_link():
-    """Дерево для модала привязки: домены → навыки → действия → листья (с path, template_id)."""
-    data = get_matrix()
-    domains = (data or {}).get("domains", [])
+    """Дерево для модала привязки: корни → … → листья с template_id (по generic-дереву)."""
+    tree = get_tree()
     meta = get_meta()
     templates = meta.get("action_templates", {})
-    out = []
-    for di, d in enumerate(domains):
-        domain_node = {"name": d.get("name", ""), "skills": []}
-        for si, s in enumerate(d.get("skills", [])):
-            skill_node = {"name": s.get("name", ""), "actions": []}
-            for ai, a in enumerate(s.get("actions", [])):
-                if a.get("subactions"):
-                    for subi, sub in enumerate(a["subactions"]):
-                        path = [di, si, ai, subi]
-                        node = get_node_by_path(get_tree(), path)
-                        tid = (node or {}).get("template_id")
-                        if tid and tid in templates:
-                            skill_node["actions"].append({
-                                "name": sub.get("text", ""),
-                                "path": path,
-                                "path_str": "/".join(map(str, path)),
+    by_domain: Dict[int, Dict[str, Any]] = {}
+    for n in collect_leaves(tree):
+        p = n.get("path") or []
+        if len(p) < 3:
+            continue
+        tid = n.get("template_id")
+        if not tid or tid not in templates:
+            continue
+        di, si = int(p[0]), int(p[1])
+        anc = get_ancestors(tree, p)
+        chain = list(anc) + [n]
+        names = [(x.get("name") or "").strip() for x in chain]
+        d_name = names[0] if names else ""
+        sk_name = names[1] if len(names) > 1 else ""
+        leaf_label = names[-1] if names else ""
+        if di not in by_domain:
+            by_domain[di] = {"name": d_name, "_skills": {}}
+        sk_map = by_domain[di]["_skills"]
+        if si not in sk_map:
+            sk_map[si] = {"name": sk_name, "actions": []}
+        sk_map[si]["actions"].append(
+            {
+                "name": leaf_label,
+                "path": p,
+                "path_str": "/".join(map(str, p)),
                                 "template_id": tid,
-                            })
-                else:
-                    path = [di, si, ai]
-                    node = get_node_by_path(get_tree(), path)
-                    tid = (node or {}).get("template_id")
-                    if tid and tid in templates:
-                        skill_node["actions"].append({
-                            "name": a.get("text", ""),
-                            "path": path,
-                            "path_str": "/".join(map(str, path)),
-                            "template_id": tid,
-                        })
-            if skill_node["actions"]:
-                domain_node["skills"].append(skill_node)
-        if domain_node["skills"]:
-            out.append(domain_node)
+            }
+        )
+    out = []
+    for di in sorted(by_domain.keys()):
+        d_entry = by_domain[di]
+        skills = []
+        for si in sorted(d_entry["_skills"].keys()):
+            sk = d_entry["_skills"][si]
+            if sk["actions"]:
+                skills.append({"name": sk["name"], "actions": sk["actions"]})
+        if skills:
+            out.append({"name": d_entry["name"], "skills": skills})
     return jsonify(out)
 
 
@@ -1467,77 +2084,8 @@ def graph():
 
 @app.route('/api/graph-data')
 def graph_data():
-    data = get_matrix()
-    nodes = [{"id": "root", "name": "Middle Data Engineer", "type": "root", "level": 0}]
-    links = []
-    
-    for di, d in enumerate(data['domains']):
-        domain_color = get_domain_color(d['name'])
-        domain_icon = get_domain_icon(d['name'], di)
-        did = f"d{di}"
-        nodes.append({
-            "id": did,
-            "name": d['name'],
-            "type": "domain",
-            "level": 1,
-            "color": domain_color,
-            "icon": domain_icon
-        })
-        links.append({"source": "root", "target": did})
-        
-        for si, s in enumerate(d['skills']):
-            skill_color = get_skill_color(s['name'], domain_color, si)
-            skill_icon = get_skill_icon(s['name'], si)
-            sid = f"d{di}s{si}"
-            nodes.append({
-                "id": sid,
-                "name": s['name'],
-                "type": "skill",
-                "level": 2,
-                "domain_idx": di,
-                "skill_idx": si,
-                "color": skill_color,
-                "icon": skill_icon,
-                "description": s.get('description', '')
-            })
-            links.append({"source": did, "target": sid})
-            
-            for ai, a in enumerate(s['actions']):
-                aid = f"d{di}s{si}a{ai}"
-                leaf_path = f"{di}/{si}/{ai}"
-                nodes.append({
-                    "id": aid,
-                    "name": a['text'],
-                    "full_name": a['text'],
-                    "type": "action",
-                    "level": 3,
-                    "domain_idx": di,
-                    "skill_idx": si,
-                    "action_idx": ai,
-                    "leaf_path": leaf_path if 'subactions' not in a else None,
-                    "level_tag": a.get("level_tag"),
-                })
-                links.append({"source": sid, "target": aid})
-                
-                if 'subactions' in a:
-                    for sub_idx, sub in enumerate(a['subactions']):
-                        subid = f"d{di}s{si}a{ai}sub{sub_idx}"
-                        nodes.append({
-                            "id": subid,
-                            "name": sub['text'],
-                            "full_name": sub['text'],
-                            "type": "subaction",
-                            "level": 4,
-                            "domain_idx": di,
-                            "skill_idx": si,
-                            "action_idx": ai,
-                            "sub_idx": sub_idx,
-                            "leaf_path": f"{di}/{si}/{ai}/{sub_idx}",
-                            "level_tag": sub.get("level_tag"),
-                        })
-                        links.append({"source": aid, "target": subid, "label": "содержит"})
-    
-    return jsonify({"nodes": nodes, "links": links})
+    meta = get_meta()
+    return jsonify(_build_global_graph_from_generic_tree(meta))
 
 # ----- Универсальный маршрут листа (произвольная глубина) -----
 
@@ -1588,14 +2136,22 @@ def leaf_api(path):
     description = build_description(action, template, domain, skill, meta)
     path_parts = [int(x) for x in path.strip("/").split("/") if x.strip()]
     related = find_related_skills_by_path(path_parts) if len(path_parts) >= 3 else []
+    literature_map = meta.get("literature", {}) or {}
+    matrix_sources = _resolve_matrix_sources(action.get("leaf_view"), literature_map)
+    node_summary_plain = (action.get("description") or "").strip()
     return jsonify({
         "title": action["text"],
         "description": description,
+        "node_summary": node_summary_plain,
+        "responsible": action.get("responsible") or "",
         "examples": enriched["examples"],
         "tools": enriched["tools"],
         "stack_labels": enriched["stack_labels"],
         "literature": enriched["literature"],
+        "matrix_sources": matrix_sources,
         "level_tag": action.get("level_tag"),
+        "level_tags": action_level_tags_for_json(action),
+        "leaf_view": action.get("leaf_view") or {},
         "review_questions": action.get("review_questions", []),
         "related_skills": related,
         "domain_color": get_domain_color(domain["name"]),
@@ -1605,310 +2161,106 @@ def leaf_api(path):
         "leaf_path": path,
     })
 
-def find_related_skills_by_path(path_parts):
-    """По path листа возвращает связанные навыки (делегирует find_related_skills по di, si, ai)."""
-    data = get_matrix()
-    if "domains" not in data or len(path_parts) < 3:
+def find_related_skills_by_path(path_parts: List[int]) -> List[Dict[str, Any]]:
+    """По path листа — похожие листья в других ветках (пересечение значимых слов в названии)."""
+    if len(path_parts) < 3:
         return []
-    return find_related_skills(data, path_parts[0], path_parts[1], path_parts[2])
+    tree = get_tree()
+    cur = get_node_by_path(tree, path_parts)
+    if not cur or cur.get("children"):
+        return []
+    current_text = (cur.get("name") or "").lower()
+    words = set(re.findall(r"\w+", current_text))
+    stop_words = {"и", "в", "на", "с", "для", "по", "от", "за", "через", "при", "из", "у", "к", "о", "об"}
+    words -= stop_words
+    if not words:
+        return []
+    related: List[Dict[str, Any]] = []
+    prefix = list(path_parts)
+    for leaf in collect_leaves(tree):
+        p = leaf.get("path") or []
+        if len(p) < 3 or p == prefix:
+            continue
+        lt = (leaf.get("name") or "").lower()
+        lw = set(re.findall(r"\w+", lt)) - stop_words
+        if len(words & lw) < 2:
+            continue
+        anc = get_ancestors(tree, p)
+        dname = anc[0].get("name", "") if anc else ""
+        sname = anc[1].get("name", "") if len(anc) > 1 else ""
+        ps = "/".join(str(x) for x in p)
+        related.append(
+            {
+                "domain_name": dname,
+                "skill_name": sname,
+                "action": lt[:60] + ("..." if len(lt) > 60 else ""),
+                "url": f"/leaf/{ps}",
+            }
+        )
+        if len(related) >= 5:
+            break
+    return related
 
 # ----- МАРШРУТЫ ДЛЯ ДЕЙСТВИЙ (обратная совместимость) -----
 
 @app.route('/action/<int:di>/<int:si>/<int:ai>')
 def action_page(di, si, ai):
-    data = get_matrix()
-    try:
-        domain = data['domains'][di]
-        skill = domain['skills'][si]
-        action = skill['actions'][ai]
-        domain_color = get_domain_color(domain['name'])
-        skill_color = get_skill_color(skill['name'], domain_color, si)
-        
-        return render_template('action_detail.html',
-                             domain=domain,
-                             skill=skill,
-                             action=action,
-                             action_text=action['text'],
-                             di=di, si=si, ai=ai,
-                             domain_color=domain_color,
-                             skill_color=skill_color,
-                             domain_icon=get_domain_icon(domain['name'], di),
-                             skill_icon=get_skill_icon(skill['name'], si))
-    except (IndexError, KeyError) as e:
-        print(f"Ошибка при загрузке действия: {e}")
-        abort(404)
+    return redirect(f"/leaf/{di}/{si}/{ai}", code=301)
 
 @app.route('/api/action/<int:di>/<int:si>/<int:ai>')
 def action_api(di, si, ai):
-    data = get_matrix()
-    meta = get_meta()
-    try:
-        domain = data['domains'][di]
-        skill = domain['skills'][si]
-        action = skill['actions'][ai]
-        template_id = action.get('template_id')
-        template = meta['action_templates'].get(template_id, {})
-        
-        # Если это родительский элемент, возвращаем информацию о поддействиях
-        if template.get('is_parent', False):
-            subactions_data = []
-            if 'subactions' in action:
-                for sub_idx, sub in enumerate(action['subactions']):
-                    sub_template = meta['action_templates'].get(sub['template_id'], {})
-                    subactions_data.append({
-                        "text": sub['text'],
-                        "template_id": sub['template_id'],
-                        "level_tag": sub.get('level_tag'),
-                        "review_questions": sub.get('review_questions', []),
-                        "name": sub_template.get('name', ''),
-                        "url": f"/subaction/{di}/{si}/{ai}/{sub_idx}"
-                    })
-            
-            domain_color = get_domain_color(domain['name'])
-            skill_color = get_skill_color(skill['name'], domain_color, si)
-            
-            return jsonify({
-                "title": action['text'],
-                "description": "<p>Это группа компетенций. Выберите конкретный навык из списка ниже:</p>",
-                "is_parent": True,
-                "subactions": subactions_data,
-                "level_tag": action.get('level_tag'),
-                "review_questions": action.get('review_questions', []),
-                "domain_color": domain_color,
-                "skill_color": skill_color,
-                "domain_icon": get_domain_icon(domain['name'], di),
-                "skill_icon": get_skill_icon(skill['name'], si)
-            })
-        
-        enriched = enrich_action(action, template, meta)
-        description = build_description(action, template, domain, skill, meta)
-        domain_color = get_domain_color(domain['name'])
-        skill_color = get_skill_color(skill['name'], domain_color, si)
-        
-        result = {
-            "title": action['text'],
-            "description": description,
-            "examples": enriched['examples'],
-            "tools": enriched['tools'],
-            "stack_labels": enriched['stack_labels'],
-            "literature": enriched['literature'],
-            "level_tag": action.get('level_tag'),
-            "review_questions": action.get('review_questions', []),
-            "related_skills": find_related_skills(data, di, si, ai),
-            "domain_color": domain_color,
-            "skill_color": skill_color,
-            "domain_icon": get_domain_icon(domain['name'], di),
-            "skill_icon": get_skill_icon(skill['name'], si)
-        }
-        
-        return jsonify(result)
-    except (IndexError, KeyError) as e:
-        print(f"Ошибка API: {e}")
-        return jsonify({"error": "Not found"}), 404
+    return redirect(f"/api/leaf/{di}/{si}/{ai}", code=307)
 
 # ----- МАРШРУТЫ ДЛЯ ПОДДЕЙСТВИЙ -----
 
 @app.route('/subaction/<int:di>/<int:si>/<int:ai>/<int:sub_idx>')
 def subaction_page(di, si, ai, sub_idx):
-    data = get_matrix()
-    try:
-        domain = data['domains'][di]
-        skill = domain['skills'][si]
-        action = skill['actions'][ai]
-        
-        if 'subactions' not in action or sub_idx >= len(action['subactions']):
-            abort(404)
-            
-        sub = action['subactions'][sub_idx]
-        domain_color = get_domain_color(domain['name'])
-        skill_color = get_skill_color(skill['name'], domain_color, si)
-        
-        return render_template('action_detail.html',
-                             domain=domain,
-                             skill=skill,
-                             action=sub,
-                             action_text=sub['text'],
-                             di=di, si=si, ai=ai, sub_idx=sub_idx,
-                             parent_action_text=action['text'],
-                             domain_color=domain_color,
-                             skill_color=skill_color,
-                             domain_icon=get_domain_icon(domain['name'], di),
-                             skill_icon=get_skill_icon(skill['name'], si))
-    except (IndexError, KeyError) as e:
-        print(f"Ошибка при загрузке поддействия: {e}")
-        abort(404)
+    return redirect(f"/leaf/{di}/{si}/{ai}/{sub_idx}", code=301)
 
 @app.route('/api/subaction/<int:di>/<int:si>/<int:ai>/<int:sub_idx>')
 def subaction_api(di, si, ai, sub_idx):
-    data = get_matrix()
-    meta = get_meta()
-    try:
-        domain = data['domains'][di]
-        skill = domain['skills'][si]
-        action = skill['actions'][ai]
-        
-        if 'subactions' not in action or sub_idx >= len(action['subactions']):
-            return jsonify({"error": "Subaction not found"}), 404
-            
-        sub = action['subactions'][sub_idx]
-        template_id = sub.get('template_id')
-        template = meta['action_templates'].get(template_id, {})
-        
-        if template.get('is_parent', False):
-            return jsonify({"error": "Cannot view parent template directly"}), 400
-        
-        enriched = enrich_action(sub, template, meta)
-        description = build_description(sub, template, domain, skill, meta)
-        domain_color = get_domain_color(domain['name'])
-        skill_color = get_skill_color(skill['name'], domain_color, si)
-        
-        result = {
-            "title": sub['text'],
-            "description": description,
-            "examples": enriched['examples'],
-            "tools": enriched['tools'],
-            "stack_labels": enriched['stack_labels'],
-            "literature": enriched['literature'],
-            "level_tag": sub.get('level_tag'),
-            "review_questions": sub.get('review_questions', []),
-            "domain_color": domain_color,
-            "skill_color": skill_color,
-            "domain_icon": get_domain_icon(domain['name'], di),
-            "skill_icon": get_skill_icon(skill['name'], si),
-            "parent_action": action['text']
-        }
-        
-        return jsonify(result)
-    except (IndexError, KeyError) as e:
-        print(f"Ошибка API поддействия: {e}")
-        return jsonify({"error": "Not found"}), 404
+    return redirect(f"/api/leaf/{di}/{si}/{ai}/{sub_idx}", code=307)
 
 # ----- МАРШРУТЫ ДЛЯ ГРАФОВ ДОМЕНОВ -----
 
 @app.route('/domain-graph/<int:domain_idx>')
 def domain_graph(domain_idx):
-    data = get_matrix()
+    data = get_matrix() or {}
     meta = get_meta()
     try:
-        if domain_idx >= len(data["domains"]):
+        if domain_idx < 0 or domain_idx >= _matrix_root_count(data):
             abort(404)
-        domain = data["domains"][domain_idx]
-        return render_template('domain_graph.html',
+        root = data["nodes"][domain_idx]
+        if not isinstance(root, dict):
+            abort(404)
+        domain = {
+            "name": root.get("name", ""),
+            "description": root.get("description", ""),
+            "responsible": root.get("responsible", ""),
+        }
+        return render_template(
+            "domain_graph.html",
                              domain=domain,
                              domain_idx=domain_idx,
                              current_domain_index=domain_idx,
-                             ui_config=meta.get('ui_config', {}))
+            ui_config=meta.get("ui_config", {}),
+        )
     except (IndexError, KeyError, TypeError) as e:
         print(f"Ошибка при загрузке графа домена: {e}")
         abort(404)
 
 @app.route('/api/domain-graph/<int:domain_idx>')
 def domain_graph_data(domain_idx):
-    data = get_matrix()
+    data = get_matrix() or {}
     meta = get_meta()
     try:
-        if domain_idx >= len(data["domains"]):
+        if domain_idx < 0 or domain_idx >= _matrix_root_count(data):
             return jsonify({"error": "Domain not found"}), 404
         
-        domain = data["domains"][domain_idx]
-        nodes = []
-        links = []
-        
-        domain_color = get_domain_color(domain['name'])
-        domain_icon = get_domain_icon(domain['name'], domain_idx)
-        domain_root_id = f"dg_root_{domain_idx}"
-        
-        nodes.append({
-            "id": domain_root_id,
-            "name": domain["name"],
-            "type": "domain_root",
-            "color": domain_color,
-            "icon": domain_icon,
-            "level": 0,
-            "description": f"Домен: {domain['name']}"
-        })
-        
-        for skill_idx, skill in enumerate(domain["skills"]):
-            skill_id = f"dg_skill_{domain_idx}_{skill_idx}"
-            skill_color = get_skill_color(skill['name'], domain_color, skill_idx)
-            skill_icon = get_skill_icon(skill['name'], skill_idx)
-            
-            nodes.append({
-                "id": skill_id,
-                "name": skill["name"],
-                "type": "skill",
-                "icon": skill_icon,
-                "color": skill_color,
-                "level": 1,
-                "description": skill.get("description", ""),
-                "domain_idx": domain_idx,
-                "skill_idx": skill_idx
-            })
-            links.append({"source": domain_root_id, "target": skill_id, "label": "содержит"})
-            
-            for action_idx, action in enumerate(skill["actions"]):
-                action_id = f"dg_action_{domain_idx}_{skill_idx}_{action_idx}"
-                template_id = action.get('template_id')
-                template = meta['action_templates'].get(template_id, {})
-                enriched = enrich_action(action, template, meta)
-                stack_labels = enriched['stack_labels']
-                
-                action_leaf_path = f"{domain_idx}/{skill_idx}/{action_idx}" if 'subactions' not in action else None
-                nodes.append({
-                    "id": action_id,
-                    "name": action['text'],
-                    "full_name": action['text'],
-                    "type": "action",
-                    "level": 2,
-                    "domain_idx": domain_idx,
-                    "skill_idx": skill_idx,
-                    "action_idx": action_idx,
-                    "stack": stack_labels,
-                    "color": "#f39c12",
-                    "leaf_path": action_leaf_path,
-                    "level_tag": action.get("level_tag"),
-                })
-                links.append({"source": skill_id, "target": action_id, "label": "выполняет"})
-                
-                if 'subactions' in action:
-                    for sub_idx, sub in enumerate(action['subactions']):
-                        sub_id = f"dg_sub_{domain_idx}_{skill_idx}_{action_idx}_{sub_idx}"
-                        nodes.append({
-                            "id": sub_id,
-                            "name": sub['text'],
-                            "full_name": sub['text'],
-                            "type": "subaction",
-                            "level": 3,
-                            "domain_idx": domain_idx,
-                            "skill_idx": skill_idx,
-                            "action_idx": action_idx,
-                            "sub_idx": sub_idx,
-                            "color": "#f39c12",
-                            "leaf_path": f"{domain_idx}/{skill_idx}/{action_idx}/{sub_idx}",
-                            "level_tag": sub.get("level_tag"),
-                        })
-                        links.append({"source": action_id, "target": sub_id, "label": "содержит"})
-                
-                if stack_labels:
-                    for stack_idx, stack in enumerate(stack_labels):
-                        stack_id = f"dg_stack_{domain_idx}_{skill_idx}_{action_idx}_{stack_idx}"
-                        if not any(node["id"] == stack_id for node in nodes):
-                            nodes.append({
-                                "id": stack_id,
-                                "name": stack.get("name", stack.get("key", "Technology")),
-                                "type": "stack",
-                                "icon": stack.get("icon", "cube"),
-                                "color": stack.get("color", "#9b59b6"),
-                                "level": 4,
-                                "description": stack.get("description", "")
-                            })
-                        links.append({"source": action_id, "target": stack_id, "label": "использует"})
-        
-        return jsonify({
-            "domain": {"name": domain["name"], "color": domain_color, "icon": domain_icon},
-            "nodes": nodes,
-            "links": links
-        })
+        payload = _build_domain_graph_from_generic_tree(domain_idx, meta)
+        if not payload:
+            return jsonify({"error": "Domain not found"}), 404
+        return jsonify(payload)
     except Exception as e:
         print(f"Ошибка при создании графа домена: {e}")
         return jsonify({"error": str(e)}), 500
@@ -1918,6 +2270,109 @@ def domain_graph_data(domain_idx):
 @app.route('/export')
 def export():
     return render_template('export.html')
+
+
+@app.route("/api/export/unified-table")
+def api_export_unified_table():
+    """Строки экспорта: порядок и подписи колонок как в импортированной matrix_column_schema (unified relational)."""
+    from core.excel_unified_export import build_unified_export_table
+
+    matrix = get_matrix()
+    nodes = list(matrix.get("nodes") or [])
+    raw = (request.args.get("domains") or "").strip()
+    if raw:
+        idxs = _parse_export_domain_idxs(raw)
+        nodes = [nodes[i] for i in idxs if 0 <= i < len(nodes)]
+    meta = get_meta()
+    headers, rows = build_unified_export_table(
+        [],
+        meta.get("ui_config"),
+        nodes=(nodes or None),
+        include_header_tags=False,
+    )
+    return jsonify(
+        {
+            "ok": True,
+            "headers": headers,
+            "rows": rows,
+            "sheet": "Unified_Relational_Span",
+        }
+    )
+
+
+@app.route("/api/export/unified.xlsx")
+def api_export_unified_xlsx():
+    """Скачивание XLSX: лист Unified_Relational_Span + опционально Литература."""
+    try:
+        from io import BytesIO
+
+        from openpyxl import Workbook
+    except ImportError:
+        return jsonify({"ok": False, "error": "openpyxl не установлен (pip install openpyxl)"}), 500
+
+    from core.excel_unified_export import build_unified_export_table
+
+    matrix = get_matrix()
+    nodes = list(matrix.get("nodes") or [])
+    raw = (request.args.get("domains") or "").strip()
+    if raw:
+        idxs = _parse_export_domain_idxs(raw)
+        nodes = [nodes[i] for i in idxs if 0 <= i < len(nodes)]
+    meta = get_meta()
+    # Строка заголовков с тегами (item)/(leaf_view)/… — та же форма, что ожидает импорт unified xlsx.
+    headers, rows = build_unified_export_table(
+        [],
+        meta.get("ui_config"),
+        nodes=(nodes or None),
+        include_header_tags=True,
+    )
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Unified_Relational_Span"
+    ws.append(headers)
+    for row in rows:
+        ws.append(list(row))
+
+    lit = meta.get("literature") or {}
+    templates = meta.get("action_templates") or {}
+    if isinstance(lit, dict) and lit:
+        template_to_leaves: Dict[str, List[str]] = {}
+        if isinstance(templates, dict):
+            for tid, tpl in templates.items():
+                if not isinstance(tpl, dict):
+                    continue
+                for rid in tpl.get("resource_ids") or []:
+                    template_to_leaves.setdefault(str(rid), []).append(str(tpl.get("name") or tid))
+
+        ws2 = wb.create_sheet("Литература")
+        ws2.append(["Название", "Глава / раздел", "Страницы", "URL", "Локальный файл", "Привязка к компетенциям"])
+        for rid, item in lit.items():
+            if not isinstance(item, dict):
+                continue
+            ws2.append(
+                [
+                    str(item.get("title") or rid),
+                    str(item.get("chapter") or ""),
+                    str(item.get("pages") or ""),
+                    str(item.get("url") or ""),
+                    str(item.get("local_path") or item.get("file_path") or ""),
+                    "; ".join(template_to_leaves.get(str(rid), [])),
+                ]
+            )
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    from flask import send_file
+
+    return send_file(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=f"matrix_unified_{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.xlsx",
+    )
+
 
 # ----- СХЕМА И ВАЛИДАЦИЯ -----
 
@@ -1939,8 +2394,23 @@ def api_validate():
 
 @app.route('/import')
 def import_page():
-    """Импорт данных — догрузка JSON/Excel."""
-    return render_template('import.html')
+    """Редирект в административный импорт."""
+    return redirect(url_for("admin_import_page"))
+
+
+@app.route('/admin/import', methods=["GET"])
+def admin_import_page():
+    """Импорт структуры/данных из Excel только для admin."""
+    actor, role = _extract_actor_role()
+    if role != "admin":
+        return redirect(url_for("login", next=request.path))
+    return render_template('import.html', actor=actor, role=role)
+
+
+@app.route('/constructor')
+def constructor_page():
+    """Конструктор изменений матрицы для пользователей."""
+    return render_template('constructor.html')
 
 
 @app.route('/about')
@@ -1985,6 +2455,12 @@ def api_admin_users_list():
                 "must_change_password": bool(u.must_change_password),
                 "is_active": bool(u.is_active),
                 "created_at": u.created_at.isoformat() if u.created_at else None,
+                "updated_at": u.updated_at.isoformat() if u.updated_at else None,
+                "edit_mode": (
+                    "none"
+                    if _is_e2e_admin_username(u.username)
+                    else ("email_only" if _is_system_admin_username(u.username) else "full")
+                ),
                 "requested_by": actor,
             }
             for u in rows
@@ -2010,7 +2486,7 @@ def api_admin_users_create():
         return jsonify({"ok": False, "error": "username required"}), 400
     if role not in ("user", "admin"):
         return jsonify({"ok": False, "error": "role must be user or admin"}), 400
-    if email and "@" not in email:
+    if not _is_valid_email_mask(email):
         return jsonify({"ok": False, "error": "invalid email"}), 400
     if len(temp_password) < 10:
         return jsonify({"ok": False, "error": "temp_password must be at least 10 characters"}), 400
@@ -2019,10 +2495,16 @@ def api_admin_users_create():
         exists = session.execute(select(User).where(User.username == username)).scalars().first()
         if exists:
             return jsonify({"ok": False, "error": "username already exists"}), 409
+        if _is_e2e_admin_username(username):
+            resolved_full_name = full_name or "E2E Admin"
+        elif _is_system_admin_username(username):
+            resolved_full_name = ADMIN_DISPLAY_NAME
+        else:
+            resolved_full_name = _default_full_name_for_role(role)
         user = User(
             username=username,
             role=role,
-            full_name=full_name,
+            full_name=resolved_full_name,
             email=email,
             password_hash=generate_password_hash(temp_password),
             must_change_password=True,
@@ -2051,6 +2533,16 @@ def api_admin_users_update(user_id: int):
         user = session.get(User, user_id)
         if not user:
             return jsonify({"ok": False, "error": "user not found"}), 404
+        if _is_e2e_admin_username(user.username):
+            return jsonify({"ok": False, "error": "e2e_admin can only be deleted"}), 403
+        if _is_system_admin_username(user.username):
+            has_non_email_update = any(
+                x is not None
+                for x in (new_username, new_role, new_full_name, new_active, reset_temp_password)
+            )
+            if has_non_email_update:
+                return jsonify({"ok": False, "error": "System Administrator allows email update only"}), 403
+        info_updated = False
         if new_username is not None:
             username = (new_username or "").strip()
             if not username:
@@ -2060,7 +2552,9 @@ def api_admin_users_update(user_id: int):
             ).scalars().first()
             if exists:
                 return jsonify({"ok": False, "error": "username already exists"}), 409
-            user.username = username
+            if user.username != username:
+                user.username = username
+                info_updated = True
         if new_role is not None:
             role = (new_role or "").strip().lower()
             if role not in ("user", "admin"):
@@ -2069,14 +2563,29 @@ def api_admin_users_update(user_id: int):
                 admins = session.execute(select(User).where(User.role == "admin", User.is_active == True)).scalars().all()
                 if len(admins) <= 1:
                     return jsonify({"ok": False, "error": "cannot demote last active admin"}), 409
-            user.role = role
+            if user.role != role:
+                user.role = role
+                info_updated = True
+                if (
+                    not _is_system_admin_username(user.username)
+                    and not _is_e2e_admin_username(user.username)
+                    and (new_full_name is None or (new_full_name or "").strip() == "")
+                ):
+                    user.full_name = _default_full_name_for_role(role)
         if new_full_name is not None:
-            user.full_name = (new_full_name or "").strip()
+            full_name = (new_full_name or "").strip()
+            if not full_name:
+                return jsonify({"ok": False, "error": "full_name cannot be empty"}), 400
+            if user.full_name != full_name:
+                user.full_name = full_name
+                info_updated = True
         if new_email is not None:
             email = (new_email or "").strip()
-            if email and "@" not in email:
+            if not _is_valid_email_mask(email):
                 return jsonify({"ok": False, "error": "invalid email"}), 400
-            user.email = email
+            if user.email != email:
+                user.email = email
+                info_updated = True
         if new_active is not None:
             active = bool(new_active)
             if user.role == "admin" and user.is_active and not active:
@@ -2090,6 +2599,8 @@ def api_admin_users_update(user_id: int):
                 return jsonify({"ok": False, "error": "reset_temp_password must be at least 10 characters"}), 400
             user.password_hash = generate_password_hash(temp_password)
             user.must_change_password = True
+        if info_updated:
+            user.updated_at = _utcnow()
     return jsonify({"ok": True})
 
 
@@ -2135,6 +2646,14 @@ def admin_notifications_page():
     return render_template('admin_notifications.html', actor=actor, role=role)
 
 
+@app.route('/admin/presence', methods=["GET"])
+def admin_presence_page():
+    actor, role = _extract_actor_role()
+    if role != "admin":
+        return redirect(url_for("login", next=request.path))
+    return render_template('admin_presence.html', actor=actor, role=role)
+
+
 @app.route('/api/admin/tree-editor/data', methods=["GET"])
 def api_admin_tree_editor_data():
     _, admin_err = _require_admin()
@@ -2143,12 +2662,107 @@ def api_admin_tree_editor_data():
     _ensure_db_schema()
     with db_session() as session:
         unified = load_unified_from_db(session, literature=load_literature_map())
+    ui = unified.get("ui_config") or {}
+    constructor_levels, _constructor_extra = build_constructor_levels(ui)
     return jsonify(
         {
             "ok": True,
-            "domains": unified.get("domains") or [],
+            "nodes": unified.get("nodes") or [],
             "action_templates": unified.get("action_templates") or {},
             "literature": unified.get("literature") or {},
+            "constructor_levels": constructor_levels,
+        }
+    )
+
+
+@app.route('/api/constructor/meta', methods=["GET"])
+def api_constructor_meta():
+    auth, auth_err = _require_authenticated()
+    if auth_err:
+        return auth_err
+    _ensure_db_schema()
+    with db_session() as session:
+        unified = load_unified_from_db(session, literature=load_literature_map())
+    templates = unified.get("action_templates") or {}
+    template_ids = sorted([str(k) for k in templates.keys() if str(k).strip()])
+    template_list = [
+        {"id": str(tid), "name": str((tpl or {}).get("name") or tid).strip() or str(tid)}
+        for tid, tpl in sorted(templates.items(), key=lambda x: str(x[0]))
+        if str(tid).strip()
+    ]
+    ui = unified.get("ui_config") or {}
+    matrix_levels = merge_matrix_levels(ui)
+    constructor_levels, constructor_extra_leaf_steps = build_constructor_levels(ui)
+    mcs_eff = effective_matrix_column_schema(ui)
+    mcs = schema_entries_for_ui(mcs_eff, ui)
+    unified_cols = mcs
+    return jsonify(
+        {
+            "ok": True,
+            "requested_by": auth["actor"],
+            "nodes": unified.get("nodes") or [],
+            "template_ids": template_ids,
+            "templates": template_list,
+            "matrix_levels": matrix_levels,
+            "matrix_column_schema": mcs,
+            "unified_column_schema": unified_cols,
+            "constructor_leaf_step_title": str(ui.get("constructor_leaf_step_title") or "").strip(),
+            "constructor_levels": constructor_levels,
+            "constructor_tower": {"extra_leaf_steps": constructor_extra_leaf_steps},
+            "constructor_value_lists": {
+                "sticker_grades": list(STICKER_GRADES),
+                "templates": template_list,
+                "template_ids": template_ids,
+            },
+            "sticker_grades": list(STICKER_GRADES),
+            "skill_sticker_tag": TAG_SKILL_STICKER,
+            "updated_at": _utcnow().isoformat(),
+        }
+    )
+
+
+@app.route('/api/constructor/preview', methods=["POST"])
+def api_constructor_preview():
+    auth, auth_err = _require_authenticated()
+    if auth_err:
+        return auth_err
+    data = request.get_json(silent=True) or {}
+    payload = data.get("payload") or {}
+    merge_mode = (data.get("merge_mode") or "append").strip()
+    target_domain = data.get("target_domain")
+    target_skill = data.get("target_skill")
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "payload must be object"}), 400
+
+    _ensure_db_schema()
+    with db_session() as session:
+        current = load_unified_from_db(session, literature=load_literature_map())
+        merged = merge_upload_into_source(
+            current,
+            payload,
+            merge_mode=merge_mode,
+            target_domain=target_domain,
+            target_skill=target_skill,
+        )
+        revision_payload = build_revision_payload(
+            base_snapshot=current,
+            upload_payload=payload,
+            proposed_snapshot=merged,
+            merge_mode=merge_mode,
+            target_domain=target_domain,
+            target_skill=target_skill,
+        )
+    return jsonify(
+        {
+            "ok": True,
+            "requested_by": auth["actor"],
+            "merge_mode": merge_mode,
+            "target_domain": target_domain,
+            "target_skill": target_skill,
+            "diff": revision_payload.get("structural_diff") or {},
+            "json_patch_ops": len(revision_payload.get("json_patch") or []),
+            "upsert_plan": revision_payload.get("upsert_plan") or {},
+            "payload_preview": payload,
         }
     )
 
@@ -2159,18 +2773,20 @@ def api_admin_tree_editor_preview():
     actor, admin_err = _require_admin(payload)
     if admin_err:
         return admin_err
-    edited_domains = payload.get("domains")
-    if not isinstance(edited_domains, list):
-        return jsonify({"ok": False, "error": "domains array is required"}), 400
+    edited_nodes = payload.get("nodes")
+    if not isinstance(edited_nodes, list):
+        return jsonify({"ok": False, "error": "nodes array is required"}), 400
     _ensure_db_schema()
     with db_session() as session:
         current = load_unified_from_db(session, literature=load_literature_map())
+    clean_nodes = strip_transient_node_fields(deepcopy(edited_nodes))
     proposed = dict(current)
-    proposed["domains"] = edited_domains
-    warnings = _build_tree_edit_warnings(current, edited_domains)
+    proposed["nodes"] = clean_nodes
+    proposed["domains"] = []
+    warnings = _build_tree_edit_warnings(current, clean_nodes)
     revision_payload = build_revision_payload(
         base_snapshot=current,
-        upload_payload={"domains": edited_domains},
+        upload_payload={"nodes": clean_nodes},
         proposed_snapshot=proposed,
         merge_mode="replace_all",
     )
@@ -2192,15 +2808,16 @@ def api_admin_tree_editor_submit():
     actor, admin_err = _require_admin(payload)
     if admin_err:
         return admin_err
-    edited_domains = payload.get("domains")
-    if not isinstance(edited_domains, list):
-        return jsonify({"ok": False, "error": "domains array is required"}), 400
+    edited_nodes = payload.get("nodes")
+    if not isinstance(edited_nodes, list):
+        return jsonify({"ok": False, "error": "nodes array is required"}), 400
     title = (payload.get("title") or "").strip() or "Admin tree edit"
     confirm_rel = bool(payload.get("confirm_relations"))
     _ensure_db_schema()
     with db_session() as session:
         current = load_unified_from_db(session, literature=load_literature_map())
-    warnings = _build_tree_edit_warnings(current, edited_domains)
+    clean_nodes = strip_transient_node_fields(deepcopy(edited_nodes))
+    warnings = _build_tree_edit_warnings(current, clean_nodes)
     if warnings["removed_template_count"] > 0 and not confirm_rel:
         return jsonify(
             {
@@ -2211,10 +2828,11 @@ def api_admin_tree_editor_submit():
             }
         ), 409
     proposed = dict(current)
-    proposed["domains"] = edited_domains
+    proposed["nodes"] = clean_nodes
+    proposed["domains"] = []
     revision_payload = build_revision_payload(
         base_snapshot=current,
-        upload_payload={"domains": edited_domains},
+        upload_payload={"nodes": clean_nodes},
         proposed_snapshot=proposed,
         merge_mode="replace_all",
     )
@@ -2554,6 +3172,258 @@ def api_admin_notifications_retry(notification_id: int):
     return jsonify({"ok": ok, "status": out_status, "error": err})
 
 
+@app.route('/api/admin/presence', methods=["GET"])
+def api_admin_presence():
+    _, admin_err = _require_admin()
+    if admin_err:
+        return admin_err
+    username_filter = (request.args.get("username") or "").strip().lower()
+    status_filter = (request.args.get("status") or "").strip().lower()
+    try:
+        limit = max(1, min(500, int((request.args.get("limit") or "200").strip())))
+    except ValueError:
+        limit = 200
+
+    rows, summary = _presence_rows_summary(username_filter, status_filter, limit)
+
+    return jsonify({"ok": True, "summary": summary, "items": rows})
+
+
+def _presence_rows_summary(username_filter: str, status_filter: str, limit: int) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    now = _utcnow()
+    week_start = now - timedelta(days=7)
+    _ensure_db_schema()
+    with db_session() as db:
+        users = db.execute(select(User).where(User.is_active == True).order_by(User.username.asc())).scalars().all()
+        sessions = db.execute(
+            select(UserPresenceSession).where(
+                or_(
+                    UserPresenceSession.logout_at.is_(None),
+                    UserPresenceSession.last_seen_at >= week_start,
+                    UserPresenceSession.login_at >= week_start,
+                )
+            )
+        ).scalars().all()
+
+    by_username: Dict[str, List[UserPresenceSession]] = {}
+    for s in sessions:
+        uname = (s.username or "").strip()
+        if not uname:
+            continue
+        by_username.setdefault(uname, []).append(s)
+
+    rows: List[Dict[str, Any]] = []
+    for u in users:
+        uname = (u.username or "").strip()
+        user_sessions = by_username.get(uname, [])
+        active = [s for s in user_sessions if s.logout_at is None]
+        latest_seen = max((s.last_seen_at for s in user_sessions), default=None)
+        active_latest_seen = max((s.last_seen_at for s in active), default=None)
+        if active_latest_seen is not None:
+            delta = (now - active_latest_seen).total_seconds()
+            if delta <= PRESENCE_ONLINE_SECONDS:
+                status = "online"
+            elif delta <= PRESENCE_AWAY_SECONDS:
+                status = "away"
+            else:
+                status = "offline"
+        else:
+            status = "offline"
+
+        current_session_seconds = sum(max(0, int((now - s.login_at).total_seconds())) for s in active)
+        week_total_seconds = 0
+        week_sessions_count = 0
+        last_session_seconds: Optional[int] = None
+        ended_sorted = sorted([s for s in user_sessions if s.logout_at is not None], key=lambda x: x.logout_at or x.last_seen_at, reverse=True)
+        if ended_sorted:
+            last_end = ended_sorted[0].logout_at or ended_sorted[0].last_seen_at
+            last_session_seconds = max(0, int((last_end - ended_sorted[0].login_at).total_seconds()))
+
+        for s in user_sessions:
+            end = s.logout_at or now
+            start = s.login_at
+            overlap_start = max(start, week_start)
+            overlap_end = min(end, now)
+            if overlap_end > overlap_start:
+                week_total_seconds += int((overlap_end - overlap_start).total_seconds())
+                week_sessions_count += 1
+
+        row = {
+            "user_id": u.id,
+            "username": uname,
+            "full_name": u.full_name or "",
+            "email": u.email or "",
+            "status": status,
+            "last_seen_at": latest_seen.isoformat() if latest_seen else None,
+            "active_sessions": len(active),
+            "current_session_seconds": current_session_seconds,
+            "last_session_seconds": last_session_seconds,
+            "week_total_seconds": week_total_seconds,
+            "week_sessions_count": week_sessions_count,
+        }
+        if username_filter and username_filter not in uname.lower() and username_filter not in (u.full_name or "").lower():
+            continue
+        if status_filter and status_filter != "all" and row["status"] != status_filter:
+            continue
+        rows.append(row)
+
+    rows = sorted(
+        rows,
+        key=lambda x: (0 if x["status"] == "online" else (1 if x["status"] == "away" else 2), -(x["week_total_seconds"] or 0), x["username"]),
+    )[:limit]
+
+    summary = {
+        "total_users": len(rows),
+        "online_users": len([r for r in rows if r["status"] == "online"]),
+        "away_users": len([r for r in rows if r["status"] == "away"]),
+        "offline_users": len([r for r in rows if r["status"] == "offline"]),
+        "week_total_seconds": sum(r["week_total_seconds"] for r in rows),
+    }
+    return rows, summary
+
+
+@app.route('/api/admin/presence/<username>/sessions', methods=["GET"])
+def api_admin_presence_sessions(username: str):
+    _, admin_err = _require_admin()
+    if admin_err:
+        return admin_err
+    uname = (username or "").strip()
+    if not uname:
+        return jsonify({"ok": False, "error": "username is required"}), 400
+    try:
+        limit = max(1, min(200, int((request.args.get("limit") or "20").strip())))
+    except ValueError:
+        limit = 20
+    try:
+        offset = max(0, int((request.args.get("offset") or "0").strip()))
+    except ValueError:
+        offset = 0
+    from_str = (request.args.get("from") or "").strip()
+    to_str = (request.args.get("to") or "").strip()
+    sort_by = (request.args.get("sort_by") or "login_at").strip().lower()
+    sort_order = (request.args.get("sort_order") or "desc").strip().lower()
+    from_dt: Optional[datetime] = None
+    to_dt: Optional[datetime] = None
+    if from_str:
+        try:
+            from_dt = datetime.strptime(from_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            return jsonify({"ok": False, "error": "invalid 'from' date format, expected YYYY-MM-DD"}), 400
+    if to_str:
+        try:
+            to_dt = datetime.strptime(to_str, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+        except ValueError:
+            return jsonify({"ok": False, "error": "invalid 'to' date format, expected YYYY-MM-DD"}), 400
+    _ensure_db_schema()
+    with db_session() as db:
+        filters = [UserPresenceSession.username == uname]
+        if from_dt is not None:
+            filters.append(UserPresenceSession.login_at >= from_dt)
+        if to_dt is not None:
+            filters.append(UserPresenceSession.login_at < to_dt)
+        total = int(db.execute(select(func.count(UserPresenceSession.id)).where(*filters)).scalar_one() or 0)
+        duration_seconds_expr = func.extract(
+            "epoch",
+            func.coalesce(UserPresenceSession.logout_at, func.now()) - UserPresenceSession.login_at,
+        )
+        sortable = {
+            "login_at": UserPresenceSession.login_at,
+            "last_seen_at": UserPresenceSession.last_seen_at,
+            "logout_at": UserPresenceSession.logout_at,
+            "duration_seconds": duration_seconds_expr,
+            "id": UserPresenceSession.id,
+        }
+        sort_expr = sortable.get(sort_by, UserPresenceSession.login_at)
+        order_expr = asc(sort_expr) if sort_order == "asc" else desc(sort_expr)
+        rows = db.execute(
+            select(UserPresenceSession)
+            .where(*filters)
+            .order_by(order_expr, UserPresenceSession.id.desc())
+            .offset(offset)
+            .limit(limit)
+        ).scalars().all()
+    now = _utcnow()
+    items = []
+    for s in rows:
+        end = s.logout_at or now
+        duration_seconds = max(0, int((end - s.login_at).total_seconds()))
+        items.append(
+            {
+                "id": s.id,
+                "username": s.username,
+                "ip_address": s.ip_address or "",
+                "user_agent": s.user_agent or "",
+                "login_at": s.login_at.isoformat() if s.login_at else None,
+                "last_seen_at": s.last_seen_at.isoformat() if s.last_seen_at else None,
+                "logout_at": s.logout_at.isoformat() if s.logout_at else None,
+                "ended_reason": s.ended_reason or "",
+                "active": s.logout_at is None,
+                "duration_seconds": duration_seconds,
+            }
+        )
+    return jsonify(
+        {
+            "ok": True,
+            "username": uname,
+            "items": items,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": (offset + len(items)) < total,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+        }
+    )
+
+
+@app.route('/api/admin/presence/export.csv', methods=["GET"])
+def api_admin_presence_export_csv():
+    _, admin_err = _require_admin()
+    if admin_err:
+        return admin_err
+    username_filter = (request.args.get("username") or "").strip().lower()
+    status_filter = (request.args.get("status") or "").strip().lower()
+    rows, _ = _presence_rows_summary(username_filter=username_filter, status_filter=status_filter, limit=5000)
+
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(
+        [
+            "username",
+            "full_name",
+            "email",
+            "status",
+            "last_seen_at",
+            "active_sessions",
+            "current_session_seconds",
+            "last_session_seconds",
+            "week_sessions_count",
+            "week_total_seconds",
+        ]
+    )
+    for r in rows:
+        writer.writerow(
+            [
+                r.get("username", ""),
+                r.get("full_name", ""),
+                r.get("email", ""),
+                r.get("status", ""),
+                r.get("last_seen_at", ""),
+                r.get("active_sessions", 0),
+                r.get("current_session_seconds", 0),
+                "" if r.get("last_session_seconds") is None else r.get("last_session_seconds"),
+                r.get("week_sessions_count", 0),
+                r.get("week_total_seconds", 0),
+            ]
+        )
+    csv_body = out.getvalue()
+    return Response(
+        csv_body,
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=presence_summary.csv"},
+    )
+
+
 @app.route('/api/changes', methods=["GET"])
 def api_changes_list():
     _ensure_db_schema()
@@ -2601,6 +3471,8 @@ def api_changes_create():
     data = request.get_json(silent=True) or {}
     actor, _ = _extract_actor_role(data)
     title = (data.get("title") or "Change request").strip()
+    note = (data.get("note") or "").strip()
+    submit_comment = (data.get("submit_comment") or "").strip()
     merge_mode = (data.get("merge_mode") or "append").strip()
     payload = data.get("payload") or {}
     target_domain = data.get("target_domain")
@@ -2631,8 +3503,9 @@ def api_changes_create():
             created_by=actor,
             target_domain=target_domain,
             target_skill=target_skill,
+            initial_note=note or "initial revision",
         )
-        approval_set_status(session, cr.id, "submitted", actor=actor, comment="Created and submitted")
+        approval_set_status(session, cr.id, "submitted", actor=actor, comment=submit_comment or "Created and submitted")
         _notify_cr_submitted(session, cr)
         change_id = cr.id
     return jsonify({"ok": True, "id": change_id})
@@ -2964,10 +3837,15 @@ def api_changes_apply(change_id):
                 target_domain=cr.target_domain,
                 target_skill=cr.target_skill,
             )
-        upsert_from_staging_projection(session, {"domains": (proposed or {}).get("domains") or []})
-        # Keep metadata in sync using existing compatibility writer.
-        current_unified = load_unified_from_db(session, literature=load_literature_map())
-        current_unified["domains"] = (proposed or {}).get("domains") or []
+        prop = proposed if isinstance(proposed, dict) else {}
+        # Полный снимок из CR: дерево + META_KEYS (ui_config с matrix_levels / matrix_column_schema и т.д.).
+        literature = load_literature_map()
+        current_unified = load_unified_from_db(session, literature=literature)
+        current_unified["domains"] = prop.get("domains") or []
+        current_unified["nodes"] = deepcopy(prop.get("nodes") or [])
+        for k in META_KEYS:
+            if k in prop and prop[k] is not None:
+                current_unified[k] = deepcopy(prop[k])
         replace_unified_in_db(session, current_unified)
         cr.applied = True
         approval_set_status(session, change_id, "applied", actor=actor, comment="Applied to storage")
@@ -2993,6 +3871,7 @@ def api_literature_list():
     for tid, t in templates.items():
         for rid in t.get('resource_ids', []):
             template_to_lit.setdefault(rid, []).append({"template_id": tid, "name": t.get('name', tid)})
+    leaf_by_lit = _literature_linked_leaves(meta)
     out = []
     for rid, item in lit.items():
         local_path = item.get("local_path") or item.get("file_path", "")
@@ -3009,7 +3888,9 @@ def api_literature_list():
             "description": item.get("description", ""),
             "local_path": local_path,
             "linked_templates": template_to_lit.get(rid, []),
+            "linked_leaves": leaf_by_lit.get(str(rid), []),
         })
+    out.extend(_matrix_only_source_catalog(meta))
     return jsonify(out)
 
 @app.route('/api/literature', methods=['POST'])
@@ -3282,10 +4163,21 @@ def api_literature_download(lit_id):
 
 @app.route('/api/domains')
 def api_domains():
-    """Структура доменов и навыков для выбора целевой ветки при догрузке."""
-    _ensure_db_schema()
-    with db_session() as session:
-        out = list_domains_from_db(session)
+    """Структура корней и детей первого уровня для догрузки."""
+    _ensure_data_loaded()
+    matrix = get_matrix() or {}
+    nodes = matrix.get("nodes") or []
+    out = []
+    for n in nodes:
+        if not isinstance(n, dict):
+            continue
+        ch = n.get("children") or []
+        out.append(
+            {
+                "name": n.get("name", ""),
+                "skills": [c.get("name", "") for c in ch if isinstance(c, dict)],
+            }
+        )
     return jsonify({"ok": True, "domains": out})
 
 
@@ -3293,50 +4185,41 @@ def api_domains():
 def api_domain(domain_idx):
     """Полные данные домена для вью дерева (слева направо)."""
     matrix = get_matrix()
-    domains = (matrix or {}).get("domains") or []
-    if domain_idx < 0 or domain_idx >= len(domains):
+    nodes = (matrix or {}).get("nodes") or []
+    if domain_idx < 0 or domain_idx >= _matrix_root_count(matrix):
         return jsonify({"ok": False, "error": "Domain not found"}), 404
-    d = domains[domain_idx]
-    domain_color = get_domain_color(d.get("name", ""))
-    domain_icon = get_domain_icon(d.get("name", ""), domain_idx)
+    root = nodes[domain_idx]
+    if not isinstance(root, dict):
+        return jsonify({"ok": False, "error": "Domain not found"}), 404
+    domain_color = get_domain_color(root.get("name", ""))
+    domain_icon = get_domain_icon(root.get("name", ""), domain_idx)
     out = {
         "ok": True,
         "domain": {
             "index": domain_idx,
-            "name": d.get("name", ""),
+            "name": root.get("name", ""),
             "color": domain_color,
             "icon": domain_icon,
-            "skills": []
+            "skills": [],
+        },
         }
-    }
-    for si, s in enumerate(d.get("skills", [])):
+    for si, s in enumerate(root.get("children") or []):
+        if not isinstance(s, dict):
+            continue
         skill_color = get_skill_color(s.get("name", ""), domain_color, si)
         skill_icon = get_skill_icon(s.get("name", ""), si)
-        skill_data = {
+        out["domain"]["skills"].append(
+            {
             "index": si,
             "name": s.get("name", ""),
             "description": s.get("description", ""),
+            "responsible": s.get("responsible", ""),
+            "level_sticker": s.get("level_sticker", ""),
             "color": skill_color,
             "icon": skill_icon,
-            "actions": []
-        }
-        for ai, a in enumerate(s.get("actions", [])):
-            action_data = {
-                "index": ai,
-                "text": a.get("text", ""),
-                "template_id": a.get("template_id"),
-                "subactions": []
+                "actions": [],
             }
-            for subi, sub in enumerate(a.get("subactions", [])):
-                action_data["subactions"].append({
-                    "index": subi,
-                    "text": sub.get("text", ""),
-                    "leaf_path": f"{domain_idx}/{si}/{ai}/{subi}"
-                })
-            if not action_data["subactions"]:
-                action_data["leaf_path"] = f"{domain_idx}/{si}/{ai}"
-            skill_data["actions"].append(action_data)
-        out["domain"]["skills"].append(skill_data)
+        )
     return jsonify(out)
 
 
@@ -3353,6 +4236,9 @@ def api_sources():
 @app.route('/api/import/template')
 def api_import_template():
     """Скачивание пустого шаблона Excel для импорта (единый формат с экспортом)."""
+    _, admin_err = _require_admin()
+    if admin_err:
+        return admin_err
     try:
         from openpyxl import Workbook
         from io import BytesIO
@@ -3374,9 +4260,43 @@ def api_import_template():
     )
 
 
+@app.route('/api/import/template/unified')
+def api_import_template_unified():
+    """Шаблон unified relational: первая строка 1:1 с импортом (header из matrix_column_schema) или синтетика."""
+    _, admin_err = _require_admin()
+    if admin_err:
+        return admin_err
+    try:
+        from openpyxl import Workbook
+        from io import BytesIO
+    except ImportError:
+        return jsonify({"error": "openpyxl не установлен (pip install openpyxl)"}), 500
+    meta = get_meta()
+    ui = meta.get("ui_config") or {}
+    schema = effective_matrix_column_schema(ui)
+    header = [matrix_roundtrip_header_cell(e, ui) for e in schema]
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Unified_Relational_Span"
+    ws.append(header)
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    from flask import send_file
+    return send_file(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="matrix_unified_template.xlsx",
+    )
+
+
 @app.route('/api/source/upload/preview', methods=["POST"])
 def api_source_upload_preview():
     """Предпросмотр догрузки: парсинг файла без сохранения, возврат preview + validation."""
+    _, admin_err = _require_admin()
+    if admin_err:
+        return admin_err
     if "file" not in request.files:
         return jsonify({"ok": False, "error": "Файл не передан"}), 400
     f = request.files["file"]
@@ -3396,7 +4316,7 @@ def api_source_upload_preview():
                 with open(tmp_path, "r", encoding="utf-8") as fp:
                     upload_data = json.load(fp)
             else:
-                upload_data = load_excel(tmp_path)
+                upload_data = load_excel_for_matrix_import(tmp_path)
         finally:
             try:
                 os.unlink(tmp_path)
@@ -3410,44 +4330,121 @@ def api_source_upload_preview():
     upload_data = _normalize_unified(upload_data)
     vr = validate_source(upload_data)
 
-    # Preview: плоская таблица для отображения
+    def _preview_level_field(node: Dict[str, Any]) -> str:
+        tags = node.get("level_tags") if isinstance(node.get("level_tags"), list) else []
+        if tags:
+            return ", ".join(str(x) for x in tags if str(x).strip())
+        return str(node.get("level_tag") or "").strip()
+
+    def _preview_leaf_keys(node: Dict[str, Any]) -> str:
+        lv = node.get("leaf_view")
+        if not isinstance(lv, dict) or not lv:
+            return ""
+        keys = []
+        for k, v in lv.items():
+            if v is None:
+                continue
+            if isinstance(v, str) and not v.strip():
+                continue
+            if isinstance(v, (list, dict)) and not v:
+                continue
+            keys.append(str(k))
+        return ", ".join(sorted(keys))
+
+    # Preview: плоская таблица по листьям generic-дерева nodes
     preview_rows = []
-    for d in upload_data.get("domains") or []:
-        d_name = d.get("name") or ""
-        for s in d.get("skills") or []:
-            s_name = s.get("name") or ""
-            for a in s.get("actions") or []:
-                preview_rows.append({
+    u_nodes_preview = upload_data.get("nodes") or []
+    if u_nodes_preview:
+        tprev = deepcopy(u_nodes_preview)
+        assign_paths_to_generic_nodes(tprev)
+        for leaf in collect_leaves(tprev):
+            p = leaf.get("path") or []
+            if len(p) < 3:
+                continue
+            anc = get_ancestors(tprev, p)
+            chain = list(anc) + [leaf]
+            names = [(x.get("name") or "").strip() for x in chain]
+            d_name = names[0] if names else ""
+            s_name = names[1] if len(names) > 1 else ""
+            depth = len(names)
+            if depth >= 4:
+                action_text = names[-2]
+                sub_text = names[-1]
+            else:
+                action_text = names[-1]
+                sub_text = ""
+            sk_node = chain[1] if len(chain) > 1 else {}
+            skill_resp = str(sk_node.get("responsible") or "").strip()
+            skill_sticker = str(sk_node.get("level_sticker") or "").strip()
+            preview_rows.append(
+                {
                     "domain": d_name,
                     "skill": s_name,
-                    "action": a.get("text") or "",
-                    "subaction": "",
-                    "template_id": a.get("template_id"),
-                    "level_tag": a.get("level_tag") or "",
-                    "review_questions": "; ".join(a.get("review_questions") or []),
-                })
-                for sub in a.get("subactions") or []:
-                    preview_rows.append({
-                        "domain": d_name,
-                        "skill": s_name,
-                        "action": a.get("text") or "",
-                        "subaction": sub.get("text") or "",
-                        "template_id": sub.get("template_id"),
-                        "level_tag": sub.get("level_tag") or "",
-                        "review_questions": "; ".join(sub.get("review_questions") or []),
-                    })
+                    "skill_responsible": skill_resp,
+                    "skill_level_sticker": skill_sticker,
+                    "action": action_text,
+                    "subaction": sub_text,
+                    "template_id": leaf.get("template_id"),
+                    "level_tag": leaf.get("level_tag") or "",
+                    "level_tags": _preview_level_field(leaf),
+                    "leaf_view_keys": _preview_leaf_keys(leaf),
+                    "review_questions": "; ".join(str(q) for q in (leaf.get("review_questions") or []) if q),
+                }
+            )
+
+    ui_cfg = upload_data.get("ui_config") if isinstance(upload_data.get("ui_config"), dict) else {}
+    mcs = ui_cfg.get("matrix_column_schema")
+    preview_unified: Optional[Dict[str, Any]] = None
+    if isinstance(mcs, list) and len(mcs) > 0:
+        try:
+            u_nodes = upload_data.get("nodes") or []
+            u_domains = upload_data.get("domains") or []
+            u_headers, u_rows = build_unified_export_table(
+                u_domains,
+                ui_cfg,
+                nodes=(u_nodes or None),
+                include_header_tags=False,
+            )
+            if u_headers and u_rows:
+                max_rows = 250
+                preview_unified = {
+                    "headers": u_headers,
+                    "rows": u_rows[:max_rows],
+                    "truncated": len(u_rows) > max_rows,
+                    "total_rows": len(u_rows),
+                }
+        except Exception:
+            preview_unified = None
+
+    preview_context = {
+        "has_ui_config": bool(ui_cfg),
+        "matrix_levels_count": len(ui_cfg.get("matrix_levels") or []),
+        "matrix_column_schema_count": len(ui_cfg.get("matrix_column_schema") or []),
+        "unified_preview": bool(preview_unified),
+        "note": (
+            "Для unified с matrix_column_schema порядок колонок и подписи превью соответствуют шапке файла "
+            "(текст до скобок с тегами). Полная строка шапки сохраняется в схеме и уходит в шаблон/экспорт XLSX. "
+            "Иначе — укороченный плоский вид (домен, навык, …)."
+        ),
+    }
 
     return jsonify({
         "ok": True,
         "preview": preview_rows,
+        "preview_unified": preview_unified,
+        "preview_context": preview_context,
         "validation": vr.to_dict(),
-        "domains_count": len(upload_data.get("domains") or []),
+        "matrix_roots": len(upload_data.get("nodes") or []),
+        "domains_count": len(upload_data.get("nodes") or []),
     })
 
 
 @app.route('/api/source/upload', methods=["POST"])
 def api_source_upload():
     """Догрузка данных из JSON/Excel только в approval pipeline (submit-only)."""
+    _, admin_err = _require_admin()
+    if admin_err:
+        return admin_err
     if "file" not in request.files:
         return jsonify({"ok": False, "error": "Файл не передан (ожидается поле 'file')"}), 400
     f = request.files["file"]
@@ -3458,6 +4455,9 @@ def api_source_upload():
         return jsonify({"ok": False, "error": "Поддерживаются только JSON и Excel (.json, .xlsx, .xls)"}), 400
 
     merge_mode = (request.form.get("merge_mode") or "append").strip()
+    # Для Excel-импорта в admin-вкладке используем сценарий переинициализации матрицы.
+    if ext in (".xlsx", ".xls"):
+        merge_mode = "replace_all"
     target_domain = (request.form.get("target_domain") or "").strip() or None
     target_skill = (request.form.get("target_skill") or "").strip() or None
     if merge_mode not in ("append", "append_to_domain", "append_to_skill", "replace_domain", "replace_skill", "replace_all"):
@@ -3477,7 +4477,7 @@ def api_source_upload():
                 with open(tmp_path, "r", encoding="utf-8") as fp:
                     upload_data = json.load(fp)
             else:
-                upload_data = load_excel(tmp_path)
+                upload_data = load_excel_for_matrix_import(tmp_path)
         finally:
             try:
                 os.unlink(tmp_path)
@@ -3491,7 +4491,7 @@ def api_source_upload():
         actor, _ = _extract_actor_role()
         with db_session() as session:
             current_unified = load_unified_from_db(session, literature=load_literature_map())
-            current_projection = load_tree_projection(session)
+            current_nodes = load_matrix_nodes_nested(session)
             staging_batch = create_staging_batch(
                 session,
                 source_filename=f.filename or "upload",
@@ -3509,10 +4509,11 @@ def api_source_upload():
                 target_domain=target_domain,
                 target_skill=target_skill,
             )
+        base_snap = {"domains": [], "nodes": current_nodes}
         revision_payload = build_revision_payload(
-            base_snapshot={"domains": current_projection.get("domains") or []},
+            base_snapshot=base_snap,
             upload_payload=upload_data,
-            proposed_snapshot={"domains": merged.get("domains") or []},
+            proposed_snapshot=merged,
             merge_mode=merge_mode,
             target_domain=target_domain,
             target_skill=target_skill,
@@ -3734,7 +4735,7 @@ def api_reload():
 @app.route('/api/autoscale/check')
 def api_autoscale_check():
     """Проверка согласованности leaf-структуры matrix и tree (автоскейл)."""
-    matrix = get_matrix() or {"domains": []}
+    matrix = get_matrix() or {"nodes": []}
     tree = get_tree() or []
     expected = sorted(_expected_leaf_paths_from_matrix(matrix))
     actual = sorted("/".join(str(x) for x in (leaf.get("path") or [])) for leaf in collect_leaves(tree))

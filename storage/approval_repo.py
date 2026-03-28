@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -26,6 +26,7 @@ def create_change_request(
     created_by: str = "system",
     target_domain: Optional[str] = None,
     target_skill: Optional[str] = None,
+    initial_note: str = "initial revision",
 ) -> ChangeRequest:
     cr = ChangeRequest(
         title=title or "Change request",
@@ -47,7 +48,7 @@ def create_change_request(
         payload=payload or {},
         created_by=created_by or "system",
         created_at=utcnow(),
-        note="initial revision",
+        note=(initial_note or "initial revision"),
     )
     session.add(rev)
     return cr
@@ -98,6 +99,128 @@ def set_status(session: Session, change_id: int, status: str, actor: str, commen
         )
     )
     return cr
+
+
+def _hint_set(
+    hints: Dict[str, Dict[str, Any]],
+    path: str,
+    actor: str,
+    change_id: int,
+    created_at: str,
+) -> None:
+    if path in hints:
+        return
+    hints[path] = {
+        "actor": actor,
+        "change_id": change_id,
+        "at": created_at or "",
+    }
+
+
+def _merge_leaf_hints_from_nodes_tree(
+    hints: Dict[str, Dict[str, Any]],
+    nodes: Any,
+    actor: str,
+    change_id: int,
+    created_at: str,
+) -> None:
+    if not isinstance(nodes, list):
+        return
+
+    def walk(nlist: List[Dict[str, Any]], prefix: List[int]) -> None:
+        for i, n in enumerate(nlist):
+            if not isinstance(n, dict):
+                continue
+            p = prefix + [i]
+            ps = "/".join(str(x) for x in p)
+            _hint_set(hints, ps, actor, change_id, created_at)
+            ch = n.get("children") or []
+            if ch:
+                walk(ch, p)
+
+    walk(nodes, [])
+
+
+def _merge_leaf_hints_from_domains_payload(
+    hints: Dict[str, Dict[str, Any]],
+    domains: Any,
+    actor: str,
+    change_id: int,
+    created_at: str,
+) -> None:
+    if not isinstance(domains, list):
+        return
+    for di, d in enumerate(domains):
+        if not isinstance(d, dict):
+            continue
+        _hint_set(hints, str(di), actor, change_id, created_at)
+        skills = d.get("skills") or []
+        if not isinstance(skills, list):
+            continue
+        for si, s in enumerate(skills):
+            if not isinstance(s, dict):
+                continue
+            _hint_set(hints, f"{di}/{si}", actor, change_id, created_at)
+            actions = s.get("actions") or []
+            if not isinstance(actions, list):
+                continue
+            for ai, a in enumerate(actions):
+                if not isinstance(a, dict):
+                    continue
+                subs = a.get("subactions") or []
+                if isinstance(subs, list) and subs:
+                    for subi, sub in enumerate(subs):
+                        if isinstance(sub, dict):
+                            _hint_set(hints, f"{di}/{si}/{ai}/{subi}", actor, change_id, created_at)
+                else:
+                    _hint_set(hints, f"{di}/{si}/{ai}", actor, change_id, created_at)
+
+
+def leaf_path_hints_from_applied_changes(
+    session: Session,
+    live_nodes: Optional[List[Dict[str, Any]]] = None,
+    *,
+    limit_crs: int = 80,
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Для каждого path (индексы как в /leaf/...) — автор последней применённой ревизии CR.
+    Берётся proposed_snapshot.nodes из payload ревизии; для старых CR — domains в snapshot.
+    """
+    hints: Dict[str, Dict[str, Any]] = {}
+    rows = (
+        session.execute(
+            select(ChangeRequest)
+            .where(ChangeRequest.applied.is_(True))
+            .order_by(ChangeRequest.updated_at.desc())
+            .limit(int(limit_crs))
+        )
+        .scalars()
+        .all()
+    )
+    for cr in rows:
+        rev = (
+            session.execute(
+                select(ChangeRevision)
+                .where(ChangeRevision.change_request_id == cr.id)
+                .order_by(ChangeRevision.revision_no.desc())
+            )
+            .scalars()
+            .first()
+        )
+        if not rev or not isinstance(rev.payload, dict):
+            continue
+        actor = (rev.created_by or cr.created_by or "system").strip() or "system"
+        at = rev.created_at.isoformat() if rev.created_at else ""
+        proposed = rev.payload.get("proposed_snapshot")
+        if not isinstance(proposed, dict):
+            proposed = rev.payload
+        nodes_payload = proposed.get("nodes") if isinstance(proposed, dict) else None
+        if isinstance(nodes_payload, list) and nodes_payload:
+            _merge_leaf_hints_from_nodes_tree(hints, nodes_payload, actor, int(cr.id), at)
+        else:
+            domains = proposed.get("domains") if isinstance(proposed, dict) else None
+            _merge_leaf_hints_from_domains_payload(hints, domains, actor, int(cr.id), at)
+    return hints
 
 
 def get_latest_payload(session: Session, change_id: int) -> Optional[Dict[str, Any]]:

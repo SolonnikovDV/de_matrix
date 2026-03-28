@@ -24,6 +24,7 @@ htmlcov/
 TODO.md
 tig_app_ru.py
 tig_snapshot_de_matrix.md
+*.xlsx
 
 # ----------------------------
 # Runtime files and backups
