@@ -3,12 +3,14 @@
 # ----------------------------
 .idea/
 .vscode/
+.cursor/
 .gigaide/
 .venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 __pycache__/
+.pycache_compile/
 *.pyc
 .coverage
 htmlcov/
@@ -25,6 +27,13 @@ TODO.md
 tig_app_ru.py
 tig_snapshot_de_matrix.md
 *.xlsx
+
+# exls_matrix local/generated artifacts (keep locally, do not publish)
+exls_matrix/**/*_preview.html
+exls_matrix/**/*_preview_clean.html
+exls_matrix/**/*_answers.md
+exls_matrix/**/martrix_*
+exls_matrix/**/matrinx_*
 
 # ----------------------------
 # Runtime files and backups

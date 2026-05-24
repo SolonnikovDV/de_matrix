@@ -10,6 +10,7 @@ import json
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
+from .column_markers import marker_table_header
 from .excel_unified_relational import _item_action_sub_indices
 from .matrix_schema import (
     TAG_ITEM,
@@ -19,6 +20,40 @@ from .matrix_schema import (
     matrix_preview_column_caption,
     matrix_roundtrip_header_cell,
 )
+
+def _schema_uses_exls_maps(schema: List[Dict[str, Any]]) -> bool:
+    for ent in schema:
+        mt = str(ent.get("maps_to") or "").strip()
+        if mt.startswith("skill.") or mt.startswith("skill_sections."):
+            return True
+    return False
+
+
+def _resolve_maps_to_value(maps_to: str, domain: Dict[str, Any], skill: Dict[str, Any]) -> Any:
+    mt = str(maps_to or "").strip()
+    if not mt:
+        return None
+    if mt == "skill.section":
+        return skill.get("section")
+    if mt == "skill.status":
+        return skill.get("status")
+    if mt == "skill.author":
+        return skill.get("author") or skill.get("responsible")
+    if mt == "skill.reviewer":
+        return skill.get("reviewer")
+    if mt == "skill_sections.optional_for_level":
+        sections = skill.get("skill_sections") if isinstance(skill.get("skill_sections"), dict) else {}
+        q = sections.get("questions") if isinstance(sections.get("questions"), dict) else {}
+        t = sections.get("tasks") if isinstance(sections.get("tasks"), dict) else {}
+        return q.get("optional_for_level") or t.get("optional_for_level")
+    if mt.startswith("skill_sections."):
+        cur: Any = skill
+        for part in mt.split("."):
+            if not isinstance(cur, dict):
+                return None
+            cur = cur.get(part)
+        return cur
+    return None
 
 
 def _serialize_cell(val: Any) -> str:
@@ -97,6 +132,57 @@ def _collect_leaf_chains_from_nodes(nodes: List[Any], prefix: Optional[List[Dict
     return out
 
 
+def _one_row_from_exls_chain(
+    chain: List[Dict[str, Any]],
+    schema: List[Dict[str, Any]],
+    item_entries: List[Dict[str, Any]],
+    col_index_for_entry,
+    *,
+    emit_domain: bool,
+    emit_section: bool,
+) -> List[str]:
+    domain = chain[0] if chain else {}
+    skill = chain[-1] if chain else {}
+    row = [""] * len(schema)
+    names = [(x.get("name") or x.get("text") or "").strip() for x in chain]
+    ni = len(item_entries)
+    section_on_skill = ni <= 2 and bool(str(skill.get("section") or "").strip())
+    for j, ent in enumerate(item_entries):
+        ci = col_index_for_entry(ent)
+        if ci < 0:
+            continue
+        depth = int(ent.get("item_depth", j))
+        if depth == 0:
+            row[ci] = names[0] if emit_domain and names else ""
+        elif depth == 1:
+            if ni >= 3 and len(names) > 1:
+                row[ci] = names[1] if emit_section else ""
+            elif section_on_skill:
+                row[ci] = str(skill.get("section") or "").strip() if emit_section else ""
+            else:
+                row[ci] = names[-1] if names else ""
+        elif depth >= 2:
+            row[ci] = names[-1] if names else ""
+    for ent in schema:
+        ci = col_index_for_entry(ent)
+        if ci < 0:
+            continue
+        mt = str(ent.get("maps_to") or "").strip()
+        if mt == "skill.section":
+            row[ci] = str(skill.get("section") or "").strip() if emit_section else ""
+            continue
+        val = _resolve_maps_to_value(mt, domain, skill)
+        if val is not None and str(val).strip():
+            row[ci] = _serialize_cell(val)
+        tags = [str(t).lower() for t in (ent.get("tags") or [])]
+        if TAG_LEAF_VIEW in tags and not mt:
+            key = str(ent.get("leaf_view_key") or "").strip()
+            lv = skill.get("leaf_view") if isinstance(skill.get("leaf_view"), dict) else {}
+            if key and key in lv:
+                row[ci] = _serialize_cell(lv.get(key))
+    return row
+
+
 def _one_row_from_node_chain(
     chain: List[Dict[str, Any]],
     schema: List[Dict[str, Any]],
@@ -148,13 +234,16 @@ def build_unified_export_table(
     Если передан непустой ``nodes`` (generic-дерево), обход листьев идёт по нему; иначе — по ``domains`` (legacy).
     """
     schema = effective_matrix_column_schema(ui_config)
+    use_markers = bool((ui_config or {}).get("column_marker_format"))
     if include_header_tags:
         headers = [matrix_roundtrip_header_cell(e, ui_config) for e in schema]
+    elif use_markers:
+        headers = [marker_table_header(e) for e in schema]
     else:
         headers = [matrix_preview_column_caption(e, ui_config) for e in schema]
     item_entries = [e for e in schema if TAG_ITEM in [str(t).lower() for t in (e.get("tags") or [])]]
     ni = len(item_entries)
-    if ni < 3:
+    if ni < 2:
         return headers, []
 
     col_to_schema_index = {str(e.get("col") or "").upper(): i for i, e in enumerate(schema)}
@@ -166,11 +255,40 @@ def build_unified_export_table(
     rows_out: List[List[str]] = []
 
     if nodes:
+        use_exls = _schema_uses_exls_maps(schema)
+        prev_domain = ""
+        prev_section = ""
+        item_count = len(item_entries)
         for chain in _collect_leaf_chains_from_nodes(nodes, []):
-            rows_out.append(
-                _one_row_from_node_chain(chain, schema, item_entries, ni, col_index_for_entry)
-            )
+            if use_exls:
+                domain_name = (chain[0].get("name") or "").strip() if chain else ""
+                skill = chain[-1] if chain else {}
+                if item_count >= 3 and len(chain) >= 3:
+                    sec_name = (chain[1].get("name") or "").strip()
+                else:
+                    sec_name = str(skill.get("section") or "").strip()
+                emit_domain = domain_name != prev_domain
+                emit_section = sec_name != prev_section or emit_domain
+                rows_out.append(
+                    _one_row_from_exls_chain(
+                        chain,
+                        schema,
+                        item_entries,
+                        col_index_for_entry,
+                        emit_domain=emit_domain,
+                        emit_section=emit_section,
+                    )
+                )
+                prev_domain = domain_name
+                prev_section = sec_name
+            else:
+                rows_out.append(
+                    _one_row_from_node_chain(chain, schema, item_entries, ni, col_index_for_entry)
+                )
         return headers, rows_out
+
+    if ni < 3:
+        return headers, []
 
     idx_action, idx_sub = _item_action_sub_indices(ni)
     for d in domains or []:

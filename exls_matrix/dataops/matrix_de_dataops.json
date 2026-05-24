@@ -1,0 +1,88 @@
+{
+  "source_file": "matrix_de_dataops.xlsx",
+  "sheets": {
+    "Matrix": {
+      "columns": [
+        "node_1",
+        "node_2",
+        "node_3",
+        "label_3_node_3",
+        "leaf_1_node_3",
+        "leaf_2_node_3",
+        "leaf_3_node_3",
+        "label_4_node_3",
+        "leaf_5_node_3",
+        "label_1_node_3",
+        "label_2_node_3"
+      ],
+      "row_count": 5,
+      "rows": [
+        {
+          "node_1": "DataOps (Инфраструктура и надёжность)",
+          "node_2": "CI/CD для пайплайнов",
+          "node_3": "Release engineering и change safety (CI/CD)",
+          "label_3_node_3": "[Статус: Не начата (gray)]",
+          "leaf_1_node_3": "1. [Middle] Спроектируйте контур CI/CD для data pipeline: какие артефакты версионируются (код, конфиг, data contract), какие quality gates обязательны до выхода в production.\n2. [Middle] Какие trade-offs учитываются между скоростью релиза, стоимостью проверок и риском деградации качества данных, и как это фиксируется в решении.\n3. [Middle] Как организовать rollback/roll-forward после сбоя, если откат данных ограничен или дорог, включая pre-check и post-check.\n4. [Senior-growth] Как спроектировать pilot progressive delivery (canary/ring) для одного критичного пайплайна: policy-checks в CI и автоматическая остановка релиза по 1-2 SLO.",
+          "leaf_2_node_3": "1) Хабр, FLANT «Canary-деплой в Kubernetes с использованием Argo Rollouts и Istio» (разделы «Преимущества и нюансы канареечного деплоя», «Реализация canary-деплоя», «AnalysisTemplate»): https://habr.com/ru/companies/flant/articles/943624/\n2) Видео «Реальное собеседование на Data Engineer», тайминг 58:51-01:00:09 (устойчивость, контроль деградации и реакция на сбои): https://www.youtube.com/watch?v=NRWj8oEO3Ss\n3) Хамбл Дж., Фарли Д. «Непрерывное развертывание» (рус. издание), разделы о конвейере поставки и управлении риском релиза, стр. 45-138.",
+          "leaf_3_node_3": "Спроектируйте release process для критичного пайплайна «orders -> finance», который используется в регулярной финансовой отчетности. Опишите rollout по средам (pilot/partial/full), обязательные pre/post-checks, критерии stop/go относительно действующих SLI/SLA команды, способ ограничения blast radius и сценарий восстановления (rollback/roll-forward).",
+          "label_4_node_3": "Middle / Senior-growth (вес: Middle-core 80% / Senior-growth 20%)",
+          "leaf_5_node_3": "Проверьте, что кандидат описывает релиз как управление риском изменений, а не как набор команд деплоя. Обязательный артефакт: release design (схема контура CI/CD + go/no-go checklist + recovery decision tree). Оценка: 0 — нет критериев качества и управляемого восстановления; 1 — базовый процесс есть, но trade-offs и stop/go критерии неполные; 2 — процесс воспроизводим, риск ограничен, есть автоматические quality gates и план восстановления.",
+          "label_1_node_3": "Солонников Д.",
+          "label_2_node_3": null
+        },
+        {
+          "node_1": null,
+          "node_2": null,
+          "node_3": "Эволюция схем и data contracts (миграции БД)",
+          "label_3_node_3": "[Статус: Не начата (gray)]",
+          "leaf_1_node_3": "1. [Middle] Как провести совместимую миграцию схемы и data contract без остановки потребителей (backward/forward compatibility).\n2. [Middle] Какие проверки до и после изменения обязательны, чтобы подтвердить корректность данных и производительность запросов.\n3. [Middle] Когда выбирается expand/contract, dual-write или shadow-read, и как в этом контуре позиционируется Liquibase как инструмент, а не как стратегия.\n4. [Senior-growth] Как предложить schema-change process для своей команды и 1-2 потребляющих команд: ownership, compatibility-check и deprecation window с понятными SLA.",
+          "leaf_2_node_3": "1) PostgreSQL Pro, разделы «ALTER TABLE», «Ограничения таблиц (PRIMARY KEY, FOREIGN KEY, CHECK)»: https://postgrespro.ru/docs/postgresql/16/\n2) Видео «Реальное собеседование на Data Engineer», тайминг 16:34-22:56 (ключи, целостность, эволюция модели и изменения схемы): https://www.youtube.com/watch?v=NRWj8oEO3Ss\n3) Клеппманн М. «Высоконагруженные приложения» (рус. издание), разделы об эволюции схемы, совместимости и изменениях без простоя, стр. 221-286.",
+          "leaf_3_node_3": "Подготовьте migration runbook для безостановочного изменения схемы факта и связанного справочника в контуре с несколькими downstream-витринами и разной частотой обновления. Укажите compatibility matrix producer/consumer, этапы по средам, pre/post-check данных и производительности, критерии безопасного перехода и условия rollback/roll-forward без breaking changes.",
+          "label_4_node_3": "Middle / Senior-growth (вес: Middle-core 80% / Senior-growth 20%)",
+          "leaf_5_node_3": "Проверьте, что кандидат мыслит через совместимость и управление изменениями, а не через выполнение DDL-команд. Обязательный артефакт: migration runbook (compatibility matrix + pre/post-check + rollback criteria). Оценка: 0 — breaking change без защиты потребителей; 1 — базовый план есть, но неполная совместимость/контроль риска; 2 — детерминированная стратегия с подтверждаемой целостностью и безопасным восстановлением.",
+          "label_1_node_3": "Солонников Д.",
+          "label_2_node_3": null
+        },
+        {
+          "node_1": null,
+          "node_2": "Мониторинг и логирование",
+          "node_3": "Наблюдаемость: структурированные логи и трассировка",
+          "label_3_node_3": "[Статус: Не начата (gray)]",
+          "leaf_1_node_3": "1. [Middle] Какие обязательные поля должны присутствовать в событиях наблюдаемости, чтобы восстановить timeline инцидента по одному запуску.\n2. [Middle] Как связать события между оркестратором, обработкой и хранилищем через trace_id/run_id/correlation_id.\n3. [Middle] Где проходит граница между логом, метрикой и трейсом, и как выбрать уровень детализации без telemetry noise.\n4. [Senior-growth] Как определить observability-стандарт для одного домена (2-3 сервиса): log schema, trace correlation и минимальные quality-gates для новых пайплайнов.",
+          "leaf_2_node_3": "1) Хабр, Lamoda Tech «Apache Airflow в проде» (разделы «SLA и тайм-ауты», «Эксплуатация DAG»): https://habr.com/ru/company/lamoda/blog/518620/\n2) Видео «Лучшие практики OpenTelemetry для разработчиков», тайминг 00:00, 17:08, 37:09, 01:01:30: https://balun.courses/courses/observability/tpost/9acajktkj1-luchshie-praktiki-opentelemetry-dlya-raz\n3) Клеппманн М. «Высоконагруженные приложения» (рус. издание), разделы о наблюдаемости и диагностике распределенных систем, стр. 327-430.",
+          "leaf_3_node_3": "После релиза возникли дубликаты заказов и рост задержки расчета витрин. Спроектируйте observability-spec для контура «оркестратор -> обработка -> хранилище»: log schema, trace correlation и диагностические запросы, позволяющие локализовать root cause в рамках регламентного времени расследования команды.",
+          "label_4_node_3": "Middle / Senior-growth (вес: Middle-core 80% / Senior-growth 20%)",
+          "leaf_5_node_3": "Проверьте, что кандидат описывает observability как систему диагностики, а не как набор логов. Обязательный артефакт: observability spec (log schema + correlation strategy + 3 диагностических запроса/виджета). Оценка: 0 — сигналов недостаточно для расследования; 1 — частичная трассировка, высокая ручная зависимость; 2 — связная модель сигналов, позволяющая быстро найти root cause.",
+          "label_1_node_3": "Солонников Д.",
+          "label_2_node_3": null
+        },
+        {
+          "node_1": null,
+          "node_2": null,
+          "node_3": "SLI/SLO, reliability и capacity planning",
+          "label_3_node_3": "[Статус: Не начата (gray)]",
+          "leaf_1_node_3": "1. [Middle] Какие SLI должны отражать надежность data pipeline для бизнеса (freshness, success rate, correctness, latency), и как из них формируется SLO.\n2. [Middle] Какие trade-offs учитываются между latency, корректностью, свежестью данных и стоимостью вычислений в разных классах систем (streaming, MPP, OLTP/OLAP).\n3. [Middle] Как использовать error budget для решений о релизе, оптимизации и приоритизации техдолга.\n4. [Senior-growth] Как собрать reliability-модель для одного критичного контура (batch + stream), приоритизировать top-риски и предложить capacity-план на квартал с допущениями.",
+          "leaf_2_node_3": "1) Хабр, X5 Tech «Оптимизируем Shuffle в Spark» (разделы про диагностику узких мест и влияние на SLA): https://habr.com/ru/companies/X5Tech/articles/837348/\n2) Видео «Реальное собеседование на Data Engineer», тайминг 42:45-54:41 (деградация производительности, приоритизация улучшений): https://www.youtube.com/watch?v=NRWj8oEO3Ss\n3) Бейер Б., Джонс К., Петрофф Дж., Мерфи Н. «Site Reliability Engineering. Надежность и безотказность как в Google» (рус. издание), разделы SLI/SLO, error budget и мониторинг, стр. 147-238.",
+          "leaf_3_node_3": "Подготовьте reliability-pack для критичного контура витрин: SLI/SLO, пороги деградации, правила использования error budget, capacity-план и backlog улучшений с приоритетом по риску для SLA.",
+          "label_4_node_3": "Middle / Senior-growth (вес: Middle-core 80% / Senior-growth 20%)",
+          "leaf_5_node_3": "Проверьте, что кандидат связывает измеримость с управлением надежностью, а не с формальным мониторингом. Обязательный артефакт: reliability pack (SLI/SLO doc + пороги + remediation backlog). Оценка: 0 — метрики формальные, нет управленческих решений; 1 — метрики и пороги есть, но слабая связь с error budget/capacity; 2 — решения о релизах и оптимизации обоснованы данными и рисками.",
+          "label_1_node_3": "Солонников Д.",
+          "label_2_node_3": null
+        },
+        {
+          "node_1": null,
+          "node_2": null,
+          "node_3": "Алертинг и incident response",
+          "label_3_node_3": "[Статус: Не начата (gray)]",
+          "leaf_1_node_3": "1. [Middle] Как проектировать actionable alerts: что должно пейджить on-call, что уходит в тикет, а что остается в отчетности.\n2. [Middle] Как снизить alert fatigue (deduplication, suppression, маршрутизация по зависимостям), не теряя критичные инциденты.\n3. [Middle] Опишите сценарий первых 30 минут инцидента: triage, коммуникации, эскалация, временная стабилизация и критерий восстановления.\n4. [Senior-growth] Как улучшить incident-process в своей команде и на стыке с 1-2 зависимыми командами: роли в инциденте, postmortem-шаблон и трекинг corrective actions до закрытия.",
+          "leaf_2_node_3": "1) Хабр, Lamoda Tech «Apache Airflow в проде» (разделы «SLA и тайм-ауты», «Эксплуатация DAG», «Практика реакции на сбои»): https://habr.com/ru/company/lamoda/blog/518620/\n2) Видео «Реальное собеседование на Data Engineer», тайминг 58:51-01:00:09 (обработка сбоев, восстановление, устойчивость): https://www.youtube.com/watch?v=NRWj8oEO3Ss\n3) Бейер Б., Джонс К., Петрофф Дж., Мерфи Н. «Site Reliability Engineering. Надежность и безотказность как в Google» (рус. издание), разделы об алертинге, on-call, инцидент-менеджменте и postmortem, стр. 147-238.",
+          "leaf_3_node_3": "Для сценария schema drift upstream-источника, который нарушил выполнение downstream-джоб, спроектируйте incident-pack: alert matrix (severity/owner/SLA response), сценарий первичной стабилизации и восстановления, postmortem-шаблон и порядок трекинга corrective actions до закрытия.",
+          "label_4_node_3": "Middle / Senior-growth (вес: Middle-core 80% / Senior-growth 20%)",
+          "leaf_5_node_3": "Проверьте, что алертинг кандидата действительно снижает MTTR и не создает критический шум. Обязательный артефакт: incident pack (alert matrix + runbook + postmortem template). Оценка: 0 — неоперабельный алертинг и реакция зависит от героизма; 1 — процесс описан частично, но слабая эскалация/feedback loop; 2 — алерты приводят к четким действиям, есть управляемая эскалация и цикл системных улучшений.",
+          "label_1_node_3": "Солонников Д.",
+          "label_2_node_3": null
+        }
+      ]
+    }
+  }
+}

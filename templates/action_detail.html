@@ -134,6 +134,56 @@ function escapeHtml(s) {
         .replace(/'/g, '&#039;');
 }
 
+function renderExlsSkillMeta(data) {
+    let html = '';
+    const section = String(data.section || '').trim();
+    const status = String(data.status || '').trim();
+    const author = String(data.author || data.responsible || '').trim();
+    const reviewer = String(data.reviewer || '').trim();
+    if (section) {
+        html += `<section class="action-section"><h2><i class="fas fa-folder-open"></i> Раздел</h2><div class="section-content">${escapeHtml(section)}</div></section>`;
+    }
+    if (status || author || reviewer) {
+        html += '<section class="action-section"><h2><i class="fas fa-id-card"></i> Свойства навыка</h2><div class="section-content"><ul class="leaf-view-list">';
+        if (status) html += `<li><strong>Статус:</strong> ${escapeHtml(status)}</li>`;
+        if (author) html += `<li><strong>Автор:</strong> ${escapeHtml(author)}</li>`;
+        if (reviewer) html += `<li><strong>Ревьюер:</strong> ${escapeHtml(reviewer)}</li>`;
+        html += '</ul></div></section>';
+    }
+    return html;
+}
+
+function renderExlsSkillSections(skillSections, materialsItems) {
+    if (!skillSections || typeof skillSections !== 'object') return '';
+    const titles = {
+        questions: 'Вопросы',
+        tasks: 'Задачи',
+        reviewer_questions: 'Вопросы ревьюера',
+    };
+    let html = '';
+    ['questions', 'tasks', 'reviewer_questions'].forEach((key) => {
+        const sec = skillSections[key];
+        if (!sec || typeof sec !== 'object') return;
+        const body = formatLeafViewBody(sec.body || sec.text || '');
+        const materialsRaw = sec.materials || '';
+        const optional = String(sec.optional_for_level || '').trim();
+        const materialsHtml = (key === 'questions' && materialsItems && materialsItems.length && typeof window.renderMaterialsPreviewList === 'function')
+            ? window.renderMaterialsPreviewList(materialsItems)
+            : formatLeafViewBody(materialsRaw);
+        if (!body && !materialsHtml && !optional) return;
+        html += `<section class="action-section leaf-view-section"><h2><i class="fas fa-book-open"></i> ${escapeHtml(titles[key] || key)}</h2><div class="section-content">`;
+        if (body) html += body;
+        if (materialsHtml) {
+            html += `<h3 class="leaf-subheading">Материалы</h3>${materialsHtml}`;
+        }
+        if (optional) {
+            html += `<p class="leaf-optional"><strong>Опционально для уровня:</strong> ${escapeHtml(optional)}</p>`;
+        }
+        html += '</div></section>';
+    });
+    return html;
+}
+
 function leafViewTitleForKey(key) {
     const rows = window.__matrixColumnSchema || [];
     for (let i = 0; i < rows.length; i++) {
@@ -270,8 +320,17 @@ function loadActionDetails() {
 
                 const skipLv = {};
                 if (data.matrix_sources && data.matrix_sources.length) skipLv.sources = true;
+                html += renderExlsSkillMeta(data);
+                html += renderExlsSkillSections(data.skill_sections, data.materials_items);
                 html += renderLeafViewSections(data.leaf_view, skipLv);
-                html += renderMatrixSourcesSection(data.matrix_sources);
+                html += renderMatrixSourcesSection(
+                    (data.matrix_sources || []).filter(function(item) {
+                        if (!data.materials_items || !data.materials_items.length) return true;
+                        return !data.materials_items.some(function(m) {
+                            return String(m.url || '') === String(item.url || '') && String(m.title || '') === String(item.title || '');
+                        });
+                    })
+                );
 
                 const levelTags = levelTagsFromPayload(data);
                 if (levelTags.length) {

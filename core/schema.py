@@ -78,6 +78,11 @@ NODE_KEYS = {
     "id",
     "path",
     "is_leaf",
+    "section",
+    "status",
+    "author",
+    "reviewer",
+    "skill_sections",
 }
 
 
@@ -214,17 +219,35 @@ def _validate_leaf_meta(path: List[str], node: Dict[str, Any], result: Validatio
             result.ok = False
 
     review_questions = node.get("review_questions")
-    if review_questions in (None, ""):
-        return
-    if not isinstance(review_questions, list):
-        result.errors.append(f"{_path_str(path)}: review_questions должен быть массивом строк")
-        result.ok = False
-        return
-    for qi, question in enumerate(review_questions):
-        if not isinstance(question, str) or not question.strip():
-            result.errors.append(
-                f"{_path_str(path + [f'review_questions[{qi}]'])}: вопрос должен быть непустой строкой"
-            )
+    if review_questions not in (None, ""):
+        if not isinstance(review_questions, list):
+            result.errors.append(f"{_path_str(path)}: review_questions должен быть массивом строк")
+            result.ok = False
+        else:
+            for qi, question in enumerate(review_questions):
+                if not isinstance(question, str) or not question.strip():
+                    result.errors.append(f"{_path_str(path)}: review_questions[{qi}] должен быть непустой строкой")
+                    result.ok = False
+
+    ss = node.get("skill_sections")
+    if ss not in (None, "", {}):
+        if not isinstance(ss, dict):
+            result.errors.append(f"{_path_str(path)}: skill_sections должен быть объектом")
+            result.ok = False
+        else:
+            for sec_key, sec_val in ss.items():
+                if sec_val in (None, ""):
+                    continue
+                if not isinstance(sec_val, dict):
+                    result.errors.append(
+                        f"{_path_str(path + [f'skill_sections.{sec_key}'])}: раздел навыка должен быть объектом"
+                    )
+                    result.ok = False
+
+    for prop in ("status", "author", "reviewer", "section"):
+        val = node.get(prop)
+        if val is not None and val != "" and not isinstance(val, str):
+            result.errors.append(f"{_path_str(path)}: {prop} должен быть строкой")
             result.ok = False
 
 

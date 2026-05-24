@@ -514,12 +514,21 @@ function getSelectedDomainIndices() {
     return checked;
 }
 
+function getMatrixRoots(data) {
+    const src = data != null ? data : lastMatrixData;
+    if (!src) return [];
+    if (Array.isArray(src)) return src;
+    if (Array.isArray(src.nodes)) return src.nodes;
+    if (Array.isArray(src.domains)) return src.domains;
+    return [];
+}
+
 function getFilteredDomains() {
-    const domains = (lastMatrixData && lastMatrixData.domains) || [];
+    const roots = getMatrixRoots();
     const indices = getSelectedDomainIndices();
-    if (indices === null) return domains;
+    if (indices === null) return roots;
     if (indices.length === 0) return [];
-    return domains.filter((_, i) => indices.includes(i));
+    return roots.filter((_, i) => indices.includes(i));
 }
 
 function renderUnifiedExportTable(headers, rows) {
@@ -571,12 +580,12 @@ async function loadUnifiedExportTable() {
 }
 
 function buildDomainCheckboxes() {
-    const domains = (lastMatrixData && lastMatrixData.domains) || [];
+    const roots = getMatrixRoots();
     const container = document.getElementById('domainCheckboxes');
     if (!container) return;
     container.innerHTML = '';
     const urlIndices = getSelectedDomainIndicesFromUrl();
-    domains.forEach((d, i) => {
+    roots.forEach((d, i) => {
         const label = document.createElement('label');
         label.className = 'export-domain-checkbox';
         const cb = document.createElement('input');
@@ -585,7 +594,7 @@ function buildDomainCheckboxes() {
         if (urlIndices && urlIndices.includes(i)) cb.checked = true;
         cb.addEventListener('change', () => applyFilter());
         label.appendChild(cb);
-        label.appendChild(document.createTextNode(d.name));
+        label.appendChild(document.createTextNode(d.name || ('Домен ' + (i + 1))));
         container.appendChild(label);
     });
 }
@@ -810,8 +819,8 @@ function copyToClipboard() {
 }
 
 function exportToExcel() {
-    const all = (lastMatrixData && lastMatrixData.domains) || [];
-    if (!all.length) {
+    const roots = getMatrixRoots();
+    if (!roots.length) {
         showNotification('Нет данных матрицы', 'error');
         return;
     }

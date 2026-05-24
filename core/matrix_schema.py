@@ -129,10 +129,8 @@ def slugify_matrix_level_title(title: str, depth: int, max_len: int = 96) -> str
 
 # Глубина в дереве API: 0=корень, 1=второй уровень, … Подписи по умолчанию (если в импорте нет matrix_levels).
 DEFAULT_MATRIX_LEVELS: List[Dict[str, Any]] = [
-    {"depth": 0, "title": "Область компетенций", "tags": [TAG_ITEM]},
+    {"depth": 0, "title": "Домен", "tags": [TAG_ITEM]},
     {"depth": 1, "title": "Навык", "tags": [TAG_ITEM, TAG_SKILL_STICKER], "skill_responsible": True},
-    {"depth": 2, "title": "Действие", "tags": [TAG_ITEM], "grade_stickers": True},
-    {"depth": 3, "title": "Поддействие", "tags": [TAG_ITEM], "grade_stickers": True},
 ]
 
 def _is_placeholder_matrix_column_label(lab: str) -> bool:
@@ -323,16 +321,25 @@ def schema_entries_for_ui(
     """Копия схемы колонок: подписи как у импорта (до скобок с тегами), затем фолбэк на схему."""
     if not isinstance(schema, list):
         return []
+    from .column_markers import is_marker_column_header
+
     out: List[Dict[str, Any]] = []
     for ent in schema:
         if not isinstance(ent, dict):
             continue
         d = copy.deepcopy(ent)
+        raw_hdr = str(ent.get("header") or ent.get("marker") or "").strip()
         disp = matrix_preview_column_caption(ent, ui_config)
-        d["header"] = disp
-        lab0 = str(d.get("label") or "").strip()
-        if not lab0 or _is_placeholder_matrix_column_label(lab0):
-            d["label"] = disp if disp else lab0
+        if raw_hdr and is_marker_column_header(raw_hdr):
+            d["header"] = raw_hdr
+            lab0 = str(d.get("label") or "").strip()
+            if not lab0 or _is_placeholder_matrix_column_label(lab0):
+                d["label"] = disp if disp else lab0
+        else:
+            d["header"] = disp
+            lab0 = str(d.get("label") or "").strip()
+            if not lab0 or _is_placeholder_matrix_column_label(lab0):
+                d["label"] = disp if disp else lab0
         out.append(d)
     return out
 
@@ -665,13 +672,18 @@ def effective_matrix_column_schema(ui_config: Optional[Dict[str, Any]]) -> List[
     файле слева направо). Повторная сортировка по букве колонки не выполняется, чтобы шаблон и экспорт
     были 1:1 с метаданными импорта.
     """
-    raw = (ui_config or {}).get("matrix_column_schema")
+    ui = ui_config or {}
+    raw = ui.get("matrix_column_schema")
     if isinstance(raw, list) and raw:
         return [
             coalesce_schema_entry_labels(e, ui_config)
             for e in raw
             if isinstance(e, dict)
         ]
+    if ui.get("column_marker_format"):
+        from .column_markers import CANONICAL_MARKER_COLUMNS, build_marker_matrix_column_schema
+
+        return build_marker_matrix_column_schema(CANONICAL_MARKER_COLUMNS)
     return build_synthetic_matrix_column_schema(ui_config)
 
 

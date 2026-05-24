@@ -30,6 +30,9 @@ from storage.models import (
 )
 from core.schema import SCHEMA_VERSION
 from core.matrix_schema import normalize_level_tags
+from core.materials_literature_sync import sync_materials_to_literature
+from core.skill_node_payload import apply_skill_payload
+from storage.mongo_repo import load_literature_map, upsert_literature_item
 
 
 def _matrix_struct_tables_exist(session: Session) -> bool:
@@ -127,6 +130,13 @@ def load_examples_projection(session: Session) -> List[Dict[str, Any]]:
     return out
 
 
+def _unwrap_ui_setting_value(value: Any) -> Any:
+    """ui_settings хранит скаляры и списки как {"value": ...}; при загрузке возвращаем исходное значение."""
+    if isinstance(value, dict) and set(value.keys()) == {"value"}:
+        return deepcopy(value["value"])
+    return value
+
+
 def load_ui_projection(session: Session) -> Dict[str, Any]:
     ui = session.execute(select(UiConfig).where(UiConfig.id == 1)).scalar_one_or_none()
     out: Dict[str, Any] = (deepcopy(ui.payload) if ui and ui.payload else {})
@@ -135,7 +145,7 @@ def load_ui_projection(session: Session) -> Dict[str, Any]:
         out["section_titles"] = {row.key: row.title for row in section_rows}
     settings_rows = session.execute(select(UiSetting).order_by(UiSetting.id.asc())).scalars().all()
     for row in settings_rows:
-        out[row.key] = deepcopy(row.value)
+        out[row.key] = _unwrap_ui_setting_value(row.value)
     return out
 
 
@@ -190,6 +200,9 @@ def load_matrix_nodes_nested(session: Session) -> List[Dict[str, Any]]:
         rq = r.review_questions or []
         if isinstance(rq, list) and rq:
             d["review_questions"] = [str(q) for q in rq]
+        sp = getattr(r, "skill_payload", None) or {}
+        if isinstance(sp, dict) and sp:
+            apply_skill_payload(d, sp)
         epk = str(getattr(r, "excel_path_key", None) or "").strip()
         if epk:
             d["excel_path_key"] = epk
@@ -281,6 +294,10 @@ def replace_unified_in_db(session: Session, unified: Dict[str, Any]) -> None:
     replace_templates_in_db(session, payload.get("action_templates") or {})
     replace_examples_in_db(session, payload.get("action_examples") or [])
     replace_ui_in_db(session, payload.get("ui_config") or {})
+    existing_lit = load_literature_map()
+    merged_lit = sync_materials_to_literature(nodes, existing_lit)
+    for lit_id, item in merged_lit.items():
+        upsert_literature_item(str(lit_id), item or {})
 
 
 def list_domains(session: Session) -> List[Dict[str, Any]]:

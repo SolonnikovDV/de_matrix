@@ -10,6 +10,7 @@ on:
         type: string
   workflow_run:
     workflows:
+      - de_matrix CI
       - de_matrix Release Gate
     types:
       - completed
@@ -22,18 +23,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Deploy to Production Host
+  prepare:
+    name: Prepare CD deployment plan
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
+    outputs:
+      deploy_ref: ${{ steps.resolve-ref.outputs.ref }}
+      targets_json: ${{ steps.resolve-targets.outputs.targets_json }}
     if: >-
       ${{
         github.event_name == 'workflow_dispatch' ||
-        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          (
+            (github.event.workflow_run.name == 'de_matrix CI' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main') ||
+            github.event.workflow_run.name == 'de_matrix Release Gate'
+          )
+        )
       }}
     environment:
       name: production
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Resolve deploy ref
         id: resolve-ref
         run: |
@@ -45,50 +59,85 @@ jobs:
 
       - name: Validate required production secrets
         env:
+          PROD_DEPLOY_TARGETS_JSON: ${{ secrets.PROD_DEPLOY_TARGETS_JSON }}
           PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
           PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
           PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
           PROD_APP_DIR: ${{ secrets.PROD_APP_DIR }}
-          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
         run: |
           missing=0
-          for key in PROD_SSH_HOST PROD_SSH_USER PROD_SSH_PRIVATE_KEY PROD_APP_DIR; do
+          for key in PROD_SSH_PRIVATE_KEY; do
             value="$(printenv "$key" || true)"
             if [ -z "$value" ]; then
               echo "::error::Missing required secret: $key"
               missing=1
             fi
           done
+          if [ -z "${PROD_DEPLOY_TARGETS_JSON}" ]; then
+            for key in PROD_SSH_HOST PROD_SSH_USER PROD_APP_DIR; do
+              value="$(printenv "$key" || true)"
+              if [ -z "$value" ]; then
+                echo "::error::Missing required secret: $key (required when PROD_DEPLOY_TARGETS_JSON is empty)"
+                missing=1
+              fi
+            done
+          fi
           if [ "$missing" -ne 0 ]; then
             exit 1
           fi
-          if [ -z "${PROD_SSH_PORT}" ]; then
-            echo "PROD_SSH_PORT is empty, defaulting to 22"
-          fi
 
+      - name: Resolve deployment targets
+        id: resolve-targets
+        env:
+          PROD_DEPLOY_TARGETS_JSON: ${{ secrets.PROD_DEPLOY_TARGETS_JSON }}
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          PROD_APP_DIR: ${{ secrets.PROD_APP_DIR }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+        run: |
+          TARGETS_COMPACT="$(python3 scripts/resolve_deploy_targets.py)"
+          echo "targets_json=$TARGETS_COMPACT" >> "$GITHUB_OUTPUT"
+
+      - name: CD summary
+        run: |
+          echo "CD deploy ref: ${{ steps.resolve-ref.outputs.ref }}"
+          echo "Targets JSON prepared"
+
+  deploy:
+    name: Deploy to Production Hosts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.prepare.outputs.targets_json) }}
+    environment:
+      name: production
+    steps:
       - name: Configure SSH key and known_hosts
         env:
-          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          TARGET_HOST: ${{ matrix.target.host }}
           PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           printf '%s\n' "${PROD_SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${PROD_SSH_HOST}" >> ~/.ssh/known_hosts
+          ssh-keyscan -H "${TARGET_HOST}" >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
       - name: Deploy on remote host
         env:
-          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
-          PROD_SSH_USER: ${{ secrets.PROD_SSH_USER }}
-          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
-          PROD_APP_DIR: ${{ secrets.PROD_APP_DIR }}
-          DEPLOY_REF: ${{ steps.resolve-ref.outputs.ref }}
+          TARGET_HOST: ${{ matrix.target.host }}
+          TARGET_USER: ${{ matrix.target.user }}
+          TARGET_PORT: ${{ matrix.target.port }}
+          TARGET_APP_DIR: ${{ matrix.target.app_dir }}
+          DEPLOY_REF: ${{ needs.prepare.outputs.deploy_ref }}
         run: |
-          SSH_PORT="${PROD_SSH_PORT:-22}"
-          echo "Deploy ref: ${DEPLOY_REF}"
-          ssh -p "${SSH_PORT}" "${PROD_SSH_USER}@${PROD_SSH_HOST}" bash -s -- "${PROD_APP_DIR}" "${DEPLOY_REF}" <<'EOF'
+          SSH_PORT="${TARGET_PORT:-22}"
+          echo "Deploying ${DEPLOY_REF} to ${TARGET_USER}@${TARGET_HOST}:${TARGET_APP_DIR}"
+          ssh -p "${SSH_PORT}" "${TARGET_USER}@${TARGET_HOST}" bash -s -- "${TARGET_APP_DIR}" "${DEPLOY_REF}" <<'EOF'
           set -euo pipefail
           APP_DIR="$1"
           DEPLOY_REF="$2"
@@ -104,5 +153,6 @@ jobs:
 
       - name: Post-deploy summary
         run: |
-          echo "Production deployment completed."
-          echo "Ref: ${{ steps.resolve-ref.outputs.ref }}"
+          echo "Production deployment completed for target:"
+          echo "${{ matrix.target.host }}"
+          echo "Ref: ${{ needs.prepare.outputs.deploy_ref }}"

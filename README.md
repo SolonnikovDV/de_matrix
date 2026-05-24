@@ -16,9 +16,10 @@
 - [6. Инструкция для пользователя](#6-инструкция-для-пользователя)
 - [7. Инструкция для разработчика](#7-инструкция-для-разработчика)
 - [8. Развертывание на голой машине](#8-развертывание-на-голой-машине)
-- [9. Поддержка и дебаг проблем](#9-поддержка-и-дебаг-проблем)
-- [10. API и служебные маршруты](#10-api-и-служебные-маршруты)
-- [11. Лицензия](#11-лицензия)
+- [9. CI/CD и автодеплой](#9-cicd-и-автодеплой)
+- [10. Поддержка и дебаг проблем](#10-поддержка-и-дебаг-проблем)
+- [11. API и служебные маршруты](#11-api-и-служебные-маршруты)
+- [12. Лицензия](#12-лицензия)
 
 ---
 
@@ -59,6 +60,12 @@
   - `replace_skill`
   - `replace_all`
 - импорт JSON: поддерживаются и единое дерево `nodes`, и legacy-обёртка `domains` (нормализуется в `nodes`);
+- загрузка через API (`/api/source/upload*`) принимает `.json`, `.csv`, `.xlsx`, `.xls`;
+- JSON-upload поддерживает:
+  - unified (`nodes`) и legacy (`domains`) структуру;
+  - табличный JSON list-of-records;
+  - JSON-книгу формата `{source_file, sheets}` (парсится первый лист);
+- для файлового контура `exls_matrix` доступны конвертеры `xlsx_to_json.py` и `json_to_xlsx.py`;
 - экспорт и шаблон импорта;
 - staging batch + diff (`json_patch`, structural diff, upsert-plan).
 
@@ -171,9 +178,14 @@ graph TD
 
 | Скрипт | Назначение |
 |---|---|
-| `scripts/up.sh` | Единый запуск **всего** стека (base + prod override) |
+| `scripts/deploy.sh` | **Деплой инфраструктуры** (postgres, mongo, smtp) |
+| `scripts/run_app.sh` | **Запуск приложения** (`python app.py` на хосте) |
+| `scripts/deploy_prod.sh` | **Полный деплой** (app + proxy + hardening в Docker) |
+| `scripts/up.sh` | Alias на `deploy_prod.sh` (обратная совместимость) |
 | `scripts/prod_status.sh` | Статус сервисов и ключевые URL |
 | `scripts/prod_down.sh` | Остановка стека |
+| `scripts/prod_rebuild.sh` | Переиспользуемый update-сценарий: остановка -> pull/build -> запуск |
+| `scripts/prod_cleanup.sh` | Полная очистка `de_matrix` контейнерной группы (контейнеры/сети/тома, опц. образы) |
 | `scripts/smoke_all.sh` | Комплексный smoke/e2e прогон |
 | `scripts/db_backup.sh` | Backup PostgreSQL/Mongo |
 | `scripts/db_restore.sh` | Restore PostgreSQL/Mongo |
@@ -231,11 +243,48 @@ de_matrix/
 
 ## 5. Быстрый старт (администратор)
 
-### 5.1 Первый запуск
+### 5.1 Два режима запуска
+
+| Режим | Деплой | Запуск приложения | URL |
+|---|---|---|---|
+| **Разработка (host app)** | `bash scripts/deploy.sh` | `bash scripts/run_app.sh` или `python app.py` | `http://localhost:5001` |
+| **Production (all-in-docker)** | `bash scripts/deploy_prod.sh` | app уже в контейнере `de-matrix-app` | `https://localhost` |
+
+**Разработка** — инфраструктура в Docker, процесс приложения на хосте через `app.py`:
 
 ```bash
 chmod +x ./scripts/*.sh
-bash ./scripts/up.sh
+bash ./scripts/deploy.sh      # postgres + mongo + smtp
+bash ./scripts/run_app.sh     # python app.py с автозагрузкой .env
+```
+
+**Production / полный стек** — app + proxy + hardening в контейнерах:
+
+```bash
+bash ./scripts/deploy_prod.sh
+# alias: bash ./scripts/up.sh
+```
+
+Пересборка production-стека:
+
+```bash
+bash ./scripts/prod_rebuild.sh
+```
+
+Пересборка только инфраструктуры для host-режима:
+
+```bash
+bash ./scripts/prod_rebuild.sh --host-dev
+bash ./scripts/run_app.sh
+```
+
+### 5.2 Первый запуск (кратко)
+
+```bash
+chmod +x ./scripts/*.sh
+cp .env.example .env   # если .env ещё нет
+bash ./scripts/deploy.sh
+bash ./scripts/run_app.sh
 ```
 
 Проверка:
@@ -244,13 +293,13 @@ bash ./scripts/up.sh
 bash ./scripts/prod_status.sh
 ```
 
-### 5.2 Вход в приложение
+### 5.3 Вход в приложение
 
 - локально: `https://localhost` (или порт из `.env`);
 - вход по `DE_MATRIX_ADMIN_USERNAME` / `DE_MATRIX_ADMIN_PASSWORD`;
 - при первом входе смените пароль на `/account/password`.
 
-### 5.3 Админ-разделы
+### 5.4 Админ-разделы
 
 - пользователи: `/admin/users`
 - SQL console: `/admin/sql-console`
@@ -286,8 +335,17 @@ pip install -r requirements.txt
 
 ### 7.2 Подъем окружения
 
+Host app (рекомендуется для разработки):
+
 ```bash
-bash ./scripts/up.sh
+bash ./scripts/deploy.sh
+bash ./scripts/run_app.sh
+```
+
+Full docker stack:
+
+```bash
+bash ./scripts/deploy_prod.sh
 ```
 
 ### 7.3 Базовые проверки
@@ -343,6 +401,18 @@ bash ./scripts/smoke_all.sh --rollback
 bash ./scripts/up.sh
 ```
 
+Для обновления уже раскатанного окружения используйте переиспользуемый сценарий:
+
+```bash
+bash ./scripts/prod_rebuild.sh
+```
+
+Полная очистка контейнерной группы `de_matrix` (деструктивно):
+
+```bash
+bash ./scripts/prod_cleanup.sh --yes
+```
+
 5. Проверьте:
    - `bash ./scripts/prod_status.sh`
    - `https://<your-domain>/proxy-health`
@@ -358,9 +428,84 @@ ssh -L 19000:127.0.0.1:19000 <user>@<host>
 
 ---
 
-## 9. Поддержка и дебаг проблем
+## 9. CI/CD и автодеплой
 
-### 9.1 Быстрая диагностика
+### 9.1 Что проверяет CI
+
+CI workflow: `.github/workflows/ci.yml`
+
+На каждый `push` и `pull_request` выполняются:
+- статические проверки Python (`py_compile` ключевых модулей и скриптов);
+- валидация `docker-compose.yml` и `docker-compose.prod.yml`;
+- проверка обязательных сервисов в compose-конфигурации;
+- интеграционный smoke/e2e прогон (`scripts/smoke_all.sh`).
+
+### 9.2 Как работает CD
+
+CD workflow: `.github/workflows/deploy-prod.yml`
+
+Автодеплой выполняется:
+- после успешного завершения `de_matrix CI` для `push` в `main`;
+- после успешного `de_matrix Release Gate`;
+- вручную через `workflow_dispatch`.
+
+CD разворачивает **один и тот же ref на все целевые хосты**, где расположен клон репозитория.
+
+### 9.3 Конфигурация хостов для автодеплоя
+
+Рекомендуемый способ: секрет `PROD_DEPLOY_TARGETS_JSON` (JSON-массив целей).
+
+Пример:
+
+```json
+[
+  {"host":"10.0.1.10","user":"deploy","port":"22","app_dir":"/opt/de_matrix"},
+  {"host":"10.0.1.11","user":"deploy","port":"22","app_dir":"/opt/de_matrix"}
+]
+```
+
+Обязательные поля на цель:
+- `host`
+- `user`
+- `app_dir`
+
+Опционально:
+- `port` (по умолчанию `22`).
+
+Обязательный общий секрет для всех целей:
+- `PROD_SSH_PRIVATE_KEY` (закрытый SSH-ключ деплой-пользователя).
+
+Требования к целевому хосту (для `app_dir`):
+- в `app_dir` уже существует клон репозитория `de_matrix` с доступным `origin`;
+- у deploy-пользователя есть права на `git fetch/checkout`, запуск Docker Compose и выполнение `scripts/*.sh`;
+- на хосте установлены Docker Engine + Compose plugin.
+
+### 9.4 Обратная совместимость (single-host)
+
+Если `PROD_DEPLOY_TARGETS_JSON` не задан, используется legacy-набор секретов:
+- `PROD_SSH_HOST`
+- `PROD_SSH_USER`
+- `PROD_APP_DIR`
+- `PROD_SSH_PORT` (опционально)
+- `PROD_SSH_PRIVATE_KEY` (обязательно)
+
+### 9.5 Rollback для всех хостов
+
+Workflow `.github/workflows/deploy-rollback.yml` использует тот же список целей и выполняет rollback на каждом хосте.
+
+### 9.6 Локальный запуск и связь с CD
+
+Текущая реализация поддерживает запуск на локальной машине:
+- локально: `bash ./scripts/up.sh`
+- production/CD: через GitHub Actions и SSH-доступ к целевым хостам
+
+Автодеплой не мешает локальной разработке: локальный контур работает независимо от GitHub Actions.
+
+---
+
+## 10. Поддержка и дебаг проблем
+
+### 10.1 Быстрая диагностика
 
 ```bash
 bash ./scripts/prod_status.sh
@@ -368,7 +513,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=200 
 docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=200 proxy
 ```
 
-### 9.2 Частые проблемы
+### 10.2 Частые проблемы
 
 | Симптом | Причина | Решение |
 |---|---|---|
@@ -381,7 +526,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=200 
 | Уведомления `skipped` / пустые получатели | В профиле нет email | заполнить email у админов/авторов; смотреть `/admin/notifications` |
 | `Connection refused` к SMTP | Неверный host/port для среды | в контейнере app — `smtp:1025`; с хоста — `127.0.0.1` и порт проброса Mailpit |
 
-### 9.3 Backup/restore и восстановление
+### 10.3 Backup/restore и восстановление
 
 ```bash
 bash ./scripts/db_backup.sh
@@ -397,7 +542,7 @@ bash ./scripts/prod_status.sh
 
 ---
 
-## 10. API и служебные маршруты
+## 11. API и служебные маршруты
 
 ### Core API
 
@@ -415,6 +560,6 @@ bash ./scripts/prod_status.sh
 
 ---
 
-## 11. Лицензия
+## 12. Лицензия
 
 MIT, см. `LICENSE`.

@@ -295,6 +295,38 @@
         var titleEl = document.getElementById('litPreviewTitle');
         var metaEl = document.getElementById('litPreviewMeta');
         var linkEl = document.getElementById('litPreviewLink');
+        window.toEmbeddablePreviewUrl = function(url) {
+            if (!url) return url;
+            try {
+                var u = new URL(url, window.location.origin);
+                var host = u.hostname.replace(/^www\./, '').toLowerCase();
+                if (host === 'youtube.com' || host === 'm.youtube.com') {
+                    var vid = u.searchParams.get('v');
+                    if (vid) return 'https://www.youtube.com/embed/' + encodeURIComponent(vid);
+                    var ym = u.pathname.match(/^\/(embed|shorts)\/([^/?#]+)/);
+                    if (ym && ym[2]) return 'https://www.youtube.com/embed/' + encodeURIComponent(ym[2]);
+                }
+                if (host === 'youtu.be') {
+                    var shortId = u.pathname.replace(/^\//, '').split('/')[0];
+                    if (shortId) return 'https://www.youtube.com/embed/' + encodeURIComponent(shortId);
+                }
+            } catch (err) { /* ignore */ }
+            return url;
+        };
+        window.renderMaterialsPreviewList = function(items) {
+            if (!items || !items.length) return '';
+            var html = '<ul class="literature-list materials-preview-list">';
+            items.forEach(function(item) {
+                var litData = JSON.stringify(item || {}).replace(/"/g, '&quot;');
+                var hasPrev = item.url || item.local_path;
+                html += '<li class="literature-item"><a href="#" class="literature-link literature-preview-trigger" data-lit="' + litData + '"><strong>' +
+                    (item.title || item.url || 'Источник').replace(/</g, '&lt;') + '</strong>';
+                if (hasPrev) html += ' <i class="fas fa-external-link-alt icon-inline-small-gap"></i>';
+                html += '</a></li>';
+            });
+            html += '</ul>';
+            return html;
+        };
         window.openLiteraturePreview = function(item) {
             if (!modal) return;
             titleEl.textContent = item.title || '';
@@ -313,13 +345,16 @@
                     linkHtml = '<a href="' + libUrl + '" target="_blank" class="btn btn-primary"><i class="fas fa-external-link-alt"></i> Открыть файл</a>';
                 }
             } else if (url) {
-                // Пробуем предпросмотр для всех внешних ссылок (как в предыдущем поведении).
-                // Если сайт блокирует встраивание (X-Frame-Options/CSP), останется кнопка открытия в новой вкладке.
                 var lowerUrl = url.toLowerCase().split('?')[0].split('#')[0];
+                var previewUrl = (typeof window.toEmbeddablePreviewUrl === 'function')
+                    ? window.toEmbeddablePreviewUrl(url)
+                    : url;
                 iframe.style.display = 'block';
-                iframe.src = url;
+                iframe.src = previewUrl;
                 linkHtml = '<a href="' + url.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener" class="btn btn-primary"><i class="fas fa-external-link-alt"></i> Открыть источник</a>';
-                if (!lowerUrl.endsWith('.pdf')) linkHtml += '<div class="lit-preview-note">Если сайт запрещает встраивание, используйте "Открыть источник".</div>';
+                if (!lowerUrl.endsWith('.pdf')) {
+                    linkHtml += '<div class="lit-preview-note">Если сайт запрещает встраивание, используйте «Открыть источник». YouTube и PDF обычно открываются в окне предпросмотра.</div>';
+                }
             } else {
                 iframe.style.display = 'none';
             }

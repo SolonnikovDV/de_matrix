@@ -67,6 +67,7 @@ class MatrixNode(Base):
     level_tags: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     leaf_view: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     review_questions: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    skill_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     excel_path_key: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
 

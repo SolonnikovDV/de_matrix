@@ -216,7 +216,8 @@
             <div class="import-modal-section merge-options">
                 <div class="import-modal-section-title">Режим загрузки</div>
                 <label class="merge-mode-label" for="mergeMode">Сценарий</label>
-                <select id="mergeMode" onchange="toggleTargetSelects()">
+                <select id="mergeMode" onchange="onMergeModeChange()">
+                    <option value="increment">Инкремент — обогащение существующей матрицы</option>
                     <option value="replace_all">Полная замена матрицы (Excel → новая структура)</option>
                 </select>
                 <div id="mergeModeHelp" class="merge-help"></div>
@@ -240,7 +241,7 @@
                 <div id="validationContent"></div>
             </div>
             <div id="importModalError" class="import-inline-error is-hidden" role="alert"></div>
-            <div class="import-modal-section danger-confirm-block">
+            <div class="import-modal-section danger-confirm-block is-hidden">
                 <p class="danger-confirm-title"><i class="fas fa-triangle-exclamation"></i> Опасная операция</p>
                 <p class="reload-hint">
                     После применения текущая структура матрицы будет заменена данными из Excel. Это влияет на все связанные представления.
@@ -325,18 +326,27 @@ async function loadDomainsForUpload() {
 }
 
 const MERGE_MODE_HELP = {
-    replace_all: 'ВНИМАНИЕ: Текущая матрица будет полностью заменена загруженными данными. Действия, литература и шаблоны из текущего источника будут утеряны. Создаётся бэкап перед заменой.'
+    increment: 'Добавляет/обновляет навыки по пути Домен→Раздел→Навык. Схема колонок (маркеры node_i / leaf / label) и глубина дерева должны совпадать с матрицей в БД. Существующие навыки обогащаются, новые — добавляются.',
+    replace_all: 'ВНИМАНИЕ: Текущая матрица будет полностью заменена загруженными данными. Создаётся бэкап перед заменой.'
 };
 
+function onMergeModeChange() {
+    toggleTargetSelects();
+    if (pendingUploadFile && document.getElementById('uploadFile')?.files?.length) {
+        void previewUpload();
+    }
+}
+
 function toggleTargetSelects() {
-    const mode = 'replace_all';
+    const mode = document.getElementById('mergeMode')?.value || 'increment';
     const domainWrap = document.getElementById('targetDomainWrap');
     const skillWrap = document.getElementById('targetSkillWrap');
     const helpEl = document.getElementById('mergeModeHelp');
-    domainWrap.style.display = 'none';
-    skillWrap.style.display = 'none';
+    const dangerBlock = document.querySelector('.danger-confirm-block');
+    if (domainWrap) domainWrap.style.display = 'none';
+    if (skillWrap) skillWrap.style.display = 'none';
     if (helpEl) helpEl.textContent = MERGE_MODE_HELP[mode] || '';
-    // Для admin Excel-импорта используется только replace_all.
+    if (dangerBlock) dangerBlock.style.display = mode === 'replace_all' ? '' : 'none';
 }
 
 function fillDomainSelect() {
@@ -413,6 +423,8 @@ async function previewUpload() {
     }
     const formData = new FormData();
     formData.append('file', selectedFile);
+    const mergeMode = document.getElementById('mergeMode')?.value || 'increment';
+    formData.append('merge_mode', mergeMode);
     document.getElementById('previewContent').innerHTML = `
         <div class="skeleton-card">
             <span class="skeleton skeleton-line w-40"></span>
@@ -466,21 +478,25 @@ function renderPreview(data) {
     const ctx = data.preview_context || {};
     let html = '';
     const pu = data.preview_unified;
-    if (pu && Array.isArray(pu.headers) && pu.headers.length && Array.isArray(pu.rows) && pu.rows.length) {
-        const total = typeof pu.total_rows === 'number' ? pu.total_rows : pu.rows.length;
-        html += `<p>Корней матрицы: ${data.matrix_roots ?? data.domains_count ?? 0}, строк unified (листья): ${total}</p>`;
+    if (pu && Array.isArray(pu.headers) && pu.headers.length) {
+        const total = typeof pu.total_rows === 'number' ? pu.total_rows : (pu.rows || []).length;
+        html += `<p>Корней матрицы: ${data.matrix_roots ?? data.domains_count ?? 0}, строк таблицы: ${total}</p>`;
         if (ctx.note) {
             html += `<p class="reload-hint" style="margin-bottom:12px;">${escapeHtml(ctx.note)}</p>`;
         }
+        if (ctx.unified_preview_error) {
+            html += `<p class="import-inline-error">${escapeHtml(ctx.unified_preview_error)}</p>`;
+        }
         if (ctx.has_ui_config) {
-            html += `<p class="reload-hint">В файле есть ui_config: уровни (${ctx.matrix_levels_count || 0}), колонок в схеме (${ctx.matrix_column_schema_count || 0}). Предпросмотр по заголовкам из файла.</p>`;
+            html += `<p class="reload-hint">ui_config: уровней ${ctx.matrix_levels_count || 0}, колонок ${ctx.matrix_column_schema_count || 0}${ctx.column_marker_format ? ', формат маркеров' : ''}.</p>`;
         }
         html += '<div class="preview-table-wrap"><table class="preview-table"><thead><tr>';
         pu.headers.forEach((h) => { html += `<th>${escapeHtml(String(h || ''))}</th>`; });
         html += '</tr></thead><tbody>';
-        const show = Math.min(50, pu.rows.length);
+        const rows = Array.isArray(pu.rows) ? pu.rows : [];
+        const show = Math.min(50, rows.length);
         for (let i = 0; i < show; i += 1) {
-            const row = pu.rows[i] || [];
+            const row = rows[i] || [];
             html += '<tr>';
             for (let j = 0; j < pu.headers.length; j += 1) {
                 const cell = row[j] != null ? row[j] : '';
@@ -489,11 +505,14 @@ function renderPreview(data) {
             html += '</tr>';
         }
         const cs = pu.headers.length;
-        if (pu.rows.length > 50) {
-            html += `<tr><td colspan="${cs}">… ещё ${pu.rows.length - 50} строк в ответе API</td></tr>`;
+        if (rows.length > 50) {
+            html += `<tr><td colspan="${cs}">… ещё ${rows.length - 50} строк в ответе API</td></tr>`;
         }
-        if (pu.truncated && typeof pu.total_rows === 'number' && pu.total_rows > pu.rows.length) {
-            html += `<tr><td colspan="${cs}">… всего в файле ${pu.total_rows} строк; в ответе первые ${pu.rows.length}</td></tr>`;
+        if (!rows.length) {
+            html += `<tr><td colspan="${cs}">Нет строк данных (проверьте импорт и skill_payload в БД после Apply)</td></tr>`;
+        }
+        if (pu.truncated && typeof pu.total_rows === 'number' && pu.total_rows > rows.length) {
+            html += `<tr><td colspan="${cs}">… всего ${pu.total_rows} строк; показаны первые ${rows.length}</td></tr>`;
         }
         html += '</tbody></table></div>';
     } else if (data.preview && data.preview.length) {
@@ -516,6 +535,11 @@ function renderPreview(data) {
     document.getElementById('previewContent').innerHTML = html || '<p>Нет данных для отображения</p>';
 
     let valHtml = '';
+    if (ctx.incremental_validation && ctx.incremental_validation.errors && ctx.incremental_validation.errors.length) {
+        valHtml += `<div class="validation-block validation-errors"><h4>Инкремент: несовместимость со структурой БД</h4><ul>`;
+        ctx.incremental_validation.errors.forEach(e => valHtml += `<li>${escapeHtml(e)}</li>`);
+        valHtml += '</ul></div>';
+    }
     if (v.errors && v.errors.length) {
         valHtml += `<div class="validation-block validation-errors"><h4>Ошибки (исправьте перед загрузкой)</h4><ul>`;
         v.errors.forEach(e => valHtml += `<li>${escapeHtml(e)}</li>`);
@@ -576,20 +600,24 @@ async function doUpload() {
         showImportModalError('Сначала выберите файл и выполните предпросмотр/валидацию.');
         return;
     }
-    const confirmBox = document.getElementById('confirmReplaceAll');
-    if (!confirmBox || !confirmBox.checked) {
-        showImportModalError('Отметьте галочку: вы подтверждаете последствия полной переинициализации.');
+    const mode = document.getElementById('mergeMode')?.value || 'increment';
+    if (mode === 'replace_all') {
+        const confirmBox = document.getElementById('confirmReplaceAll');
+        if (!confirmBox || !confirmBox.checked) {
+            showImportModalError('Отметьте галочку: вы подтверждаете последствия полной переинициализации.');
+            return;
+        }
+        openModalById('replaceRiskModal');
         return;
     }
-    openModalById('replaceRiskModal');
+    await performUpload(mode);
 }
 
-async function performReplaceUpload() {
+async function performUpload(mode) {
     if (!pendingUploadFile) return;
-    const mode = 'replace_all';
     const formData = new FormData();
     formData.append('file', pendingUploadFile);
-    formData.append('merge_mode', mode);
+    formData.append('merge_mode', mode || 'increment');
     const btn = document.getElementById('btnDoUpload');
     if (btn) btn.disabled = true;
     try {
@@ -610,6 +638,10 @@ async function performReplaceUpload() {
         }
     } catch (e) { alert('Ошибка: ' + e.message); }
     finally { if (btn) btn.disabled = false; }
+}
+
+async function performReplaceUpload() {
+    await performUpload('replace_all');
 }
 </script>
 {% endblock %}

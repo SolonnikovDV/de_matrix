@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 """
 Слияние загруженных данных с текущим источником (единое дерево `nodes`).
-Режимы: append, append_to_domain, append_to_skill, replace_domain, replace_skill, replace_all.
+Режимы: append, append_to_domain, append_to_skill, replace_domain, replace_skill,
+replace_all, increment (обогащение при совпадении схемы).
 """
 from typing import Dict, Any, List, Optional, Tuple
 from copy import deepcopy
 
 from .loaders import META_KEYS, _normalize_unified, _empty_unified
-from .schema import SCHEMA_VERSION
+from .schema import SCHEMA_VERSION, ValidationResult
 
 
 def _merge_node_meta(dst: Dict, src: Dict) -> None:
@@ -30,6 +31,15 @@ def _merge_node_meta(dst: Dict, src: Dict) -> None:
         dst["review_questions"] = deepcopy(src["review_questions"])
     if isinstance(src.get("leaf_view"), dict) and src["leaf_view"]:
         dst["leaf_view"] = {**(dst.get("leaf_view") or {}), **deepcopy(src["leaf_view"])}
+    for key in ("section", "status", "author", "reviewer"):
+        val = src.get(key)
+        if isinstance(val, str) and val.strip() and not str(dst.get(key) or "").strip():
+            dst[key] = val.strip()
+    ss = src.get("skill_sections")
+    if isinstance(ss, dict) and ss:
+        from .skill_node_payload import merge_skill_fields
+
+        merge_skill_fields(dst, src)
 
 
 def _merge_children_by_name(existing: List[Dict], incoming: List[Dict]) -> List[Dict]:
@@ -79,6 +89,14 @@ def merge_upload_into_source(
     current = _normalize_unified(current) if current else _empty_unified()
     upload = _normalize_unified(upload) if upload else _empty_unified()
     up_nodes = upload.get("nodes") or []
+
+    if merge_mode == "increment":
+        from .incremental_merge import merge_incremental_into_source
+
+        merged, vr = merge_incremental_into_source(current, upload)
+        if not vr.ok:
+            raise ValueError("; ".join(vr.errors))
+        return merged
 
     if merge_mode == "replace_all":
         out = _empty_unified()

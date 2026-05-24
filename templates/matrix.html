@@ -137,7 +137,7 @@ function getLeafColumnLabel() {
     if (typeof window.matrixSchemaLeafColumnHeading === 'function') {
         return window.matrixSchemaLeafColumnHeading();
     }
-    return 'leaf';
+    return 'Карточка навыка';
 }
 
 function renderLeafColumn(treeView, node) {
@@ -150,8 +150,11 @@ function renderLeafColumn(treeView, node) {
     const leafPath = getPathString(node);
     const leafHint = node && getNodeTitle(node) ? '<div class="tree-node-leaf-hint">' + escHtml(getNodeTitle(node)) + '</div>' : '';
     const leafDesc = node && getNodeDescriptionSnippet(node) ? '<div class="tree-node-desc-hint">' + escHtml(getNodeDescriptionSnippet(node)) + '</div>' : '';
+    const propCloud = (typeof window.matrixNodePropertyStickersHtml === 'function')
+        ? window.matrixNodePropertyStickersHtml(node, escHtml)
+        : '';
     item.innerHTML = '<div class="tree-node-main-row"><i class="fas fa-file-alt"></i><span class="tree-node-label">' +
-        escHtml('Открыть карточку') + '</span></div>' + leafHint + leafDesc;
+        escHtml('Открыть карточку') + '</span></div>' + leafHint + propCloud + leafDesc;
     item.addEventListener('click', function (e) {
         e.stopPropagation();
         if (leafPath) openMatrixLeafModal(leafPath);
@@ -255,6 +258,30 @@ function levelTagsFromLeafPayload(data) {
     return [];
 }
 
+function renderMatrixExlsSkillSections(skillSections, materialsItems) {
+    if (!skillSections || typeof skillSections !== 'object') return '';
+    const titles = { questions: 'Вопросы', tasks: 'Задачи', reviewer_questions: 'Вопросы ревьюера' };
+    let html = '';
+    ['questions', 'tasks', 'reviewer_questions'].forEach(function (key) {
+        const sec = skillSections[key];
+        if (!sec || typeof sec !== 'object') return;
+        const body = formatLeafViewBody(sec.body || sec.text || '');
+        const materialsRaw = sec.materials || '';
+        const optional = String(sec.optional_for_level || '').trim();
+        const materialsHtml = (key === 'questions' && materialsItems && materialsItems.length && typeof window.renderMaterialsPreviewList === 'function')
+            ? window.renderMaterialsPreviewList(materialsItems)
+            : formatLeafViewBody(materialsRaw);
+        if (!body && !materialsHtml && !optional) return;
+        html += '<section class="action-section leaf-view-section"><h2><i class="fas fa-book-open"></i> ' +
+            escHtml(titles[key] || key) + '</h2><div class="section-content">';
+        if (body) html += body;
+        if (materialsHtml) html += '<h3 class="leaf-subheading">Материалы</h3>' + materialsHtml;
+        if (optional) html += '<p class="leaf-optional"><strong>Опционально для уровня:</strong> ' + escHtml(optional) + '</p>';
+        html += '</div></section>';
+    });
+    return html;
+}
+
 function buildMatrixLeafModalHtml(data) {
     const lt = levelTagsFromLeafPayload(data);
     const summaryPlain = String(data.node_summary != null ? data.node_summary : '').trim();
@@ -264,6 +291,11 @@ function buildMatrixLeafModalHtml(data) {
         level_tags: data.level_tags || lt,
         level_tag: data.level_tag,
         level_sticker: data.level_sticker,
+        section: data.section,
+        status: data.status,
+        author: data.author,
+        reviewer: data.reviewer,
+        skill_sections: data.skill_sections,
     };
     const propCloud = (typeof window.matrixNodePropertyStickersHtml === 'function')
         ? window.matrixNodePropertyStickersHtml(leafStickerNode, escHtml)
@@ -279,11 +311,18 @@ function buildMatrixLeafModalHtml(data) {
         : '';
     const skipLeafKeys = {};
     if (data.matrix_sources && data.matrix_sources.length) skipLeafKeys.sources = true;
+    const exlsBlocks = renderMatrixExlsSkillSections(data.skill_sections, data.materials_items);
     const leafBlocks = renderLeafViewSections(data.leaf_view, skipLeafKeys);
     let matrixSrc = '';
-    if (data.matrix_sources && data.matrix_sources.length) {
+    const matrixOnlySources = (data.matrix_sources || []).filter(function (item) {
+        if (!data.materials_items || !data.materials_items.length) return true;
+        return !data.materials_items.some(function (m) {
+            return String(m.url || '') === String(item.url || '') && String(m.title || '') === String(item.title || '');
+        });
+    });
+    if (matrixOnlySources.length) {
         matrixSrc = '<section class="action-section"><h2><i class="fas fa-link"></i> Источники (матрица)</h2><div class="section-content"><ul class="literature-list">';
-        data.matrix_sources.forEach(function (item) {
+        matrixOnlySources.forEach(function (item) {
             const litData = literatureItemDataAttr(item);
             const hasPrev = item.url || item.local_path;
             matrixSrc += '<li class="literature-item"><a href="#" class="literature-link literature-preview-trigger" data-lit="' + litData + '"><strong>' +
@@ -347,7 +386,7 @@ function buildMatrixLeafModalHtml(data) {
     return (
         '<div class="view-gap-md matrix-leaf-modal-title"><p><strong>' + escHtml(data.title || 'Без названия') + '</strong></p>' +
         (propCloud ? '<div class="matrix-leaf-prop-cloud">' + propCloud + '</div>' : '') + '</div>' +
-        desc + leafBlocks + matrixSrc + levelSec + examples + tools + stack + lit + questions
+        desc + exlsBlocks + leafBlocks + matrixSrc + levelSec + examples + tools + stack + lit + questions
     );
 }
 

@@ -901,8 +901,12 @@ function renderDiff(preview) {
   const box = document.getElementById('diffBox');
   const diff = preview.diff || {};
   const summary = diff.summary || { added: 0, updated: 0, removed: 0 };
+  const structure = preview.structure_change || {};
+  const structureChanged = Boolean(structure.is_changed);
+  const areas = structureChanged ? (structure.changed_areas || []).join(', ') || 'n/a' : 'n/a';
   box.innerHTML = `
         <p><strong>Structural diff:</strong> added=${summary.added}, updated=${summary.updated}, removed=${summary.removed}</p>
+        <p><strong>Structure changed:</strong> ${structureChanged ? `yes (${areas})` : 'no'}</p>
         <p><strong>JSON patch ops:</strong> ${preview.json_patch_ops || 0}</p>
         <p><strong>Upsert plan:</strong></p>
         <pre class="mono">${JSON.stringify(preview.upsert_plan || {}, null, 2)}</pre>

@@ -20,10 +20,18 @@
     return /^item_\d+$/.test(t);
   }
 
+  function isMarkerColumnHeader(h) {
+    const t = String(h || '').trim().toLowerCase();
+    return /^node_\d+$/.test(t) || /^leaf_\d+_node_\d+$/.test(t) || /^label_\d+_node_\d+$/.test(t);
+  }
+
   function effectiveSchemaCaption(r) {
     if (!r) return '';
     const lab = String(r.label || '').trim();
     const hdr = String(r.header || '').trim();
+    if (hdr && isMarkerColumnHeader(hdr) && lab && !isPlaceholderItemLabel(lab)) {
+      return stripTagSuffix(lab);
+    }
     if (lab && !isPlaceholderItemLabel(lab)) return stripTagSuffix(lab);
     if (hdr) {
       const fromHdr = stripTagSuffix(hdr);
@@ -131,10 +139,9 @@
     return 'item_' + String(level);
   };
 
-  /** Заголовок колонки «открыть карточку листа». */
+  /** Заголовок колонки «карточка навыка» (после последнего уровня иерархии). */
   global.matrixSchemaLeafColumnHeading = function () {
-    const t = global.matrixSchemaDeepestItemLabel();
-    return t ? (t + ' · leaf') : 'leaf';
+    return 'Карточка навыка';
   };
 
   global.matrixSchemaLeafViewTitleForKey = function (key) {
@@ -224,6 +231,48 @@
       ? '<span class="tree-skill-sticker">' + escFn(String(node.level_sticker).toUpperCase()) + '</span>'
       : '';
     if (legacy) parts.push(legacy);
+    var section = String(node.section || '').trim();
+    if (section) {
+      parts.push(
+        '<span class="tree-node-prop-badge tree-node-prop-section" title="Раздел">' +
+          escFn(section) +
+          '</span>'
+      );
+    }
+    var status = String(node.status || '').trim();
+    if (status) {
+      parts.push(
+        '<span class="tree-node-prop-badge tree-node-prop-status" title="Статус">' +
+          escFn(status) +
+          '</span>'
+      );
+    }
+    var author = String(node.author || '').trim();
+    if (author && author.toLowerCase() !== r.toLowerCase()) {
+      parts.push(
+        '<span class="tree-skill-owner tree-skill-author" title="Автор">' + escFn(author) + '</span>'
+      );
+    }
+    var reviewer = String(node.reviewer || '').trim();
+    if (reviewer) {
+      parts.push(
+        '<span class="tree-skill-owner tree-skill-reviewer" title="Ревьюер">' + escFn(reviewer) + '</span>'
+      );
+    }
+    var ss = node.skill_sections;
+    if (ss && typeof ss === 'object') {
+      var hints = [];
+      if (ss.questions && (ss.questions.body || ss.questions.materials)) hints.push('Вопросы');
+      if (ss.tasks && ss.tasks.body) hints.push('Задачи');
+      if (ss.reviewer_questions && ss.reviewer_questions.body) hints.push('Ревью');
+      if (hints.length) {
+        parts.push(
+          '<span class="tree-node-prop-badge tree-node-prop-sections" title="Разделы навыка">' +
+            escFn(hints.join(', ')) +
+            '</span>'
+        );
+      }
+    }
     return parts.length ? '<div class="tree-node-badges-wrap tree-node-prop-cloud">' + parts.join('') + '</div>' : '';
   };
 })(typeof window !== 'undefined' ? window : this);

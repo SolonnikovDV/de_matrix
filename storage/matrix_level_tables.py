@@ -14,6 +14,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from core.level_sql_identifier import is_safe_dynamic_table_name, qualified_sql_table_name
+from core.skill_node_payload import apply_skill_payload, pack_skill_payload
 from core.matrix_schema import (
     action_level_tags_for_json,
     merge_matrix_levels,
@@ -37,6 +38,7 @@ _COL_DDL = """
   level_tags JSONB NOT NULL DEFAULT '[]'::jsonb,
   leaf_view JSONB NOT NULL DEFAULT '{}'::jsonb,
   review_questions JSONB NOT NULL DEFAULT '[]'::jsonb,
+  skill_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   excel_path_key TEXT NOT NULL DEFAULT ''
 """
 
@@ -122,6 +124,19 @@ def _create_level_table(session: Session, depth: int, sql_table: str, parent_tab
     session.execute(text(f"CREATE INDEX IF NOT EXISTS {safe_ix} ON {sch}.{sql_table}(parent_id)"))
 
 
+def ensure_skill_payload_column(session: Session, sql_table: str) -> None:
+    """ALTER для таблиц уровней, созданных до добавления skill_payload."""
+    sch = MATRIX_STRUCT_SCHEMA
+    if not is_safe_dynamic_table_name(sch, sql_table):
+        return
+    session.execute(
+        text(
+            f"ALTER TABLE {sch}.{sql_table} "
+            "ADD COLUMN IF NOT EXISTS skill_payload JSONB NOT NULL DEFAULT '{}'::jsonb"
+        )
+    )
+
+
 def re_safe_index_name(sql_table: str) -> str:
     """Имя индекса ≤63; только [a-z0-9_]."""
     s = re.sub(r"[^a-z0-9]+", "_", f"ix_{sql_table}_par".lower())
@@ -186,14 +201,15 @@ def _insert_level_tree(
         lt0 = ltags[0] if ltags else raw.get("level_tag")
         rq = _review_questions_for_node(raw)
         leaf_v = raw.get("leaf_view") if isinstance(raw.get("leaf_view"), dict) else {}
+        skill_pl = pack_skill_payload(raw)
         sql = text(
             f"""
             INSERT INTO {sch}.{tbl}
             (parent_id, sort_order, node_depth, title, code, description, responsible, level_sticker,
-             template_id, level_tag, level_tags, leaf_view, review_questions, excel_path_key)
+             template_id, level_tag, level_tags, leaf_view, review_questions, skill_payload, excel_path_key)
             VALUES
             (:pid, :so, :nd, :title, :code, :descr, :resp, :lst, :tid, :ltag, CAST(:ltags AS jsonb),
-             CAST(:lv AS jsonb), CAST(:rq AS jsonb), :epk)
+             CAST(:lv AS jsonb), CAST(:rq AS jsonb), CAST(:sp AS jsonb), :epk)
             RETURNING id
             """
         )
@@ -214,6 +230,7 @@ def _insert_level_tree(
                 "ltags": json.dumps(ltags if ltags else []),
                 "lv": json.dumps(deepcopy(leaf_v)),
                 "rq": json.dumps(rq),
+                "sp": json.dumps(skill_pl if skill_pl else {}),
                 "epk": str(raw.get("excel_path_key") or "").strip(),
             },
         )
@@ -237,6 +254,7 @@ def load_tree_from_level_tables(session: Session) -> List[Dict[str, Any]]:
     for t in table_names:
         if not is_safe_dynamic_table_name(sch, t):
             return []
+        ensure_skill_payload_column(session, t)
 
     def load_at(depth: int, parent_id: Optional[int]) -> List[Dict[str, Any]]:
         if depth >= len(table_names):
@@ -246,7 +264,7 @@ def load_tree_from_level_tables(session: Session) -> List[Dict[str, Any]]:
             q = text(
                 f"""
                 SELECT id, title, code, description, responsible, level_sticker, template_id, level_tag,
-                       level_tags, leaf_view, review_questions, excel_path_key, sort_order
+                       level_tags, leaf_view, review_questions, skill_payload, excel_path_key, sort_order
                 FROM {sch}.{tbl}
                 WHERE parent_id IS NULL
                 ORDER BY sort_order, id
@@ -257,7 +275,7 @@ def load_tree_from_level_tables(session: Session) -> List[Dict[str, Any]]:
             q = text(
                 f"""
                 SELECT id, title, code, description, responsible, level_sticker, template_id, level_tag,
-                       level_tags, leaf_view, review_questions, excel_path_key, sort_order
+                       level_tags, leaf_view, review_questions, skill_payload, excel_path_key, sort_order
                 FROM {sch}.{tbl}
                 WHERE parent_id = :pid
                 ORDER BY sort_order, id
@@ -288,6 +306,9 @@ def load_tree_from_level_tables(session: Session) -> List[Dict[str, Any]]:
             rq = rr.get("review_questions")
             if isinstance(rq, list) and rq:
                 d["review_questions"] = [str(q) for q in rq]
+            sp = rr.get("skill_payload")
+            if isinstance(sp, dict) and sp:
+                apply_skill_payload(d, sp)
             epk = str(rr.get("excel_path_key") or "").strip()
             if epk:
                 d["excel_path_key"] = epk

@@ -18,6 +18,10 @@ from copy import deepcopy
 from pathlib import Path as PathLib
 from typing import Dict, Optional, Tuple, Any, List, Set
 
+from core.env_bootstrap import bootstrap_project_env
+
+bootstrap_project_env(PathLib(__file__).resolve().parent)
+
 from core.tree import (
     assign_paths_to_generic_nodes,
     build_tree_from_matrix_data,
@@ -27,7 +31,7 @@ from core.tree import (
     path_to_url,
     strip_transient_node_fields,
 )
-from core.loaders import load_unified_source, load_excel_for_matrix_import, META_KEYS
+from core.loaders import load_unified_source, load_excel_for_matrix_import, load_csv_for_matrix_import, META_KEYS
 from core.schema import validate_source, get_schema_info
 from core.matrix_schema import (
     action_level_tags_for_json,
@@ -228,6 +232,66 @@ def _require_admin(data: Optional[Dict] = None):
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _extract_structure_change(payload: Any) -> Dict[str, Any]:
+    """Normalize structure-change signal from revision payload."""
+    result = {
+        "is_changed": False,
+        "changed_areas": [],
+        "summary": {},
+        "summary_text": "no",
+    }
+    if not isinstance(payload, dict):
+        return result
+    sc = payload.get("structure_change")
+    if isinstance(sc, dict):
+        is_changed = bool(sc.get("is_changed"))
+        changed_areas = [str(x) for x in (sc.get("changed_areas") or []) if str(x).strip()]
+        summary = sc.get("summary") if isinstance(sc.get("summary"), dict) else {}
+        area_text = ", ".join(changed_areas) if changed_areas else "n/a"
+        result.update(
+            {
+                "is_changed": is_changed,
+                "changed_areas": changed_areas,
+                "summary": summary,
+                "summary_text": f"yes ({area_text})" if is_changed else "no",
+            }
+        )
+        return result
+
+    # Backward-compatible fallback for revisions saved before structure_change field existed.
+    diff = payload.get("structural_diff")
+    if isinstance(diff, dict):
+        summary = diff.get("summary") if isinstance(diff.get("summary"), dict) else {}
+        changed = int(summary.get("added", 0) or 0) + int(summary.get("removed", 0) or 0) + int(summary.get("updated", 0) or 0)
+        if changed > 0:
+            result.update(
+                {
+                    "is_changed": True,
+                    "changed_areas": ["tree"],
+                    "summary": summary,
+                    "summary_text": "yes (tree)",
+                }
+            )
+    return result
+
+
+def _structure_prefixed(text_value: str, *, enabled: bool) -> str:
+    text = (text_value or "").strip()
+    if not enabled:
+        return text
+    if text.startswith("[STRUCTURE]"):
+        return text
+    if not text:
+        return "[STRUCTURE] matrix structure changed"
+    return f"[STRUCTURE] {text}"
+
+
+def _with_structure_signal_title(title: str, revision_payload: Dict[str, Any]) -> str:
+    info = _extract_structure_change(revision_payload)
+    base = (title or "").strip() or "Change request"
+    return _structure_prefixed(base, enabled=bool(info.get("is_changed")))
 
 
 def _is_valid_email_mask(email: str) -> bool:
@@ -684,6 +748,12 @@ def _ensure_db_schema():
                     "ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
                     )
                 )
+            session.execute(
+                text(
+                    f'ALTER TABLE "{MATRIX_STRUCT_SCHEMA}".matrix_nodes '
+                    "ADD COLUMN IF NOT EXISTS skill_payload JSONB NOT NULL DEFAULT '{}'::jsonb"
+                )
+            )
         if not _admin_seed_checked:
             _ensure_admin_seed()
             _admin_seed_checked = True
@@ -1278,11 +1348,23 @@ def build_description(action_obj, template, domain, skill, meta):
     html += f"<p><small>Контекст: <strong>{html_lib.escape(domain.get('name') or '')}</strong> → <strong>{html_lib.escape(skill.get('name') or '')}</strong></small></p>"
     return html
 
+def _skill_payload_from_node(node: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "name": node.get("name", ""),
+        "description": node.get("description", ""),
+        "responsible": node.get("responsible") or node.get("author") or "",
+        "level_sticker": node.get("level_sticker", ""),
+        "section": node.get("section", ""),
+        "status": node.get("status", ""),
+        "author": node.get("author") or node.get("responsible") or "",
+        "reviewer": node.get("reviewer", ""),
+    }
+
+
 def resolve_leaf_by_path(path_str):
     """
-    По path (например "0/1/2" или "0/1/2/0") возвращает (domain, skill, action, parent_action_text)
-    для рендера страницы листа. action — dict с text, template_id; domain/skill — dict с name, description у skill.
-    Если узел не найден или не лист — возвращает None.
+    По path (например "0/1") возвращает (domain, skill, action, parent_action_text)
+    для рендера страницы листа навыка.
     """
     try:
         path = [int(x) for x in path_str.strip("/").split("/") if x.strip()]
@@ -1300,18 +1382,19 @@ def resolve_leaf_by_path(path_str):
         "description": "",
         "responsible": "",
         "level_sticker": "",
+        "section": "",
+        "status": "",
+        "author": "",
+        "reviewer": "",
     }
     if len(ancestors) >= 2:
         domain = {"name": ancestors[0].get("name", "")}
-        skill = {
-            "name": ancestors[1].get("name", ""),
-            "description": ancestors[1].get("description", ""),
-            "responsible": ancestors[1].get("responsible", ""),
-            "level_sticker": ancestors[1].get("level_sticker", ""),
-        }
+        skill = _skill_payload_from_node(ancestors[-1])
+        if len(ancestors) >= 3:
+            skill.setdefault("section", ancestors[1].get("name", ""))
     elif len(ancestors) == 1:
         domain = {"name": ancestors[0].get("name", "")}
-        skill = dict(empty_skill)
+        skill = _skill_payload_from_node(node)
     else:
         domain = {"name": ""}
         skill = dict(empty_skill)
@@ -1322,11 +1405,15 @@ def resolve_leaf_by_path(path_str):
         "level_tags": action_level_tags_for_json(node),
         "leaf_view": dict(node.get("leaf_view") or {}),
         "review_questions": node.get("review_questions", []),
+        "section": node.get("section", ""),
+        "status": node.get("status", ""),
+        "author": node.get("author") or node.get("responsible") or "",
+        "reviewer": node.get("reviewer", ""),
+        "skill_sections": dict(node.get("skill_sections") or {}),
     }
     nd = (node.get("description") or "").strip()
     if nd:
         action["description"] = nd
-    # Подуровень: у листа есть минимум два предка над «действием» (домен → навык → … → родитель листа).
     parent_action_text = ancestors[-1].get("name", "") if len(ancestors) >= 3 else None
     return (domain, skill, action, parent_action_text)
 
@@ -1881,8 +1968,61 @@ def _match_literature_for_source_entry(entry: Dict[str, str], literature: Dict[s
     return None
 
 
-def _resolve_matrix_sources(leaf_view: Optional[Dict[str, Any]], literature: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Слияние leaf_view.sources с каталогом литературы для предпросмотра (как у resource_ids)."""
+def _extract_materials_text(node: Dict[str, Any]) -> str:
+    """Текст колонки «Материалы» из skill_sections или legacy leaf_view."""
+    if not isinstance(node, dict):
+        return ""
+    ss = node.get("skill_sections")
+    if isinstance(ss, dict):
+        q = ss.get("questions")
+        if isinstance(q, dict):
+            m = q.get("materials")
+            if isinstance(m, str) and m.strip():
+                return m.strip()
+    lv = node.get("leaf_view")
+    if isinstance(lv, dict):
+        for key in ("materials", "Материалы", "sources"):
+            v = lv.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    return ""
+
+
+def _resolve_sources_from_text(text: str, literature: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Парсит многострочный текст (Материалы) в список источников для предпросмотра."""
+    lit = literature or {}
+    out: List[Dict[str, Any]] = []
+    seen: Set[Tuple[Optional[str], str, str]] = set()
+    for e in _parse_leaf_view_source_entries(text):
+        rid = _match_literature_for_source_entry(e, lit)
+        if rid:
+            row = {"id": rid, **(lit.get(rid) or {})}
+        else:
+            url = (e.get("url") or "").strip()
+            title = (e.get("title") or e.get("raw") or url or "Источник").strip()
+            row = {
+                "title": title,
+                "chapter": "",
+                "pages": "",
+                "url": url,
+                "description": "",
+                "local_path": "",
+            }
+        key = (row.get("id"), str(row.get("url") or ""), str(row.get("title") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
+
+
+def _resolve_matrix_sources(
+    leaf_view: Optional[Dict[str, Any]],
+    literature: Dict[str, Any],
+    *,
+    materials_text: str = "",
+) -> List[Dict[str, Any]]:
+    """Слияние leaf_view.sources и текста «Материалы» с каталогом литературы для предпросмотра."""
     lit = literature or {}
     out: List[Dict[str, Any]] = []
     seen: Set[Tuple[Optional[str], str, str]] = set()
@@ -1901,6 +2041,12 @@ def _resolve_matrix_sources(leaf_view: Optional[Dict[str, Any]], literature: Dic
                 "description": "",
                 "local_path": "",
             }
+        key = (row.get("id"), str(row.get("url") or ""), str(row.get("title") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    for row in _resolve_sources_from_text(materials_text, lit):
         key = (row.get("id"), str(row.get("url") or ""), str(row.get("title") or ""))
         if key in seen:
             continue
@@ -1939,6 +2085,11 @@ def _literature_linked_leaves(meta: Dict[str, Any]) -> Dict[str, List[Dict[str, 
             mrid = _match_literature_for_source_entry(e, literature)
             if mrid:
                 add(mrid, path_str, crumb)
+        materials_text = _extract_materials_text(leaf)
+        for e in _parse_leaf_view_source_entries(materials_text):
+            mrid = _match_literature_for_source_entry(e, literature)
+            if mrid:
+                add(mrid, path_str, crumb)
     return by_rid
 
 
@@ -1973,6 +2124,33 @@ def _matrix_only_source_catalog(meta: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "description": "Указано в колонке «Источники» матрицы; отдельной записи в каталоге нет.",
                     "local_path": "",
                     "from_matrix_only": True,
+                    "linked_templates": [],
+                    "linked_leaves": [],
+                }
+            gl = groups[gk]["linked_leaves"]
+            if not any(x.get("path_str") == path_str for x in gl):
+                gl.append({"path_str": path_str, "breadcrumb": crumb})
+        materials_text = _extract_materials_text(leaf)
+        for e in _parse_leaf_view_source_entries(materials_text):
+            if _match_literature_for_source_entry(e, literature):
+                continue
+            url = (e.get("url") or "").strip()
+            title = (e.get("title") or e.get("raw") or "").strip() or url
+            if not title and not url:
+                continue
+            gk = url or title
+            if gk not in groups:
+                h = hashlib.md5(gk.encode("utf-8")).hexdigest()[:12]
+                display_title = title if (title and title != url) else (url or title)
+                groups[gk] = {
+                    "id": f"mat_{h}",
+                    "title": display_title or "Материал",
+                    "chapter": "",
+                    "pages": "",
+                    "url": url,
+                    "description": "Из колонки «Материалы» матрицы.",
+                    "local_path": "",
+                    "from_matrix_materials": True,
                     "linked_templates": [],
                     "linked_leaves": [],
                 }
@@ -2134,7 +2312,13 @@ def leaf_api(path):
     path_parts = [int(x) for x in path.strip("/").split("/") if x.strip()]
     related = find_related_skills_by_path(path_parts) if len(path_parts) >= 3 else []
     literature_map = meta.get("literature", {}) or {}
-    matrix_sources = _resolve_matrix_sources(action.get("leaf_view"), literature_map)
+    materials_text = _extract_materials_text(action)
+    materials_items = _resolve_sources_from_text(materials_text, literature_map)
+    matrix_sources = _resolve_matrix_sources(
+        action.get("leaf_view"),
+        literature_map,
+        materials_text=materials_text,
+    )
     node_summary_plain = (action.get("description") or "").strip()
     return jsonify({
         "title": action["text"],
@@ -2150,6 +2334,12 @@ def leaf_api(path):
         "level_tags": action_level_tags_for_json(action),
         "leaf_view": action.get("leaf_view") or {},
         "review_questions": action.get("review_questions", []),
+        "section": action.get("section") or skill.get("section") or "",
+        "status": action.get("status") or skill.get("status") or "",
+        "author": action.get("author") or skill.get("author") or "",
+        "reviewer": action.get("reviewer") or skill.get("reviewer") or "",
+        "skill_sections": action.get("skill_sections") or {},
+        "materials_items": materials_items,
         "related_skills": related,
         "domain_color": get_domain_color(domain["name"]),
         "skill_color": get_skill_color(skill["name"], get_domain_color(domain["name"]), path_parts[1] if len(path_parts) > 1 else 0),
@@ -2299,7 +2489,7 @@ def api_export_unified_table():
 
 @app.route("/api/export/unified.xlsx")
 def api_export_unified_xlsx():
-    """Скачивание XLSX: лист Unified_Relational_Span + опционально Литература."""
+    """Скачивание XLSX: лист Matrix (маркеры node_i / leaf / label) + опционально Литература."""
     try:
         from io import BytesIO
 
@@ -2309,66 +2499,71 @@ def api_export_unified_xlsx():
 
     from core.excel_unified_export import build_unified_export_table
 
-    matrix = get_matrix()
-    nodes = list(matrix.get("nodes") or [])
-    raw = (request.args.get("domains") or "").strip()
-    if raw:
-        idxs = _parse_export_domain_idxs(raw)
-        nodes = [nodes[i] for i in idxs if 0 <= i < len(nodes)]
-    meta = get_meta()
-    # Строка заголовков с тегами (item)/(leaf_view)/… — та же форма, что ожидает импорт unified xlsx.
-    headers, rows = build_unified_export_table(
-        [],
-        meta.get("ui_config"),
-        nodes=(nodes or None),
-        include_header_tags=True,
-    )
+    try:
+        matrix = get_matrix()
+        nodes = list(matrix.get("nodes") or [])
+        raw = (request.args.get("domains") or "").strip()
+        if raw:
+            idxs = _parse_export_domain_idxs(raw)
+            nodes = [nodes[i] for i in idxs if 0 <= i < len(nodes)]
+        meta = get_meta()
+        ui_cfg = meta.get("ui_config") if isinstance(meta.get("ui_config"), dict) else {}
+        headers, rows = build_unified_export_table(
+            [],
+            ui_cfg,
+            nodes=(nodes or None),
+            include_header_tags=True,
+        )
+        if not headers:
+            return jsonify({"ok": False, "error": "Нет схемы колонок (matrix_column_schema). Импортируйте матрицу заново."}), 400
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Unified_Relational_Span"
-    ws.append(headers)
-    for row in rows:
-        ws.append(list(row))
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Matrix"
+        ws.append(headers)
+        for row in rows or []:
+            ws.append(list(row))
 
-    lit = meta.get("literature") or {}
-    templates = meta.get("action_templates") or {}
-    if isinstance(lit, dict) and lit:
-        template_to_leaves: Dict[str, List[str]] = {}
-        if isinstance(templates, dict):
-            for tid, tpl in templates.items():
-                if not isinstance(tpl, dict):
+        lit = meta.get("literature") or {}
+        templates = meta.get("action_templates") or {}
+        if isinstance(lit, dict) and lit:
+            template_to_leaves: Dict[str, List[str]] = {}
+            if isinstance(templates, dict):
+                for tid, tpl in templates.items():
+                    if not isinstance(tpl, dict):
+                        continue
+                    for rid in tpl.get("resource_ids") or []:
+                        template_to_leaves.setdefault(str(rid), []).append(str(tpl.get("name") or tid))
+
+            ws2 = wb.create_sheet("Литература")
+            ws2.append(["Название", "Глава / раздел", "Страницы", "URL", "Локальный файл", "Привязка к компетенциям"])
+            for rid, item in lit.items():
+                if not isinstance(item, dict):
                     continue
-                for rid in tpl.get("resource_ids") or []:
-                    template_to_leaves.setdefault(str(rid), []).append(str(tpl.get("name") or tid))
+                ws2.append(
+                    [
+                        str(item.get("title") or rid),
+                        str(item.get("chapter") or ""),
+                        str(item.get("pages") or ""),
+                        str(item.get("url") or ""),
+                        str(item.get("local_path") or item.get("file_path") or ""),
+                        "; ".join(template_to_leaves.get(str(rid), [])),
+                    ]
+                )
 
-        ws2 = wb.create_sheet("Литература")
-        ws2.append(["Название", "Глава / раздел", "Страницы", "URL", "Локальный файл", "Привязка к компетенциям"])
-        for rid, item in lit.items():
-            if not isinstance(item, dict):
-                continue
-            ws2.append(
-                [
-                    str(item.get("title") or rid),
-                    str(item.get("chapter") or ""),
-                    str(item.get("pages") or ""),
-                    str(item.get("url") or ""),
-                    str(item.get("local_path") or item.get("file_path") or ""),
-                    "; ".join(template_to_leaves.get(str(rid), [])),
-                ]
-            )
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        from flask import send_file
 
-    buf = BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    from flask import send_file
-
-    return send_file(
-        buf,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        as_attachment=True,
-        download_name=f"matrix_unified_{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.xlsx",
-    )
+        return send_file(
+            buf,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=f"matrix_unified_{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.xlsx",
+        )
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 # ----- СХЕМА И ВАЛИДАЦИЯ -----
@@ -2758,6 +2953,7 @@ def api_constructor_preview():
             "target_skill": target_skill,
             "diff": revision_payload.get("structural_diff") or {},
             "json_patch_ops": len(revision_payload.get("json_patch") or []),
+            "structure_change": revision_payload.get("structure_change") or {},
             "upsert_plan": revision_payload.get("upsert_plan") or {},
             "payload_preview": payload,
         }
@@ -2794,6 +2990,7 @@ def api_admin_tree_editor_preview():
             "warnings": warnings,
             "diff": revision_payload.get("structural_diff"),
             "json_patch_ops": len(revision_payload.get("json_patch") or []),
+            "structure_change": revision_payload.get("structure_change") or {},
             "upsert_plan": revision_payload.get("upsert_plan") or {},
         }
     )
@@ -2833,6 +3030,12 @@ def api_admin_tree_editor_submit():
         proposed_snapshot=proposed,
         merge_mode="replace_all",
     )
+    structure_changed = _extract_structure_change(revision_payload).get("is_changed", False)
+    title = _with_structure_signal_title(title, revision_payload)
+    submit_comment = _structure_prefixed(
+        "Admin tree edit submitted",
+        enabled=structure_changed,
+    )
     with db_session() as session:
         cr = create_change_request(
             session=session,
@@ -2841,7 +3044,7 @@ def api_admin_tree_editor_submit():
             payload=revision_payload,
             created_by=actor,
         )
-        approval_set_status(session, cr.id, "submitted", actor=actor, comment="Admin tree edit submitted")
+        approval_set_status(session, cr.id, "submitted", actor=actor, comment=submit_comment)
         _notify_cr_submitted(session, cr)
         change_id = cr.id
     return jsonify(
@@ -3446,6 +3649,11 @@ def api_changes_list():
             summary = summary_map.get(sid, {"threads_total": 0, "threads_blocking": 0})
             item["threads_total"] = summary["threads_total"]
             item["threads_blocking"] = summary["threads_blocking"]
+            latest_payload = get_latest_payload(session, sid) or {}
+            structure_info = _extract_structure_change(latest_payload)
+            item["structure_changed"] = bool(structure_info.get("is_changed"))
+            item["structure_changed_areas"] = structure_info.get("changed_areas") or []
+            item["structure_summary"] = structure_info.get("summary_text") or "no"
             actor_mentions = 0
             actor_needs_response = 0
             if actor:
@@ -3491,6 +3699,13 @@ def api_changes_create():
             target_domain=target_domain,
             target_skill=target_skill,
         )
+        structure_changed = _extract_structure_change(revision_payload).get("is_changed", False)
+        title = _with_structure_signal_title(title, revision_payload)
+        note = _structure_prefixed(note, enabled=structure_changed)
+        submit_comment = _structure_prefixed(
+            submit_comment or "Created and submitted",
+            enabled=structure_changed,
+        )
         cr = create_change_request(
             session=session,
             title=title,
@@ -3502,7 +3717,7 @@ def api_changes_create():
             target_skill=target_skill,
             initial_note=note or "initial revision",
         )
-        approval_set_status(session, cr.id, "submitted", actor=actor, comment=submit_comment or "Created and submitted")
+        approval_set_status(session, cr.id, "submitted", actor=actor, comment=submit_comment)
         _notify_cr_submitted(session, cr)
         change_id = cr.id
     return jsonify({"ok": True, "id": change_id})
@@ -3522,6 +3737,9 @@ def api_changes_get(change_id):
         "threads_total": len(thread_rows),
         "threads_blocking": len([t for t in thread_rows if t.requires_resolution and t.status != "resolved"]),
     }
+    latest_rev = (details.get("revisions") or [])[-1] if (details.get("revisions") or []) else None
+    latest_payload = (latest_rev or {}).get("payload") if isinstance(latest_rev, dict) else {}
+    details["structure_change"] = _extract_structure_change(latest_payload)
     return jsonify({"ok": True, "change": details})
 
 
@@ -3582,11 +3800,20 @@ def api_changes_timeline(change_id: int):
             "body": f"Change request created: {cr.title}",
         })
         for rev in revisions:
+            rev_payload = rev.payload if isinstance(rev.payload, dict) else {}
+            structure_info = _extract_structure_change(rev_payload)
+            changed_areas = structure_info.get("changed_areas") or []
+            body = f"Revision #{rev.revision_no}. {rev.note or ''}".strip()
+            if structure_info.get("is_changed"):
+                area_label = ", ".join(changed_areas) if changed_areas else "tree"
+                body = f"{body} [STRUCTURE_CHANGED: {area_label}]".strip()
             events.append({
                 "kind": "revision",
                 "at": rev.created_at.isoformat() if rev.created_at else None,
                 "actor": rev.created_by,
-                "body": f"Revision #{rev.revision_no}. {rev.note or ''}".strip(),
+                "body": body,
+                "structure_changed": bool(structure_info.get("is_changed")),
+                "structure_changed_areas": changed_areas if structure_info.get("is_changed") else [],
             })
         for d in decisions:
             events.append({
@@ -3771,6 +3998,7 @@ def api_changes_revise(change_id):
             target_domain=cr.target_domain,
             target_skill=cr.target_skill,
         )
+        note = _structure_prefixed(note, enabled=_extract_structure_change(revision_payload).get("is_changed", False))
         rev = add_revision(
             session,
             change_id,
@@ -3850,6 +4078,55 @@ def api_changes_apply(change_id):
     _invalidate_caches()
     _ensure_data_loaded()
     return jsonify({"ok": True, "applied": True})
+
+
+@app.route('/api/changes/<int:change_id>/structure-rollback', methods=["POST"])
+def api_changes_structure_rollback(change_id: int):
+    _ensure_db_schema()
+    data = request.get_json(silent=True) or {}
+    actor, admin_err = _require_admin(data)
+    if admin_err:
+        return admin_err
+    with db_session() as session:
+        src_cr = session.get(ChangeRequest, change_id)
+        if not src_cr:
+            return jsonify({"ok": False, "error": "Change request not found"}), 404
+        src_payload = get_latest_payload(session, change_id) or {}
+        if not isinstance(src_payload, dict):
+            return jsonify({"ok": False, "error": "Change payload is invalid"}), 409
+        target_snapshot = src_payload.get("base_snapshot")
+        if not isinstance(target_snapshot, dict):
+            return jsonify({"ok": False, "error": "No base snapshot available for rollback"}), 409
+        current = load_unified_from_db(session, literature=load_literature_map())
+        revision_payload = build_revision_payload(
+            base_snapshot=current,
+            upload_payload=target_snapshot,
+            proposed_snapshot=target_snapshot,
+            merge_mode="replace_all",
+        )
+        revision_payload["rollback"] = {
+            "kind": "structure",
+            "source_change_id": int(change_id),
+            "source_change_title": src_cr.title,
+        }
+        title_input = (data.get("title") or "").strip() or f"Rollback structure to pre-CR #{change_id}"
+        title = _with_structure_signal_title(title_input, revision_payload)
+        submit_comment = _structure_prefixed(
+            f"Rollback draft created from CR #{change_id}",
+            enabled=_extract_structure_change(revision_payload).get("is_changed", False),
+        )
+        cr = create_change_request(
+            session=session,
+            title=title,
+            merge_mode="replace_all",
+            payload=revision_payload,
+            created_by=actor,
+            initial_note=f"Rollback checkpoint from CR #{change_id}",
+        )
+        approval_set_status(session, cr.id, "submitted", actor=actor, comment=submit_comment)
+        _notify_cr_submitted(session, cr)
+        new_change_id = cr.id
+    return jsonify({"ok": True, "change_id": new_change_id, "rollback_of": change_id})
 
 
 # ----- ЛИТЕРАТУРА: каталог, привязка к листам -----
@@ -4290,7 +4567,7 @@ def api_import_template_unified():
 
 @app.route('/api/source/upload/preview', methods=["POST"])
 def api_source_upload_preview():
-    """Предпросмотр догрузки: парсинг файла без сохранения, возврат preview + validation."""
+    """Предпросмотр догрузки JSON/CSV/Excel: парсинг без сохранения, возврат preview + validation."""
     _, admin_err = _require_admin()
     if admin_err:
         return admin_err
@@ -4300,8 +4577,8 @@ def api_source_upload_preview():
     if not f or not f.filename:
         return jsonify({"ok": False, "error": "Файл не выбран"}), 400
     ext = (os.path.splitext(f.filename)[1] or "").lower()
-    if ext not in (".json", ".xlsx", ".xls"):
-        return jsonify({"ok": False, "error": "Поддерживаются только JSON и Excel"}), 400
+    if ext not in (".json", ".xlsx", ".xls", ".csv"):
+        return jsonify({"ok": False, "error": "Поддерживаются только JSON, CSV и Excel"}), 400
 
     try:
         import tempfile
@@ -4312,6 +4589,8 @@ def api_source_upload_preview():
             if ext == ".json":
                 with open(tmp_path, "r", encoding="utf-8") as fp:
                     upload_data = json.load(fp)
+            elif ext == ".csv":
+                upload_data = load_csv_for_matrix_import(tmp_path)
             else:
                 upload_data = load_excel_for_matrix_import(tmp_path)
         finally:
@@ -4356,74 +4635,102 @@ def api_source_upload_preview():
         assign_paths_to_generic_nodes(tprev)
         for leaf in collect_leaves(tprev):
             p = leaf.get("path") or []
-            if len(p) < 3:
+            if len(p) < 2:
                 continue
             anc = get_ancestors(tprev, p)
             chain = list(anc) + [leaf]
             names = [(x.get("name") or "").strip() for x in chain]
             d_name = names[0] if names else ""
-            s_name = names[1] if len(names) > 1 else ""
-            depth = len(names)
-            if depth >= 4:
-                action_text = names[-2]
-                sub_text = names[-1]
-            else:
-                action_text = names[-1]
-                sub_text = ""
-            sk_node = chain[1] if len(chain) > 1 else {}
-            skill_resp = str(sk_node.get("responsible") or "").strip()
-            skill_sticker = str(sk_node.get("level_sticker") or "").strip()
+            s_name = names[1] if len(names) >= 2 else names[-1] if names else ""
+            sk_node = leaf
             preview_rows.append(
                 {
                     "domain": d_name,
+                    "section": str(sk_node.get("section") or "").strip(),
                     "skill": s_name,
-                    "skill_responsible": skill_resp,
-                    "skill_level_sticker": skill_sticker,
-                    "action": action_text,
-                    "subaction": sub_text,
+                    "skill_responsible": str(sk_node.get("author") or sk_node.get("responsible") or "").strip(),
+                    "skill_level_sticker": str(sk_node.get("level_sticker") or "").strip(),
+                    "status": str(sk_node.get("status") or "").strip(),
+                    "action": "",
+                    "subaction": "",
                     "template_id": leaf.get("template_id"),
                     "level_tag": leaf.get("level_tag") or "",
                     "level_tags": _preview_level_field(leaf),
                     "leaf_view_keys": _preview_leaf_keys(leaf),
+                    "skill_sections": list((sk_node.get("skill_sections") or {}).keys()),
                     "review_questions": "; ".join(str(q) for q in (leaf.get("review_questions") or []) if q),
                 }
             )
 
     ui_cfg = upload_data.get("ui_config") if isinstance(upload_data.get("ui_config"), dict) else {}
-    mcs = ui_cfg.get("matrix_column_schema")
+    merge_mode = (request.form.get("merge_mode") or "replace_all").strip()
     preview_unified: Optional[Dict[str, Any]] = None
-    if isinstance(mcs, list) and len(mcs) > 0:
+    preview_unified_error: Optional[str] = None
+    incremental_validation: Optional[Dict[str, Any]] = None
+    preview_nodes = upload_data.get("nodes") or []
+    preview_ui = ui_cfg
+
+    if merge_mode == "increment":
         try:
-            u_nodes = upload_data.get("nodes") or []
-            u_domains = upload_data.get("domains") or []
+            from core.incremental_merge import merge_incremental_into_source, validate_incremental_structure
+
+            _ensure_db_schema()
+            with db_session() as session:
+                current_unified = load_unified_from_db(session, literature=load_literature_map())
+            inc_vr = validate_incremental_structure(current_unified, upload_data)
+            incremental_validation = inc_vr.to_dict()
+            if not inc_vr.ok:
+                vr.ok = False
+                for err in inc_vr.errors:
+                    if err not in vr.errors:
+                        vr.errors.append(err)
+            else:
+                merged, _ = merge_incremental_into_source(current_unified, upload_data)
+                preview_nodes = merged.get("nodes") or []
+                preview_ui = merged.get("ui_config") if isinstance(merged.get("ui_config"), dict) else ui_cfg
+        except Exception as exc:
+            incremental_validation = {"ok": False, "errors": [str(exc)]}
+            preview_unified_error = str(exc)
+
+    if preview_nodes:
+        try:
             u_headers, u_rows = build_unified_export_table(
-                u_domains,
-                ui_cfg,
-                nodes=(u_nodes or None),
+                [],
+                preview_ui,
+                nodes=(preview_nodes or None),
                 include_header_tags=False,
             )
-            if u_headers and u_rows:
+            if u_headers:
                 max_rows = 250
                 preview_unified = {
                     "headers": u_headers,
-                    "rows": u_rows[:max_rows],
-                    "truncated": len(u_rows) > max_rows,
-                    "total_rows": len(u_rows),
+                    "rows": (u_rows or [])[:max_rows],
+                    "truncated": len(u_rows or []) > max_rows,
+                    "total_rows": len(u_rows or []),
                 }
-        except Exception:
+        except Exception as exc:
+            preview_unified_error = str(exc)
             preview_unified = None
 
     preview_context = {
-        "has_ui_config": bool(ui_cfg),
-        "matrix_levels_count": len(ui_cfg.get("matrix_levels") or []),
-        "matrix_column_schema_count": len(ui_cfg.get("matrix_column_schema") or []),
+        "has_ui_config": bool(preview_ui),
+        "matrix_levels_count": len((preview_ui or {}).get("matrix_levels") or []),
+        "matrix_column_schema_count": len((preview_ui or {}).get("matrix_column_schema") or []),
         "unified_preview": bool(preview_unified),
+        "column_marker_format": bool((preview_ui or {}).get("column_marker_format")),
+        "merge_mode": merge_mode,
         "note": (
-            "Для unified с matrix_column_schema порядок колонок и подписи превью соответствуют шапке файла "
-            "(текст до скобок с тегами). Полная строка шапки сохраняется в схеме и уходит в шаблон/экспорт XLSX. "
-            "Иначе — укороченный плоский вид (домен, навык, …)."
+            "Инкремент: таблица после слияния с матрицей в БД. "
+            "Replace all: только содержимое файла. "
+            "Колонки — маркеры node_i / leaf_j_node_i / label_k_node_i."
+            if merge_mode == "increment"
+            else "Табличный предпросмотр по matrix_column_schema (маркеры как в файле)."
         ),
     }
+    if preview_unified_error:
+        preview_context["unified_preview_error"] = preview_unified_error
+    if incremental_validation is not None:
+        preview_context["incremental_validation"] = incremental_validation
 
     return jsonify({
         "ok": True,
@@ -4433,12 +4740,13 @@ def api_source_upload_preview():
         "validation": vr.to_dict(),
         "matrix_roots": len(upload_data.get("nodes") or []),
         "domains_count": len(upload_data.get("nodes") or []),
+        "merge_mode": merge_mode,
     })
 
 
 @app.route('/api/source/upload', methods=["POST"])
 def api_source_upload():
-    """Догрузка данных из JSON/Excel только в approval pipeline (submit-only)."""
+    """Догрузка данных из JSON/CSV/Excel только в approval pipeline (submit-only)."""
     _, admin_err = _require_admin()
     if admin_err:
         return admin_err
@@ -4448,16 +4756,15 @@ def api_source_upload():
     if not f or not f.filename:
         return jsonify({"ok": False, "error": "Файл не выбран"}), 400
     ext = (os.path.splitext(f.filename)[1] or "").lower()
-    if ext not in (".json", ".xlsx", ".xls"):
-        return jsonify({"ok": False, "error": "Поддерживаются только JSON и Excel (.json, .xlsx, .xls)"}), 400
+    if ext not in (".json", ".xlsx", ".xls", ".csv"):
+        return jsonify({"ok": False, "error": "Поддерживаются JSON, CSV и Excel (.json, .csv, .xlsx, .xls)"}), 400
 
     merge_mode = (request.form.get("merge_mode") or "append").strip()
-    # Для Excel-импорта в admin-вкладке используем сценарий переинициализации матрицы.
-    if ext in (".xlsx", ".xls"):
+    if ext in (".xlsx", ".xls", ".csv") and merge_mode not in ("increment", "replace_all"):
         merge_mode = "replace_all"
     target_domain = (request.form.get("target_domain") or "").strip() or None
     target_skill = (request.form.get("target_skill") or "").strip() or None
-    if merge_mode not in ("append", "append_to_domain", "append_to_skill", "replace_domain", "replace_skill", "replace_all"):
+    if merge_mode not in ("append", "append_to_domain", "append_to_skill", "replace_domain", "replace_skill", "replace_all", "increment"):
         merge_mode = "append"
     if merge_mode == "append_to_domain" and not target_domain:
         return jsonify({"ok": False, "error": "Для режима «В домен» укажите target_domain"}), 400
@@ -4473,6 +4780,8 @@ def api_source_upload():
             if ext == ".json":
                 with open(tmp_path, "r", encoding="utf-8") as fp:
                     upload_data = json.load(fp)
+            elif ext == ".csv":
+                upload_data = load_csv_for_matrix_import(tmp_path)
             else:
                 upload_data = load_excel_for_matrix_import(tmp_path)
         finally:
@@ -4482,6 +4791,22 @@ def api_source_upload():
                 pass
     except Exception as e:
         return jsonify({"ok": False, "error": f"Ошибка чтения файла: {e}"}), 400
+
+    from core.loaders import _normalize_unified
+    upload_data = _normalize_unified(upload_data)
+
+    if merge_mode == "increment":
+        from core.incremental_merge import validate_incremental_structure, merge_incremental_into_source
+
+        try:
+            _ensure_db_schema()
+            with db_session() as session:
+                current_unified = load_unified_from_db(session, literature=load_literature_map())
+            inc_vr = validate_incremental_structure(current_unified, upload_data)
+            if not inc_vr.ok:
+                return jsonify({"ok": False, "error": "; ".join(inc_vr.errors), "validation": inc_vr.to_dict()}), 400
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
 
     try:
         _ensure_db_schema()
@@ -4517,7 +4842,12 @@ def api_source_upload():
         )
         revision_payload["staging_batch_id"] = staging_batch_id
         revision_payload["staging_tree"] = staging_projection
-        title = f"Upload {f.filename}"
+        structure_changed = _extract_structure_change(revision_payload).get("is_changed", False)
+        title = _with_structure_signal_title(f"Upload {f.filename}", revision_payload)
+        submit_comment = _structure_prefixed(
+            "Uploaded and submitted for review",
+            enabled=structure_changed,
+        )
         with db_session() as session:
             cr = create_change_request(
                 session=session,
@@ -4529,7 +4859,7 @@ def api_source_upload():
                 target_domain=target_domain,
                 target_skill=target_skill,
             )
-            approval_set_status(session, cr.id, "submitted", actor=actor, comment="Uploaded and submitted for review")
+            approval_set_status(session, cr.id, "submitted", actor=actor, comment=submit_comment)
             _notify_cr_submitted(session, cr)
             change_id = cr.id
     except Exception as e:
@@ -4542,6 +4872,7 @@ def api_source_upload():
         "change_id": change_id,
         "staging_batch_id": staging_batch_id,
         "merge_mode": merge_mode,
+        "structure_change": revision_payload.get("structure_change") if isinstance(revision_payload, dict) else {},
         "approval_required": storage_approval_required(),
     })
 
