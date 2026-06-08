@@ -62,7 +62,7 @@ services:
       POSTGRES_USER: dematrix
       POSTGRES_PASSWORD: dematrix
     ports:
-      - "127.0.0.1:${DE_MATRIX_POSTGRES_PORT:-15432}:5432"
+      - "0:5432"   # dynamic host port — actual value discovered by start.sh via `docker compose port`
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -73,12 +73,13 @@ services:
     restart: unless-stopped
     networks:
       - backend
+      - edge   # required for Docker Desktop host port binding (internal-only networks block proxy)
 
   mongo:
     image: mongo:7
     container_name: de-matrix-mongo
     ports:
-      - "127.0.0.1:${DE_MATRIX_MONGO_PORT:-27018}:27017"
+      - "0:27017"   # dynamic host port
     volumes:
       - mongo_data:/data/db
     healthcheck:
@@ -89,13 +90,14 @@ services:
     restart: unless-stopped
     networks:
       - backend
+      - edge   # required for Docker Desktop host port binding
 
   smtp:
     image: axllent/mailpit:latest
     container_name: de-matrix-smtp
     ports:
-      - "127.0.0.1:${DE_MATRIX_MAIL_UI_PORT:-18025}:8025"
-      - "127.0.0.1:${DE_MATRIX_MAIL_SMTP_PORT:-11025}:1025"
+      - "0:8025"   # dynamic — mailpit UI
+      - "0:1025"   # dynamic — mailpit SMTP
     restart: unless-stopped
     networks:
       - edge

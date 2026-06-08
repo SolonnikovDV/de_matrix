@@ -29,11 +29,8 @@ tig_snapshot_de_matrix.md
 *.xlsx
 
 # exls_matrix local/generated artifacts (keep locally, do not publish)
-exls_matrix/**/*_preview.html
-exls_matrix/**/*_preview_clean.html
-exls_matrix/**/*_answers.md
-exls_matrix/**/martrix_*
-exls_matrix/**/matrinx_*
+exls_matrix/
+presentations/
 
 # ----------------------------
 # Runtime files and backups
@@ -60,3 +57,15 @@ proxy/certs/provided/*
 
 # macOS
 .DS_Store
+
+# --- DCI local/runtime (do not publish) ---
+.cursor/dci/dci.env
+.cursor/context/.project_lock
+.cursor/context/.dialog_window_lock
+.cursor/context/vector_fallback.jsonl
+.cursor/context/.compress_snapshot.project.json
+.cursor/context/dialogs/**/.compress_snapshot.json
+.cursor/context/dialogs/**/dialog_bundle.md
+.cursor/context/dialog_bundle.md
+.cursor/context/vector_index.meta.md
+.cursor/context/dialogs/**/vector_index.meta.md

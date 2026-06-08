@@ -48,25 +48,37 @@
 
 ### Импорт/экспорт и merge-режимы
 
-- админ-импорт Excel (`/admin/import`) с превью и валидацией;
-- Excel-импорт выполняется как `replace_all` (снос текущей структуры и инициализация новой);
+- админ-импорт Excel/JSON/CSV (`/admin/import`) с превью и валидацией;
+- **Excel/CSV на `/admin/import`**: два режима:
+  - **`increment`** (по умолчанию) — обогащение существующей матрицы: проверка схемы колонок и глубины дерева, слияние по пути Домен → Раздел → Навык;
+  - **`replace_all`** — полная замена матрицы (с подтверждением риска);
+- первичная загрузка новой матрицы — `replace_all`; догрузка доменов/навыков — `increment`;
 - пользовательский конструктор `/constructor` как альтернатива file upload;
 - git-style подтверждение из конструктора: `commit title/body`, confirm modal и отправка в CR workflow;
-- merge-режимы:
+- merge-режимы API (`/api/source/upload*`):
+  - `increment` — инкрементальное обогащение при совместимой схеме;
   - `append`
   - `append_to_domain`
   - `append_to_skill`
   - `replace_domain`
   - `replace_skill`
   - `replace_all`
+- **табличный контракт `exls_matrix`**: колонки-маркеры (канон для новых файлов):
+  - `node_1`, `node_2`, `node_3` — иерархия (Домен → Раздел → Навык);
+  - `leaf_1_node_3` … `leaf_5_node_3` — содержимое карточки навыка (вопросы, материалы, задачи, …);
+  - `label_1_node_3` … `label_4_node_3` — наклейки навыка (автор, ревьюер, статус, опционально);
+  - legacy-заголовки на русском (`Домен`, `Раздел`, …) по-прежнему принимаются при импорте;
 - импорт JSON: поддерживаются и единое дерево `nodes`, и legacy-обёртка `domains` (нормализуется в `nodes`);
 - загрузка через API (`/api/source/upload*`) принимает `.json`, `.csv`, `.xlsx`, `.xls`;
 - JSON-upload поддерживает:
   - unified (`nodes`) и legacy (`domains`) структуру;
   - табличный JSON list-of-records;
   - JSON-книгу формата `{source_file, sheets}` (парсится первый лист);
-- для файлового контура `exls_matrix` доступны конвертеры `xlsx_to_json.py` и `json_to_xlsx.py`;
-- экспорт и шаблон импорта;
+- для файлового контура `exls_matrix`:
+  - `exls_matrix/xlsx_to_json.py`, `exls_matrix/json_to_xlsx.py` — roundtrip JSON workbook ↔ XLSX;
+  - `scripts/rename_matrix_markers.py` — переименование русских заголовков в маркеры + генерация XLSX;
+- экспорт и шаблон импорта восстанавливают таблицу из БД по `matrix_column_schema` (маркеры как в импортируемом файле);
+- дерево в БД хранится реляционно: отдельная таблица на каждый уровень (`matrix_level_registry` + dynamic level tables), свойства навыка — в `skill_payload` JSONB;
 - staging batch + diff (`json_patch`, structural diff, upsert-plan).
 
 ### Governance и безопасность изменений
@@ -178,14 +190,16 @@ graph TD
 
 | Скрипт | Назначение |
 |---|---|
-| `scripts/deploy.sh` | **Деплой инфраструктуры** (postgres, mongo, smtp) |
-| `scripts/run_app.sh` | **Запуск приложения** (`python app.py` на хосте) |
+| `scripts/start.sh` | **Умный one-click запуск** — самолечение инфры, зависимостей и портов, затем `app.py` |
+| `scripts/deploy.sh` | Деплой инфраструктуры (postgres, mongo, smtp) без запуска app |
+| `scripts/run_app.sh` | Запуск `python app.py` на хосте (требует готовой инфры) |
 | `scripts/deploy_prod.sh` | **Полный деплой** (app + proxy + hardening в Docker) |
 | `scripts/up.sh` | Alias на `deploy_prod.sh` (обратная совместимость) |
 | `scripts/prod_status.sh` | Статус сервисов и ключевые URL |
 | `scripts/prod_down.sh` | Остановка стека |
 | `scripts/prod_rebuild.sh` | Переиспользуемый update-сценарий: остановка -> pull/build -> запуск |
 | `scripts/prod_cleanup.sh` | Полная очистка `de_matrix` контейнерной группы (контейнеры/сети/тома, опц. образы) |
+| `scripts/rename_matrix_markers.py` | Legacy-заголовки exls_matrix → маркеры `node_i`/`leaf`/`label` + генерация XLSX |
 | `scripts/smoke_all.sh` | Комплексный smoke/e2e прогон |
 | `scripts/db_backup.sh` | Backup PostgreSQL/Mongo |
 | `scripts/db_restore.sh` | Restore PostgreSQL/Mongo |
@@ -245,18 +259,19 @@ de_matrix/
 
 ### 5.1 Два режима запуска
 
-| Режим | Деплой | Запуск приложения | URL |
-|---|---|---|---|
-| **Разработка (host app)** | `bash scripts/deploy.sh` | `bash scripts/run_app.sh` или `python app.py` | `http://localhost:5001` |
-| **Production (all-in-docker)** | `bash scripts/deploy_prod.sh` | app уже в контейнере `de-matrix-app` | `https://localhost` |
+| Режим | Команда | URL |
+|---|---|---|
+| **Разработка (host app)** | `bash scripts/start.sh` | `http://localhost:5001` |
+| **Production (all-in-docker)** | `bash scripts/deploy_prod.sh` | `https://localhost` |
 
-**Разработка** — инфраструктура в Docker, процесс приложения на хосте через `app.py`:
+**Разработка** — один скрипт делает всё: проверяет Docker, поднимает инфру, чинит порты, обновляет зависимости, запускает app:
 
 ```bash
 chmod +x ./scripts/*.sh
-bash ./scripts/deploy.sh      # postgres + mongo + smtp
-bash ./scripts/run_app.sh     # python app.py с автозагрузкой .env
+bash ./scripts/start.sh
 ```
+
+> `start.sh` — самодостаточный: при первом запуске копирует `.env.example` → `.env`, создаёт `.venv`, устанавливает зависимости. При повторных — умный `no-op` для всего, что уже готово.
 
 **Production / полный стек** — app + proxy + hardening в контейнерах:
 
@@ -275,16 +290,14 @@ bash ./scripts/prod_rebuild.sh
 
 ```bash
 bash ./scripts/prod_rebuild.sh --host-dev
-bash ./scripts/run_app.sh
+bash ./scripts/start.sh
 ```
 
 ### 5.2 Первый запуск (кратко)
 
 ```bash
 chmod +x ./scripts/*.sh
-cp .env.example .env   # если .env ещё нет
-bash ./scripts/deploy.sh
-bash ./scripts/run_app.sh
+bash ./scripts/start.sh   # всё остальное — автоматически
 ```
 
 Проверка:
@@ -327,6 +340,9 @@ bash ./scripts/prod_status.sh
 
 ### 7.1 Подготовка локальной среды
 
+`start.sh` создаёт `.venv` и устанавливает зависимости автоматически.  
+Для ручной настройки:
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -338,8 +354,13 @@ pip install -r requirements.txt
 Host app (рекомендуется для разработки):
 
 ```bash
+bash ./scripts/start.sh   # one-click: инфра + порты + deps + app
+```
+
+Только инфраструктура (без запуска app):
+
+```bash
 bash ./scripts/deploy.sh
-bash ./scripts/run_app.sh
 ```
 
 Full docker stack:
@@ -522,6 +543,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=200 
 | `Password change required` | Временный пароль | Завершить смену пароля на `/account/password` |
 | `app restarting` | рассинхрон схемы БД/моделей | применить миграции и перезапустить app |
 | e2e/smoke fail после rollback | Изменилось состояние БД | повторить `db_init`, проверить пользователей и CR |
+| Инкремент: «глубина дерева не совпадает» | Устаревший `ui_config` в БД после Apply | обновить app, при необходимости повторный Apply CR с актуальным `ui_config` |
 | Нет писем на реальную почту | Mailpit только перехватывает SMTP | открыть UI Mailpit по `DE_MATRIX_MAIL_UI_PORT` или настроить внешний SMTP + TLS/логин |
 | Уведомления `skipped` / пустые получатели | В профиле нет email | заполнить email у админов/авторов; смотреть `/admin/notifications` |
 | `Connection refused` к SMTP | Неверный host/port для среды | в контейнере app — `smtp:1025`; с хоста — `127.0.0.1` и порт проброса Mailpit |
