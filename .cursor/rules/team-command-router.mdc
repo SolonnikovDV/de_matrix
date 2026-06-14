@@ -1,0 +1,201 @@
+---
+description: Route explicit team commands to fixed expert workflows
+alwaysApply: true
+---
+
+# Team Command Router
+
+Use explicit team commands from the user to select the review workflow.
+
+## Command Identification
+
+Treat any of the following as an explicit team selection:
+- `/custom-rule: team sql`
+- `/custom-rule: team b2c`
+- `/custom-rule: team de-matrix`
+- `/custom-rule: team web-app`
+- `/custom-rule: team presentation`
+- `/custom-rule: team auto`
+
+Treat any of the following as an explicit reset:
+- `/custom-rule: team reset`
+
+If the user gives multiple teams in one request, ask which one to run first.
+
+## Session Team Lock (Sticky Mode)
+
+Maintain `Active Team` for the whole current chat session.
+
+- On explicit team selection, set `Active Team` to that team.
+- On messages without team selection, reuse `Active Team`.
+- Keep using `Active Team` until the user explicitly switches or resets it.
+- On reset, clear `Active Team` and return to normal selection flow.
+
+When `Active Team` is set, do not auto-switch by intent inference.
+If `Active Team` is not set:
+- if the request clearly matches one team, select it and state the inferred choice
+- if intent is ambiguous, ask a short clarification question
+
+## Dialog Window Binding
+
+Treat ledgers as bound to **`DW-*` dialog window** and **`project_id`**.
+
+- Resolve `project_id` from repo; resolve `dialog_window_id` (`DW-NNN`) from `.dialog_window_lock` (see DCI skill).
+- Before load: verify `.project_lock` + `.dialog_window_lock` + `dialogs/DW-NNN/dialog_index.md` headers.
+- On project mismatch: refuse load (exit 2). On window mismatch: refuse load (exit 2).
+- **Window-scoped:** `Q-*`, `CL-*`, `TH-*`, window `CP-*` — reuse IDs only within same `DW-*`.
+- **Project-scoped:** `EV-PROJECT`, `EV-*`, project `CP-*` in `project_catalog.md` — shared across windows; expand explicitly.
+- New Cursor chat → `/custom-rule: dci restore-new "<summary>"`.
+- Project/window tree in current repo → `/custom-rule: dci windows` (EV branches + DW summaries).
+- Multi-project overview → `/custom-rule: dci projects`.
+- Save/compress context → `/custom-rule: dci compress`; run `bash .cursor/tools/dci/bin/dci-vector.sh compress` only (pipeline: materialize + doctor + validate + sync); output = script stdout (`---` + `restore:`), **never** manual `Conclusion/Project Evolution Ledger` tables as compress result; **never** auto `--force` without user consent on hash_embed blocker.
+- Switch window → `/custom-rule: dci restore DW-NNN` (slim: delta + hot_open, not full bundle).
+- Heal ledger происходит автоматически внутри `/custom-rule: dci compress` (materialize + doctor + validate + sync). Отдельный `doctor` — debug-only fallback для инженерной диагностики.
+- After compress in chat → load **delta only** (`dialogs/DW-NNN/dialog_delta.md`); do not read archive bundle.
+- `/custom-rule: team reset` resets team lock only; does not clear ledgers.
+- Explicit ledger reset: `/custom-rule: dci reset-ledger`.
+
+## Skill Routing
+
+When `/custom-rule: team sql` is selected, follow `.cursor/skills/sql-team/SKILL.md`.
+When `/custom-rule: team b2c` is selected, follow `.cursor/skills/b2c-team/SKILL.md`.
+When `/custom-rule: team de-matrix` is selected, follow `.cursor/skills/de-matrix-team/SKILL.md`.
+When `/custom-rule: team web-app` is selected, follow `.cursor/skills/web-app-team/SKILL.md`.
+When `/custom-rule: team presentation` is selected, follow `.cursor/skills/presentation-team/SKILL.md`.
+When `/custom-rule: team auto` is selected, perform auto-selection:
+- choose `presentation` if the request is about presentation, slides, storytelling, diagrams, infographics, visual narrative, business value communication, or technical architecture communication for stakeholders
+- choose `web-app` if the request is about web ui, frontend plus backend app development, docker or kubernetes runtime, cicd gates, deployment, security hardening, monitoring, scaling, and full sdlc delivery
+- choose `de-matrix` if the request is about competency matrix, assessment criteria, certification/attestation tracks, skills framework, grading rubric, or role-level requirements
+- choose `b2c` if the task includes Java/Scala/Spark/Hive/HDFS, YAML pipeline config (`ctl.yaml`, `mart.yaml`), or mixed SQL plus JVM stack
+- choose `sql` if the task is SQL-only (Greenplum/PostgreSQL 9.4), SQL objects, SQL performance, SQL documentation, or SQL business logic validation
+- if evidence is still ambiguous, ask one short clarification question before selecting
+- always state the selection as `Selected Team (auto): <team>` with one-line rationale, then execute that team's skill
+
+When `Active Team` is reused (no new explicit command), start with:
+`Selected Team (locked): <team>`.
+
+## Token-Efficient Context Reuse
+
+Maintain a lightweight `Conclusion Ledger` for the current chat.
+
+- Assign stable IDs to finalized conclusions: `CL-001`, `CL-002`, ...
+- Reuse existing conclusions by ID instead of repeating full rationale.
+- For repeated topics, return delta-only updates (what changed and why).
+
+Support these explicit user intents:
+- `/custom-rule: dci reuse` -> reuse prior conclusions by default
+- `/custom-rule: dci challenge <CL-id or topic>` -> criticize or dispute selected conclusions
+- `/custom-rule: dci confirm <CL-id or topic>` -> verify and confirm selected conclusions
+- `/custom-rule: dci refresh <CL-id or topic>` -> re-evaluate selected conclusions from scratch
+
+Decision policy:
+- Full overlap and no new evidence -> reuse existing conclusion IDs, no full rewrite
+- Partial overlap -> keep unchanged IDs, update only impacted IDs
+- Contradiction with new evidence -> mark old ID as superseded and create new ID
+
+## Project Evolution Ledger
+
+Maintain a compact `Project Evolution Ledger` linked to `Conclusion Ledger`.
+
+- Assign stable evolution IDs: `EV-001`, `EV-002`, ...
+- For each evolution item, store: scope, delta summary, key points, and linked conclusion IDs (`CL-*`).
+- Mark evolution domain explicitly: `sql`, `b2c`, `web-app`, `presentation`, or `cross-domain`.
+- Track branch status for impacted workstreams: `active`, `in_progress`, `merged`, `dead`.
+- Keep dead branches in history with closure reason and replacement reference if any.
+- Keep in-progress branches with open risks and next checkpoint (`CP-*` in DCI).
+
+Support these explicit user intents:
+- `/custom-rule: evo report` -> short timeline of relevant `EV-*` with linked `CL-*`
+- `/custom-rule: evo diff <EV-id|CL-id|topic>` -> focused diff/delta for selected scope
+- `/custom-rule: evo branch-status` -> same data as `/custom-rule: dci windows` (DCI branch tree); no duplicate branch rows
+- `/custom-rule: evo regress <EV-id|range|topic>` -> regression-oriented impact review over selected changes
+
+Output policy:
+- Prefer delta over full retelling.
+- Reuse `EV-*` and `CL-*` IDs whenever possible.
+- If evidence is missing, report uncertainty explicitly instead of inventing change history.
+
+## Question Traceability
+
+Maintain processed question IDs and links:
+
+- Assign question IDs: `Q-001`, `Q-002`, ...
+- Link every `Q-*` to related `CL-*` and `EV-*`.
+- Keep this map compact to avoid repeating the same reasoning.
+- On follow-up questions, reference `Q-*` first, then only delta updates.
+
+## Memory Backend Strategy (chosen)
+
+Use a hybrid memory strategy optimized for this project.
+
+**DCI extension:** follow `.cursor/rules/dialog-context-index.mdc` (trigger) and `.cursor/skills/dialog-context-index/SKILL.md` (full protocol) for indexing, handoff, delta load modes, `CP-*`, `TH-*`, accompaniment v2, and `bash .cursor/tools/dci/bin/dci-vector.sh` (compress/windows/restore/projects/validate).
+
+**TIG extension (code/repo context):** follow `.cursor/rules/tig-preflight-enforced.mdc` and `.cursor/rules/tig-snapshot.mdc` (both `alwaysApply`). Artifacts: `.cursor/context/tig/tig_snapshot.md` (structure map, reuse via fingerprint) + `.cursor/context/tig/tig_delta.md` (git diffs, always refresh). Commands: `bash .cursor/tools/tig/bin/tig-context.sh` preflight / `--delta-only` postflight. **Not** the same as DCI `dialog_delta.md` or compress snapshot.
+
+| Layer | Artifact | Scope | Reuse |
+|-------|----------|-------|-------|
+| TIG | `.cursor/context/tig/tig_delta.md` → `.cursor/context/tig/tig_snapshot.md` | repo code structure + git evolution | snapshot reuse; delta refresh |
+| DCI | `dialog_delta.md` → `dialog_index.md` | dialog ledgers Q/CL/EV | compress handoff |
+
+Read order for implementation: **TIG delta first**, then TIG snapshot sections (Module map, Directory tree, File index), then DCI ledgers if team workflow active.
+
+- Primary layer (always): structured in-dialog ledgers (`Q-*`, `CL-*`, `EV-*`, plus DCI `CP-*`, `TH-*`) scoped by **project_id** (repo-local `.cursor/context/`).
+- Semantic layer (optional): embeddings index for long dialogs or cross-dialog import.
+- Preferred backend: `pgvector` (best operational fit for SQL-first stack and simple deployment).
+- Embeddings baseline: `text-embedding-3-small`; use lower dimensions for cost control when recall remains acceptable.
+- Vector metadata filters must include: `project_id`, `dialog_id`, `team`, `ledger_type`, `branch_state`.
+- If semantic layer is disabled or unavailable, continue with structured ledgers only.
+
+Supported intents:
+- `/custom-rule: dci semantic on` -> enable semantic retrieval mode
+- `/custom-rule: dci semantic off` -> force structured-only mode
+- `/custom-rule: dci semantic lookup <query>` -> retrieve related ledger records
+- `/custom-rule: dci import-ledger <source>` -> import prior dialog summary with ID remapping
+
+## Execution Contract
+
+For all teams:
+- **Implementation tasks:** TIG preflight/postflight per `tig-preflight-enforced.mdc` (unless user skips TIG).
+- Keep role outputs separated by responsibility.
+- Let roles discuss disagreements explicitly.
+- On team activation, Registry Steward starts ledgers immediately (`Q-*`, `CL-*`, `EV-*`).
+- Update `Conclusion Ledger` and `Project Evolution Ledger` for each meaningful delta.
+- Ensure question traceability updates (`Q-*` -> `CL-*` -> `EV-*` -> `CP-*` -> `TH-*`) for each meaningful update.
+- Require arbiter resolution for every unresolved dispute.
+- Do not finalize until all blocking disputes are resolved.
+- Keep context recap short: cite conclusion IDs and only include changed details.
+- Keep evolution recap short: cite `EV-*` and `CL-*`, include only key deltas and branch state changes.
+- End with a concise consensus summary and concrete next actions.
+
+For `/custom-rule: team sql` and `/custom-rule: team b2c`:
+- Require tester to select stand(s) from project context and report stand run results.
+- Require tester to report functional test coverage and outcomes for critical scenarios.
+- Require tester to use the mandatory mini-template defined in the selected team skill.
+- Require tester QA gate (`pass`, `pass_with_risk`, `fail`) before finalization.
+- Treat tester blocking defects as blockers until resolved or explicitly accepted by arbiter.
+
+For `/custom-rule: team de-matrix`:
+- Require technical writer to convert engineering discussion into clear human-readable technical language.
+- Require reviewer to verify result alignment with competency-matrix scope and attestation context.
+- Before matrix design/review, require using both guidance documents:
+  - `exls_matrix/matrix_methodology.md`
+  - `exls_matrix/middle_de_research_notes.md`
+
+For `/custom-rule: team web-app`:
+- Require reviewer to validate result alignment with full-cycle web app delivery scope.
+- Require critic to challenge assumptions, architecture trade-offs, and hidden risks.
+- Require technical writer to produce implementation-facing documentation and runbooks.
+
+For `/custom-rule: team presentation`:
+- **Mandatory full roster from session start (18 roles):** Business Owner, Technical User, Copywriter, **Designer (дизайнер)**, Layout Designer (верстальщик), SQL Engineer, Data Engineer, DevOps Engineer, UI/UX Designer, Architect, Technical Writer, Presentation Developer, Diagram and Infographic Specialist, Reviewer, Censor, Language and Context Checker, Arbiter, Registry Steward. All roles must contribute before delivery; no reduced team unless user explicitly requests.
+- Follow `.cursor/skills/presentation-team/SKILL.md` section **Presentation Composition Methodology (Mandatory)**.
+- Follow project rule `.cursor/rules/presentation-team-methodology.mdc` when present.
+- Require business owner to validate ROI framing, pilot gates, and buyer decision criteria.
+- Require technical user to validate end-user workflows, prerequisites, and realistic scenarios.
+- Require copywriter to remove filler and duplication; sharpen headlines and CTA; no meta phrases in titles.
+- Require **designer (дизайнер)** to define palette, cover art direction, and bigtech visual tone before layout implementation.
+- Require layout designer (верстальщик) to validate slide density (75–90% fill), typography scale (body ≥10pt), and composition for projection/PDF.
+- Require presentation developer to implement visual system: stroke SVG icons (no emoji), reusable layout components (`scenario-bar`, `roles-grid`, etc.).
+- Require diagram and infographic specialist to ensure accurate and readable visual models.
+- Require reviewer to run mandatory QA checklist (fill, font, layout, infographics, duplication, audience coverage, pilot criteria) before `pass`.
+- Require censor and language-context checker to validate orthography, `е`/`ё` policy when specified, and semantic consistency.

@@ -2,7 +2,7 @@
 # TIG CLI + rules integration smoke tests
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 cd "${ROOT}"
 
 PASS=0
@@ -11,15 +11,15 @@ FAIL=0
 pass() { echo "PASS  $1"; PASS=$((PASS + 1)); }
 fail() { echo "FAIL  $1 — $2"; FAIL=$((FAIL + 1)); }
 
-SNAP="${ROOT}/tig_snapshot.md"
-DELTA="${ROOT}/tig_delta.md"
-TIG_SH="${ROOT}/scripts/tig-context.sh"
+SNAP="${ROOT}/.cursor/context/tig/tig_snapshot.md"
+DELTA="${ROOT}/.cursor/context/tig/tig_delta.md"
+TIG_SH="${ROOT}/.cursor/tools/tig/bin/tig-context.sh"
 
 echo "=== TIG test run $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
 
 # TC-TIG-01: tig-context.sh runs without GUI
 if [[ ! -x "${TIG_SH}" ]]; then
-  fail "TC-TIG-01" "scripts/tig-context.sh missing or not executable"
+  fail "TC-TIG-01" ".cursor/tools/tig/bin/tig-context.sh missing or not executable"
 else
   rc=0
   bash "${TIG_SH}" "." "origin/main" >/tmp/tig_tc01.out 2>&1 || rc=$?
@@ -36,7 +36,7 @@ if [[ -f "${SNAP}" ]] && grep -q '"fingerprint"' "${SNAP}" \
    && grep -q "## Directory tree" "${SNAP}"; then
   pass "TC-TIG-02"
 else
-  fail "TC-TIG-02" "tig_snapshot.md missing or invalid layout"
+  fail "TC-TIG-02" ".cursor/context/tig/tig_snapshot.md missing or invalid layout"
 fi
 
 # TC-TIG-03: delta artifact with git diff sections
@@ -44,7 +44,7 @@ if [[ -f "${DELTA}" ]] && grep -q "## Unified diff vs base ref" "${DELTA}" \
    && grep -q "## Working tree diff" "${DELTA}"; then
   pass "TC-TIG-03"
 else
-  fail "TC-TIG-03" "tig_delta.md missing git diff sections"
+  fail "TC-TIG-03" ".cursor/context/tig/tig_delta.md missing git diff sections"
 fi
 
 # TC-TIG-04: reuse-if-unchanged
@@ -61,7 +61,7 @@ import importlib.util
 spec = importlib.util.spec_from_file_location('tig', '${ROOT}/tig_app_ru.py')
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
-rc = mod.run_cli(['--target', '.', '--out', '/tmp/tig_test_snap2.md', '--compact', '--delta'])
+rc = mod.run_cli(['--target', '.', '--out', '/tmp/tig_test_snap2.md', '--compact', '--delta', '--delta-out', '/tmp/tig_test_delta2.md'])
 assert rc == 0
 " 2>/dev/null; then
   pass "TC-TIG-05"
@@ -70,8 +70,8 @@ else
 fi
 
 # TC-TIG-06: rules contract
-if grep -q 'scripts/tig-context.sh' "${ROOT}/.cursor/rules/tig-preflight-enforced.mdc" \
-   && grep -q 'tig_delta.md' "${ROOT}/.cursor/rules/tig-snapshot.mdc" \
+if grep -q '.cursor/tools/tig/bin/tig-context.sh' "${ROOT}/.cursor/rules/tig-preflight-enforced.mdc" \
+   && grep -q '.cursor/context/tig/tig_delta.md' "${ROOT}/.cursor/rules/tig-snapshot.mdc" \
    && grep -q 'Module map' "${ROOT}/.cursor/rules/tig-snapshot.mdc"; then
   pass "TC-TIG-06"
 else

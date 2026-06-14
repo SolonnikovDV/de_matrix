@@ -2,12 +2,12 @@
 # DCI v8 automated test runner (P0 auto cases + DB R/W)
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 cd "${ROOT}"
 
 PY="${ROOT}/.venv/bin/python"
-SYNC="${ROOT}/scripts/dci_vector_sync.py"
-DCI="${ROOT}/scripts/dci-vector.sh"
+SYNC="${ROOT}/.cursor/tools/dci/lib/dci_vector_sync.py"
+DCI="${ROOT}/.cursor/tools/dci/bin/dci-vector.sh"
 
 PASS=0
 FAIL=0
@@ -215,8 +215,8 @@ py = gp / ".venv/bin/python"
 if not py.is_file() or not dm.is_dir():
     print("SKIP no de_matrix/venv")
     sys.exit(0)
-subprocess.check_call(["env", "DCI_PROJECT_ID=de_matrix", str(py), str(dm / "scripts/dci_vector_sync.py"), "sync", "--migrate"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-subprocess.check_call(["env", "DCI_PROJECT_ID=gp_dq", str(py), str(gp / "scripts/dci_vector_sync.py"), "sync", "--project", "--migrate"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+subprocess.check_call(["env", "DCI_PROJECT_ID=de_matrix", str(py), str(dm / ".cursor/tools/dci/lib/dci_vector_sync.py"), "sync", "--migrate"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+subprocess.check_call(["env", "DCI_PROJECT_ID=gp_dq", str(py), str(gp / ".cursor/tools/dci/lib/dci_vector_sync.py"), "sync", "--project", "--migrate"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 import psycopg2
 c = psycopg2.connect(host="localhost", port=5433, dbname="dci_vectors", user="dci", password="dci_local", connect_timeout=3)
 cur = c.cursor()
@@ -289,7 +289,7 @@ project_id: gp_dq
 dialog_window_id: DW-001
 EOF
 if grep -q "Ledger integrity invariant" "${ROOT}/.cursor/rules/dialog-context-index.mdc" \
-   && grep -q "cmd_doctor" "${ROOT}/scripts/dci_vector_sync.py"; then
+   && grep -q "cmd_doctor" "${ROOT}/.cursor/tools/dci/lib/dci_vector_sync.py"; then
   pass "TC-DOCTOR-02"
 else
   fail "TC-DOCTOR-02" "invariant doc or cmd_doctor missing"

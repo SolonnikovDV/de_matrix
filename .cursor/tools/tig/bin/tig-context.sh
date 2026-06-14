@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # TIG context refresh for Cursor rules (preflight/postflight).
 # Usage:
-#   bash scripts/tig-context.sh [target] [base_ref]
-#   bash scripts/tig-context.sh [target] [base_ref] --delta-only   # postflight fast path
+#   bash .cursor/tools/tig/bin/tig-context.sh [target] [base_ref]
+#   bash .cursor/tools/tig/bin/tig-context.sh [target] [base_ref] --delta-only   # postflight fast path
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 TARGET="${1:-.}"
 BASE_REF="${2:-origin/main}"
 EXTRA=()
@@ -21,6 +21,8 @@ else
 fi
 
 PY="${ROOT}/.venv/bin/python"
+TIG_CONTEXT_DIR="${ROOT}/.cursor/context/tig"
+mkdir -p "${TIG_CONTEXT_DIR}"
 if [[ ! -x "${PY}" ]]; then
   PY="python3"
 fi
@@ -28,12 +30,12 @@ fi
 if [[ ${#EXTRA[@]} -gt 0 ]]; then
   exec "${PY}" "${ROOT}/tig_app_ru.py" --cli \
     --target "${TARGET}" \
-    --out "tig_snapshot.md" \
+    --out "${TIG_CONTEXT_DIR}/tig_snapshot.md" \
     --compact \
     --git-commits 12 \
     --reuse-if-unchanged \
     --delta \
-    --delta-out "tig_delta.md" \
+    --delta-out "${TIG_CONTEXT_DIR}/tig_delta.md" \
     --base-ref "${BASE_REF}" \
     --delta-log-commits 20 \
     --diff-max-lines 2500 \
@@ -43,12 +45,12 @@ fi
 
 exec "${PY}" "${ROOT}/tig_app_ru.py" --cli \
   --target "${TARGET}" \
-  --out "tig_snapshot.md" \
+  --out "${TIG_CONTEXT_DIR}/tig_snapshot.md" \
   --compact \
   --git-commits 12 \
   --reuse-if-unchanged \
   --delta \
-  --delta-out "tig_delta.md" \
+  --delta-out "${TIG_CONTEXT_DIR}/tig_delta.md" \
   --base-ref "${BASE_REF}" \
   --delta-log-commits 20 \
   --diff-max-lines 2500 \

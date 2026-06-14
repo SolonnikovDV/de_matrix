@@ -1,0 +1,15 @@
+# --- DCI local/runtime (do not publish) ---
+# Append to project .gitignore. Commit: rules, skills, scripts, dci.env.example, project_catalog, dialog_index.
+.cursor/dci/dci.env
+.cursor/dci/.embed_server.pid
+.cursor/dci/embed_server.log
+.cursor/context/.project_lock
+.cursor/context/.dialog_window_lock
+.cursor/context/vector_fallback.jsonl
+.cursor/context/dialogs/**/vector_fallback.jsonl
+.cursor/context/.compress_snapshot.project.json
+.cursor/context/dialogs/**/.compress_snapshot.json
+.cursor/context/dialogs/**/dialog_bundle.md
+.cursor/context/dialog_bundle.md
+.cursor/context/vector_index.meta.md
+.cursor/context/dialogs/**/vector_index.meta.md

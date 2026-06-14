@@ -1,0 +1,193 @@
+---
+description: Mandatory composition methodology for presentation-команда slide decks (context intake, structure, visual system, infographics, QA). Apply when building or reviewing presentations under presentation-команда.
+alwaysApply: false
+---
+
+# Presentation Team — Composition Methodology
+
+When `presentation-команда` is active, follow `.cursor/skills/presentation-team/SKILL.md` and this rule.
+
+## Permanent Team Composition
+
+**All roles are mandatory from session start.** Every role contributes before delivery. No reduced team unless the user explicitly requests it.
+
+- **Business Owner** — ROI, pilot gates (Mode A), buyer decision criteria
+- **Technical User** — end-user workflows, prerequisites, realistic scenarios
+- **Copywriter** — no filler/duplication; sharp headlines and CTA
+- **Designer (дизайнер)** — palette, art direction, cover concept, bigtech tone
+- **Layout Designer (верстальщик)** — density, typography, grid, PDF/projection
+- **SQL Engineer** — SQL claims, metrics, query examples
+- **Data Engineer** — pipelines, platform constraints, scalability narrative
+- **DevOps Engineer** — delivery, CI/CD, observability claims
+- **UI/UX Designer** — hierarchy, readability, comprehension flow
+- **Architect** — architectural coherence, trade-offs, boundaries
+- **Technical Writer** — terminology, clarity, narrative consistency
+- **Presentation Developer** — HTML deck assembly and style system
+- **Diagram and Infographic Specialist** — diagrams, flows, infographics per slide
+- **Reviewer** — verdict `pass` / `pass_with_risk` / `fail`
+- **Censor + Language and Context Checker** — claims, orthography, tone
+- **Arbiter + Registry Steward** — disputes, ledgers, dialog context intake
+
+---
+
+## Dialog Context Intake (mandatory)
+
+Aggregate from **current dialog first**, then repo. Link decisions to `Q-*` → `CL-*` → `EV-*`.
+
+| Priority | Source |
+|----------|--------|
+| 1 | User constraints in dialog (name, audience, forbidden blocks, title rule, tone) |
+| 2 | Confirmed brief v0.x |
+| 3 | Post-build revision messages (delta spec per slide) |
+| 4 | Ledgers (`CL-*`, `EV-*`) |
+| 5 | Product docs (`dq/docs/*.md`, playbooks, architecture) |
+| 6 | Code facts (functions, tables, configs) |
+| 7 | Contacts — real data only; placeholder if email unknown |
+
+**Brief gate:** publish Brief v0.x → user confirm → then build HTML.
+
+---
+
+## Deck Modes
+
+| Mode | Use | Pilot |
+|------|-----|-------|
+| **A · Sales** | продукт, ROI, внедрение | yes |
+| **B · Framework** | стандарт, архитектура, паттерны, governance | **no** (default) |
+| **C · Hybrid** | explicit mix | by brief |
+
+Mode B reference: `docs/presentation/deck.html` (фреймворк DQ-b2c).
+
+---
+
+## Slide Maps
+
+### Mode A · Sales (~11 slides)
+
+Title (value + pills) → Problem → Economics → Solution → Roles → Architecture → Demo → Positioning → Roadmap → Pilot/KPI → CTA.
+
+### Mode B · Framework (~12 slides)
+
+| # | Slide |
+|---|--------|
+| 1 | **Title only** — no pills/hero on cover |
+| 2 | Overview — lead, tags, 3 feature cards |
+| 3 | Why standard — method-cycle + layer-stack |
+| 4 | Architecture — arch-flow + table |
+| 5 | Pattern catalog |
+| 6 | Interface + registration |
+| 7 | Design rationale — pillars |
+| 8 | Trade-offs — plus/minus |
+| 9 | Scale + resilience — change matrix |
+| 10 | Governance + business value |
+| 11 | Application scope — **no doc file list** |
+| 12 | Contacts — **no repo/docs** unless user asks |
+
+---
+
+## Content Aggregation Pipeline
+
+```text
+Intake → Brief → Confirm → Slide map → Content blocks → Infographics → HTML → QA → PDF → User delta → Re-export
+```
+
+**Per-slide block:** purpose, headline, lead, primary_visual, evidence, roles_hook.
+
+---
+
+## Slide Filling Patterns
+
+Reuse components from `deck.html`:
+
+- **Cover:** `.slide-cover`, `.cover-art`, `.cover-glow`, `.cover-rule`
+- **Overview:** `.lead`, `.tag-row`, `.feature-grid`
+- **Methodology:** `.callout`, `.method-cycle`, `.layer-stack`, `.compare-box`
+- **Architecture:** `.arch-flow`, `table.data`, `.code-block`
+- **Trade-offs:** `.decision-grid`, `.decision-col.plus/minus`
+- **Scale:** `.change-matrix`
+- **Contacts:** `.contact-card`, `.topic-list`
+
+Density target: **75–90%** fill. Asymmetric columns before adding slides.
+
+---
+
+## Infographics (text slides must have a primary visual)
+
+| Intent | Visual |
+|--------|--------|
+| Title | Semantic cover SVG (pipeline, factory, layers, INFO/WARN/ALERT) |
+| Why standard | method-cycle + layer-stack |
+| Architecture | arch-flow |
+| Rationale | pillar-bars |
+| Trade-offs | plus/minus columns |
+| Scale | change matrix |
+| Governance | roles-grid |
+| Contacts | numbered topic list |
+
+---
+
+## Visual System · Bigtech Dev Tone
+
+Default: **clean bigtech engineering**, light casual — **not** ultra-strict corporate gray/navy.
+
+- **Palette:** `--accent #0d5cab`, `--accent-cyan #4db8ff`, `--accent-soft #e8f1fb`, status ok/warn/alert
+- **Radius:** 8px cards and pills
+- **Icons:** stroke SVG sprite only — **no emoji**
+- **Typography:** body ≥10pt; slide title ~21pt; cover ~44pt
+- **Reject:** flat dull navy-only strict style; overloaded title slide (Mode B); fake metrics
+
+---
+
+## Composition Principles
+
+1. Audience-first — pick mode A or B in brief.
+2. Fewer slides, no duplication.
+3. No water in titles.
+4. Honest trade-offs on one slide when possible.
+5. Evidence from docs/dialog — no invented contacts or metrics.
+6. Densify sparse slides (grids, bars, tables).
+7. Dialog revisions supersede earlier brief defaults.
+
+## Language (Russian decks)
+
+- Russian primary; EN terms where standard (factory, adapter, playbook, KPI, pilot).
+- **`е` instead of `ё`** when policy specifies.
+- No hybrid typos; short declarative headlines.
+
+---
+
+## Mandatory QA Checklist (Reviewer gate)
+
+Before `pass`:
+- [ ] Visual identity matches designer brief (palette, cover, tone)
+- [ ] Fill density 75–90%
+- [ ] Font readable at 3–5 m projection
+- [ ] Grid alignment and spacing
+- [ ] Infographics accurate and labeled
+- [ ] Duplication scan
+- [ ] Audience hooks match brief mode
+- [ ] Mode B: title-only slide 1; no doc list on closing
+- [ ] Contacts: no fake email; no repo/docs if user removed
+- [ ] Visual tone not over-strict without user ask
+- [ ] Pilot only when Mode A or requested
+- [ ] Censor: no unsupported claims
+
+---
+
+## Artifacts (this project)
+
+- Source: `docs/presentation/deck.html`
+- Export: `docs/presentation/export-pdf.sh` or Chrome headless
+- Output: `docs/presentation/DQ-b2c-framework-deck.pdf`
+
+---
+
+## Anti-patterns
+
+- Emoji / messenger pictograms
+- Fake percentage meters
+- Summary repeating title metrics
+- Doc bibliography on Mode B closing slide
+- Repo paths on contacts when user excluded them
+- Meta commentary in titles
+- Strict corporate dull palette when bigtech casual fits audience

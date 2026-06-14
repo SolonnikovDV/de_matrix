@@ -1,0 +1,13 @@
+{
+  "window": "DW-001",
+  "namespace_suffix": "DW-001",
+  "positive": {
+    "query": "DCI v8 sub-isolation dialog window",
+    "expect_top1": "CL-007",
+    "min_score": 0.35
+  },
+  "negative": {
+    "query": "UAT aum special_dq_2",
+    "not_top1": "CL-007"
+  }
+}

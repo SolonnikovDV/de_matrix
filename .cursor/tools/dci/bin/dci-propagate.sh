@@ -2,7 +2,7 @@
 # Propagate DCI v9 rule + scripts + infra from gp_dq to other Cursor projects.
 set -euo pipefail
 
-SOURCE="${DCI_PROPAGATE_SOURCE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+SOURCE="${DCI_PROPAGATE_SOURCE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
 ROOT="${DCI_PROJECTS_ROOT:-$(cd "${SOURCE}/.." && pwd)}"
 DRY="${DCI_PROPAGATE_DRY:-0}"
 
@@ -183,13 +183,13 @@ repair_bootstrap_ledger() {
   # Self-heal legacy/hand-edited windows via the propagated core `doctor`
   # (single source of truth). Idempotent; no-op when ledger already valid.
   local target="$1"
-  [[ -f "${target}/scripts/dci-vector.sh" ]] || return 0
+  [[ -f "${target}/.cursor/tools/dci/bin/dci-vector.sh" ]] || return 0
   if [[ "${DRY}" == "1" ]]; then
     echo "  repair-ledger: dry (skip)"
     return 0
   fi
   local out
-  out="$(cd "${target}" && bash scripts/dci-vector.sh doctor 2>&1)" || true
+  out="$(cd "${target}" && bash .cursor/tools/dci/bin/dci-vector.sh doctor 2>&1)" || true
   echo "${out}" | sed 's/^/  /'
 }
 
@@ -243,12 +243,12 @@ Apply all command workflows from the global router, including:
 ## DCI (project-local)
 
 Follow `.cursor/rules/dialog-context-index.mdc` and `.cursor/skills/dialog-context-index/SKILL.md`.
-Shell: `bash scripts/dci-vector.sh` (compress, materialize, doctor, windows, restore, projects, validate).
+Shell: `bash .cursor/tools/dci/bin/dci-vector.sh` (compress, materialize, doctor, windows, restore, projects, validate).
 
 ## TIG (project-local)
 
 Follow `.cursor/rules/tig-preflight-enforced.mdc` and `.cursor/rules/tig-snapshot.mdc`.
-Shell: `bash scripts/tig-context.sh` (preflight / `--delta-only` postflight).
+Shell: `bash .cursor/tools/tig/bin/tig-context.sh` (preflight / `--delta-only` postflight).
 EOF
   echo "  team-command-router: inheritance stub refreshed (DCI + TIG)"
 }
@@ -277,11 +277,12 @@ propagate_rules_and_tig() {
   for s in "${skills[@]}"; do
     copy_file "${SOURCE}/.cursor/skills/${s}/SKILL.md" "${target}/.cursor/skills/${s}/SKILL.md"
   done
+  copy_file "${SOURCE}/.cursor/docs/.cursor/docs/README_CUSTOM_RULES.md" "${target}/.cursor/docs/.cursor/docs/README_CUSTOM_RULES.md"
   copy_file "${SOURCE}/tig_app_ru.py" "${target}/tig_app_ru.py"
-  copy_file "${SOURCE}/scripts/tig-context.sh" "${target}/scripts/tig-context.sh"
-  copy_file "${SOURCE}/scripts/tig-test.sh" "${target}/scripts/tig-test.sh"
-  copy_file "${SOURCE}/scripts/rules-validate-all-projects.sh" "${target}/scripts/rules-validate-all-projects.sh"
-  chmod +x "${target}/scripts/tig-context.sh" "${target}/scripts/tig-test.sh" "${target}/scripts/rules-validate-all-projects.sh" 2>/dev/null || true
+  copy_file "${SOURCE}/.cursor/tools/tig/bin/tig-context.sh" "${target}/.cursor/tools/tig/bin/tig-context.sh"
+  copy_file "${SOURCE}/.cursor/tools/tig/bin/tig-test.sh" "${target}/.cursor/tools/tig/bin/tig-test.sh"
+  copy_file "${SOURCE}/.cursor/tools/tig/bin/rules-validate-all-projects.sh" "${target}/.cursor/tools/tig/bin/rules-validate-all-projects.sh"
+  chmod +x "${target}/.cursor/tools/tig/bin/tig-context.sh" "${target}/.cursor/tools/tig/bin/tig-test.sh" "${target}/.cursor/tools/tig/bin/rules-validate-all-projects.sh" 2>/dev/null || true
 }
 
 sync_global_router() {
@@ -327,20 +328,21 @@ propagate_one() {
   echo "=== ${name} ==="
   propagate_rules_and_tig "${target}"
   copy_file "${SOURCE}/.cursor/context/dci_test_cases.md" "${target}/.cursor/context/dci_test_cases.md"
-  copy_file "${SOURCE}/scripts/dci_vector_sync.py" "${target}/scripts/dci_vector_sync.py"
-  copy_file "${SOURCE}/scripts/dci-vector.sh" "${target}/scripts/dci-vector.sh"
-  copy_file "${SOURCE}/scripts/dci-test.sh" "${target}/scripts/dci-test.sh"
-  copy_file "${SOURCE}/scripts/dci-propagate.sh" "${target}/scripts/dci-propagate.sh"
-  copy_file "${SOURCE}/scripts/dci-setup-projects.sh" "${target}/scripts/dci-setup-projects.sh"
+  copy_file "${SOURCE}/.cursor/tools/dci/lib/dci_vector_sync.py" "${target}/.cursor/tools/dci/lib/dci_vector_sync.py"
+  copy_file "${SOURCE}/.cursor/tools/dci/bin/dci-vector.sh" "${target}/.cursor/tools/dci/bin/dci-vector.sh"
+  copy_file "${SOURCE}/.cursor/tools/dci/bin/dci-test.sh" "${target}/.cursor/tools/dci/bin/dci-test.sh"
+  copy_file "${SOURCE}/.cursor/tools/dci/bin/dci-propagate.sh" "${target}/.cursor/tools/dci/bin/dci-propagate.sh"
+  copy_file "${SOURCE}/.cursor/tools/dci/bin/dci-setup-projects.sh" "${target}/.cursor/tools/dci/bin/dci-setup-projects.sh"
   copy_file "${SOURCE}/.cursor/dci/docker-compose.yml" "${target}/.cursor/dci/docker-compose.yml"
   copy_file "${SOURCE}/.cursor/dci/dci.env.example" "${target}/.cursor/dci/dci.env.example"
-  copy_file "${SOURCE}/scripts/dci_embed_server.py" "${target}/scripts/dci_embed_server.py"
+  copy_file "${SOURCE}/.cursor/dci/gitignore.fragment" "${target}/.cursor/dci/gitignore.fragment"
+  copy_file "${SOURCE}/.cursor/tools/dci/lib/dci_embed_server.py" "${target}/.cursor/tools/dci/lib/dci_embed_server.py"
   copy_file "${SOURCE}/.cursor/dci/embedding_golden.json" "${target}/.cursor/dci/embedding_golden.json"
   copy_file "${SOURCE}/.cursor/dci/init/01_schema.sql" "${target}/.cursor/dci/init/01_schema.sql"
   copy_file "${SOURCE}/.cursor/dci/init/02_window_scope.sql" "${target}/.cursor/dci/init/02_window_scope.sql"
   copy_file "${SOURCE}/.cursor/dci/projects.registry" "${target}/.cursor/dci/projects.registry"
-  copy_file "${SOURCE}/scripts/dci-validate-all-projects.sh" "${target}/scripts/dci-validate-all-projects.sh"
-  chmod +x "${target}/scripts/dci-vector.sh" "${target}/scripts/dci-test.sh" "${target}/scripts/dci-propagate.sh" "${target}/scripts/dci-setup-projects.sh" "${target}/scripts/dci-validate-all-projects.sh" 2>/dev/null || true
+  copy_file "${SOURCE}/.cursor/tools/dci/bin/dci-validate-all-projects.sh" "${target}/.cursor/tools/dci/bin/dci-validate-all-projects.sh"
+  chmod +x "${target}/.cursor/tools/dci/bin/dci-vector.sh" "${target}/.cursor/tools/dci/bin/dci-test.sh" "${target}/.cursor/tools/dci/bin/dci-propagate.sh" "${target}/.cursor/tools/dci/bin/dci-setup-projects.sh" "${target}/.cursor/tools/dci/bin/dci-validate-all-projects.sh" 2>/dev/null || true
 
   bootstrap_project "${target}" "${name}"
   repair_bootstrap_ledger "${target}"
@@ -374,7 +376,7 @@ write_projects_registry() {
   fi
 }
 
-chmod +x "${SOURCE}/scripts/dci-propagate.sh" "${SOURCE}/scripts/dci-vector.sh" "${SOURCE}/scripts/dci-test.sh" 2>/dev/null || true
+chmod +x "${SOURCE}/.cursor/tools/dci/bin/dci-propagate.sh" "${SOURCE}/.cursor/tools/dci/bin/dci-vector.sh" "${SOURCE}/.cursor/tools/dci/bin/dci-test.sh" 2>/dev/null || true
 
 for dir in "${ROOT}"/*; do
   [[ -d "${dir}" ]] || continue

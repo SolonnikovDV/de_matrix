@@ -1,48 +1,47 @@
 ---
 {
   "tig_cli_version": "1.5",
-  "generated_at": "2026-06-08T09:13:09Z",
+  "generated_at": "2026-06-14T14:17:59Z",
   "target": "/Users/dmitrysolonnikov/PycharmProjects/de_matrix",
   "mode": "compact",
-  "fingerprint": "sha256:23dea55d6f48ad2d",
-  "git_head": "b10233aed4581eb0061082415d839559f1b75f9e",
+  "fingerprint": "sha256:9b2512005568ebce",
+  "git_head": "52e09d36f569f5d9bac946b073fc6e91edd54cf9",
   "git_dirty": true,
   "base_ref": "origin/main",
   "base_ref_note": "origin/main",
-  "file_count": 205,
-  "total_files": 205
+  "file_count": 206,
+  "total_files": 206
 }
 ---
 
 # TIG Snapshot
 
 **Project:** `de_matrix`
-**Mode:** `compact` | **Fingerprint:** `sha256:23dea55d6f48ad2d`
+**Mode:** `compact` | **Fingerprint:** `sha256:9b2512005568ebce`
 **Base ref:** `origin/main` (origin/main)
 
 ## Module map
 
 | Module | Files | Size |
 |--------|------:|-----:|
-| `.cursor` | 34 | 161688 bytes |
+| `.cursor` | 36 | 257355 bytes |
 | `.DS_Store` | 1 | 6148 bytes |
 | `.github` | 5 | 19658 bytes |
-| `.gitignore` | 1 | 1497 bytes |
+| `.gitignore` | 1 | 1596 bytes |
 | `app.py` | 1 | 207107 bytes |
 | `config` | 3 | 10761 bytes |
 | `core` | 21 | 222341 bytes |
 | `docker-compose.prod.yml` | 1 | 2726 bytes |
 | `docker-compose.yml` | 1 | 2928 bytes |
 | `Dockerfile` | 1 | 261 bytes |
-| `exls_matrix` | 34 | 497103 bytes |
+| `exls_matrix` | 44 | 1423769 bytes |
 | `LICENSE` | 1 | 1075 bytes |
 | `migrations` | 8 | 20201 bytes |
 | `presentations` | 4 | 3556449 bytes |
 | `proxy` | 7 | 10565 bytes |
 | `README.md` | 1 | 27466 bytes |
-| `README_CUSTOM_RULES.md` | 1 | 3514 bytes |
 | `requirements.txt` | 1 | 775 bytes |
-| `scripts` | 38 | 222920 bytes |
+| `scripts` | 28 | 78398 bytes |
 | `security` | 3 | 884 bytes |
 | `static` | 3 | 78185 bytes |
 | `storage` | 9 | 60443 bytes |
@@ -50,7 +49,7 @@
 | `tig_app_ru.py` | 1 | 40718 bytes |
 | `TODO.md` | 1 | 34065 bytes |
 
-**Total:** 205 files
+**Total:** 206 files
 
 ## Directory tree
 
@@ -71,6 +70,8 @@ de_matrix/
 │   │   ├── presentation-team/ …
 │   │   ├── sql-team/ …
 │   │   ├── web-app-team/ …
+│   ├── tools/
+│   │   ├── dci/ …
 ├── .github/
 │   ├── workflows/
 ├── .pycache_compile/
@@ -111,6 +112,7 @@ de_matrix/
 │   ├── arch/
 │   ├── dba/
 │   ├── etl_elt_modeling/
+│   ├── review/
 │   ├── storage/
 │   ├── .DS_Store
 │   ├── de_matrix_plan.md
@@ -147,13 +149,6 @@ de_matrix/
 │   ├── db_init.py
 │   ├── db_restore.sh
 │   ├── db_smoke_check.py
-│   ├── dci-propagate.sh
-│   ├── dci-setup-projects.sh
-│   ├── dci-test.sh
-│   ├── dci-validate-all-projects.sh
-│   ├── dci-vector.sh
-│   ├── dci_embed_server.py
-│   ├── dci_vector_sync.py
 │   ├── deploy.sh
 │   ├── deploy_prod.sh
 │   ├── dump_unified_vitrine.py
@@ -172,12 +167,9 @@ de_matrix/
 │   ├── proxy_prepare_tls.sh
 │   ├── rename_matrix_markers.py
 │   ├── resolve_deploy_targets.py
-│   ├── rules-validate-all-projects.sh
 │   ├── run_app.sh
 │   ├── smoke_all.sh
 │   ├── start.sh
-│   ├── tig-context.sh
-│   ├── tig-test.sh
 │   ├── turn_to_base_config.py
 │   ├── up.sh
 ├── security/
@@ -230,7 +222,6 @@ de_matrix/
 ├── Dockerfile
 ├── LICENSE
 ├── README.md
-├── README_CUSTOM_RULES.md
 ├── requirements.txt
 ├── tig_app_ru.py
 ├── TODO.md
@@ -242,31 +233,25 @@ de_matrix/
 Корень: /Users/dmitrysolonnikov/PycharmProjects/de_matrix
 
 === STATUS ===
-M .env
- M .env.example
- M .gitignore
- M README.md
- M docker-compose.yml
- M exls_matrix/format_support_analysis.md
- M exls_matrix/matrix_methodology.md
-?? README_CUSTOM_RULES.md
-?? scripts/dci-propagate.sh
-?? scripts/dci-setup-projects.sh
-?? scripts/dci-test.sh
-?? scripts/dci-validate-all-projects.sh
-?? scripts/dci-vector.sh
-?? scripts/dci_embed_server.py
-?? scripts/dci_vector_sync.py
-?? scripts/export_presentation_pdf.sh
-?? scripts/rules-validate-all-projects.sh
-?? scripts/start.sh
-?? scripts/tig-context.sh
-?? scripts/tig-test.sh
-?? tig_delta.md
-?? tig_snapshot.md
+M .gitignore
+ D README_CUSTOM_RULES.md
+ D scripts/dci-propagate.sh
+ D scripts/dci-setup-projects.sh
+ D scripts/dci-test.sh
+ D scripts/dci-validate-all-projects.sh
+ D scripts/dci-vector.sh
+ D scripts/dci_embed_server.py
+ D scripts/dci_vector_sync.py
+ D scripts/rules-validate-all-projects.sh
+ D scripts/tig-context.sh
+ D scripts/tig-test.sh
+ D tig_delta.md
+ D tig_snapshot.md
+?? .cursor/
 
 === LOG (12 oneline) ===
-b10233a (HEAD -> main, origin/main) alpha update
+52e09d3 (HEAD -> main, origin/main) major update
+b10233a alpha update
 fc30d21 update readme
 b42b8c7 add mail server option
 32832b7 update ci stage
@@ -277,44 +262,29 @@ e2d91ef fix smoke test
 0cb4d0e fix smoke test
 26140f7 fix smoke test
 7d26ef9 fix smoke test
-a5d619a recompose app
 ```
 
 ## File index (compressed)
 
-### Changed (vs base ref)
-- `README.md` (27466 bytes)
-- `README_CUSTOM_RULES.md` (3514 bytes)
-- `.gitignore` (1497 bytes)
-- `docker-compose.yml` (2928 bytes)
-- `exls_matrix/format_support_analysis.md` (4266 bytes)
-- `exls_matrix/matrix_methodology.md` (20273 bytes)
-- `scripts/dci-vector.sh` (4915 bytes)
-- `scripts/dci-propagate.sh` (11824 bytes)
-- `scripts/dci-setup-projects.sh` (7410 bytes)
-- `scripts/dci-test.sh` (10769 bytes)
-- `scripts/export_presentation_pdf.sh` (906 bytes)
-- `scripts/rules-validate-all-projects.sh` (7446 bytes)
-- `scripts/dci_embed_server.py` (3085 bytes)
-- `scripts/tig-context.sh` (1332 bytes)
-- `scripts/start.sh` (8989 bytes)
-- `scripts/dci_vector_sync.py` (90640 bytes)
-- `scripts/dci-validate-all-projects.sh` (2754 bytes)
-- `scripts/tig-test.sh` (4347 bytes)
-
 ### Notable files (largest / capped index)
 - `presentations/middle_de_competency_matrix_v2.pdf` (2567185 bytes)
 - `presentations/middle_de_competency_matrix.pdf` (884922 bytes)
+- `exls_matrix/review/Мидл ДЕ -Разработка ETL_ELT.html` (402883 bytes)
+- `exls_matrix/review/Мидл ДЕ -Хранение данных.html` (304517 bytes)
 - `app.py` (207107 bytes)
 - `templates/constructor.html` (103321 bytes)
+- `.cursor/tools/dci/lib/dci_vector_sync.py` (90668 bytes)
 - `exls_matrix/storage/martrix_de_storage_preview.html` (90644 bytes)
 - `presentations/middle_de_competency_matrix_v2.html` (73088 bytes)
 - `static/css/style.css` (63281 bytes)
+- `exls_matrix/ai/matrix_de_ai.json` (61027 bytes)
 - `exls_matrix/storage/matrix_de_example2.json` (56163 bytes)
 - `templates/admin_tree_editor.html` (44113 bytes)
+- `exls_matrix/review/Разработка ETL.review.json` (42561 bytes)
 - `tig_app_ru.py` (40718 bytes)
 - `core/loaders.py` (35294 bytes)
 - `TODO.md` (34065 bytes)
+- `exls_matrix/review/de_matrix_review_methodology.md` (32946 bytes)
 - `templates/base.html` (31864 bytes)
 - `templates/import.html` (31476 bytes)
 - `presentations/middle_de_competency_matrix.html` (31254 bytes)
@@ -322,8 +292,11 @@ a5d619a recompose app
 - `core/matrix_schema.py` (30156 bytes)
 - `exls_matrix/storage/martrix_de_storage.json` (29303 bytes)
 - `templates/domain_graph.html` (29167 bytes)
+- `exls_matrix/ai/matrix_de_ai_answers.md` (28286 bytes)
 - `exls_matrix/dba/matrix_de_dba.json` (27631 bytes)
 - `templates/graph.html` (27524 bytes)
+- `README.md` (27466 bytes)
+- `exls_matrix/review/Хранение данных.review.json` (27059 bytes)
 - `.cursor/context/vector_fallback.jsonl` (26737 bytes)
 - `scripts/e2e_merge_modes_check.py` (26441 bytes)
 - `exls_matrix/etl_elt_modeling/matrinx_de_etl_elt_modeling.json` (26016 bytes)
@@ -334,6 +307,15 @@ a5d619a recompose app
 - `core/schema.py` (23402 bytes)
 - `templates/action_detail.html` (22673 bytes)
 - `exls_matrix/arch/matrix_de_arch.json` (22319 bytes)
+- `exls_matrix/matrix_methodology.md` (20273 bytes)
+- `exls_matrix/ai/matrix_de_ai.xlsx` (20102 bytes)
 - `core/tabular_matrix_contract.py` (19785 bytes)
+- `exls_matrix/storage/martrix_de_storage_answers.md` (19742 bytes)
+- `storage/models.py` (19362 bytes)
+- `exls_matrix/storage/matrix_de_example2.xlsx` (19294 bytes)
+- `templates/changes.html` (18704 bytes)
+- `.cursor/context/dci_test_cases.md` (18204 bytes)
+- `exls_matrix/storage/martrix_de_storage_preview_clean.html` (17360 bytes)
+- `templates/admin_presence.html` (17169 bytes)
 
-*+155 more files — see `tig_delta.md` git diff*
+*+156 more files — see `tig_delta.md` git diff*

@@ -22,7 +22,7 @@ try:
 except ImportError:
     psycopg2 = None  # type: ignore
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 CONTEXT_DIR = REPO_ROOT / ".cursor" / "context"
 DIALOGS_DIR = CONTEXT_DIR / "dialogs"
 PROJECT_CATALOG = CONTEXT_DIR / "project_catalog.md"
@@ -2215,9 +2215,9 @@ def cmd_compress(force: bool = False) -> int:
         )
         print("blocker: embed_backend=hash_embed:384 (semantic lookup not guaranteed)", file=sys.stderr)
         print("recovery:", file=sys.stderr)
-        print("  1) bash scripts/dci-vector.sh up", file=sys.stderr)
+        print("  1) bash .cursor/tools/dci/bin/dci-vector.sh up", file=sys.stderr)
         print("  2) uncomment DCI_EMBED_URL in .cursor/dci/dci.env", file=sys.stderr)
-        print("  3) bash scripts/dci-vector.sh compress", file=sys.stderr)
+        print("  3) bash .cursor/tools/dci/bin/dci-vector.sh compress", file=sys.stderr)
         print(f"  tei: {'ok' if tei_ok else 'unavailable'} ({tei_reason})", file=sys.stderr)
         return 1
 

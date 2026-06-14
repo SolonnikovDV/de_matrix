@@ -84,10 +84,10 @@ If DCI command fails:
 1. Optionally run `/custom-rule: dci materialize` if you need explicit checkpoint build
 2. Retry `/custom-rule: dci compress`
 3. If embed backend is unavailable, run infra recovery:
-   - `bash scripts/dci-vector.sh up`
+   - `bash .cursor/tools/dci/bin/dci-vector.sh up`
    - then retry `/custom-rule: dci compress`
 4. Use force only with explicit risk acceptance:
-   - `bash scripts/dci-vector.sh compress --force`
+   - `bash .cursor/tools/dci/bin/dci-vector.sh compress --force`
 
 ## Worktree note
 
@@ -98,4 +98,4 @@ Expected behavior:
 - report `DCI not deployed in this working copy`
 - recover by opening the main checkout under `~/PycharmProjects/<project>` or by propagating rules from source.
 
-Note: `doctor` exists as a debug-only fallback (`bash scripts/dci-vector.sh doctor`) and is normally executed internally by `compress`.
+Note: `doctor` exists as a debug-only fallback (`bash .cursor/tools/dci/bin/dci-vector.sh doctor`) and is normally executed internally by `compress`.

@@ -1,0 +1,180 @@
+---
+description: Dialog context index trigger v9 — handoff + delta-first load. Full protocol in dialog-context-index skill.
+alwaysApply: true
+---
+
+# Dialog Context Index (DCI) — Trigger Rule v9
+
+Full protocol: `.cursor/skills/dialog-context-index/SKILL.md`.
+
+**TIG vs DCI:** repo code context = `.cursor/context/tig/tig_snapshot.md` / `.cursor/context/tig/tig_delta.md` (see `tig-preflight-enforced.mdc`). DCI = dialog ledgers (`dialog_delta.md`, `dialog_index.md`). Do not mix artifacts.
+
+## Command grammar (HARD — read FIRST)
+
+`/custom-rule:` — **императивный триггер-namespace команды** (как CLI-подкоманда), **НЕ** префикс «задать контекст/рамку/роль/стиль».
+
+**ЗАПРЕЩЕНО** трактовать команду как смену стиля ответа. `/custom-rule: dci X` ВСЕГДА = **действие**: запустить сопоставленную `bash .cursor/tools/dci/bin/dci-vector.sh <cmd>`.
+
+Если сообщение матчит `^\s*/custom-rule\s*:\s*\S` (i): распарсь `namespace + command`, сопоставь с таблицей **User commands** ниже, затем выполни shell-команду через инструмент Shell. **Не** отвечай прозой вместо запуска. Неизвестный ключ → перечисли валидные команды, не импровизируй.
+
+## User commands
+
+| User command | Meaning |
+|--------------|---------|
+| **`/custom-rule: dci compress`** | Materialize window context → doctor → validate → delta/sync/handoff |
+| **`/custom-rule: dci windows`** | Дерево EV-* + DW-*: id + name + desc |
+| **`/custom-rule: dci restore DW-NNN`** | Slim restore по index + **delta** (не full bundle) |
+| **`/custom-rule: dci restore-new "<summary>"`** | Создаёт DW-NNN, активирует, первичный sync |
+| **`/custom-rule: dci materialize`** | Build reusable CP-* from current window before compression (optional manual run) |
+| **`/custom-rule: dci projects`** | Multi-project tree |
+
+Shell mapping:
+
+```bash
+bash .cursor/tools/dci/bin/dci-vector.sh compress
+bash .cursor/tools/dci/bin/dci-vector.sh materialize # build CP-* from open TH in active window
+bash .cursor/tools/dci/bin/dci-vector.sh windows
+bash .cursor/tools/dci/bin/dci-vector.sh restore DW-001
+bash .cursor/tools/dci/bin/dci-vector.sh restore-new "summary"
+bash .cursor/tools/dci/bin/dci-vector.sh projects
+bash .cursor/tools/dci/bin/dci-vector.sh doctor     # debug-only fallback (normally internal in compress)
+bash .cursor/tools/dci/bin/dci-vector.sh validate   # internal QA gate
+```
+
+## Working directory resolution (mandatory, run FIRST on any `/custom-rule: dci ...`)
+
+Перед выполнением **любой** `/custom-rule: dci ...` команды агент обязан определить, **где он работает**:
+
+1. **Repo root** = ближайший предок текущего CWD, содержащий **и** `.cursor/tools/dci/bin/dci-vector.sh`, **и** `.cursor/context/` (искать вверх по дереву). Все команды запускать как `bash <repo_root>/.cursor/tools/dci/bin/dci-vector.sh <cmd>` (скрипт сам резолвит ROOT от своего расположения; подкаталог приложения, напр. `app_gpa/`, роли не играет).
+2. **Worktree detection** — если путь содержит `/.cursor/worktrees/`, это **отдельный divergent checkout**. Если в нём нет `.cursor/tools/dci/bin/dci-vector.sh` / DCI-правил — это **ожидаемо** (worktree чекаутит только закоммиченное дерево).
+3. **Артефакты не найдены вверх по дереву** → DCI в этой рабочей копии **не развёрнут**. **ЗАПРЕЩЕНО** импровизировать (никакого «доктора кода», ast-проверок, тестов, ручной сводки). Действие:
+   - сообщить: `DCI not deployed in this working copy (<path>)`;
+   - recovery: открыть основной чекаут `~/PycharmProjects/<project>` **или** прогнать `bash .cursor/tools/dci/bin/dci-propagate.sh` из источника **или** закоммитить/синхронизировать артефакты в этот checkout.
+4. **Dialog window dir** окна диалога = из `<repo_root>/.cursor/context/.dialog_window_lock` (`dialog_window_id: DW-NNN`) → `<repo_root>/.cursor/context/dialogs/DW-NNN/`. На рассинхрон lock/каталог → exit 2 (см. § Scope), не форсить другое окно.
+
+Команды `/custom-rule: dci ...` — это **только** обёртки над `dci-vector.sh`, привязанные к разрешённому `repo_root`; они не имеют семантики вне DCI (`compress` ≠ сводка чата).
+
+## Ledger integrity invariant (architectural)
+
+Любой DCI-ledger обязан удовлетворять validate (V-01..V-06) в покое. Инвариант держится на 3 слоях, едино для всех проектов:
+
+1. **Creation** — bootstrap/`restore-new` создают валидный ledger.
+2. **Self-heal** — `доктор` (core `cmd_doctor`) нормализует open TH без `next_action`/`open_risks`; идемпотентно.
+3. **Gate** — `compress` авто-вызывает `materialize` + `doctor` перед повторным validate; при остаточном fail — блокеры + recovery (не `--force` молча).
+
+Любая ручная правка ledger допустима только если после неё `validate: pass` (иначе `доктор`).
+
+## Compress output contract (mandatory)
+
+`/custom-rule: dci compress` = конвейер **materialize + doctor + compress** в одном запуске `bash .cursor/tools/dci/bin/dci-vector.sh compress` и копирование stdout (`---` блок + `restore:`).
+
+- **Запрещено** вместо/вместе со скриптом печатать ручные таблицы `Conclusion Ledger` / `Project Evolution Ledger` / «Сводка контекста» / «Что сделано в сессии».
+- In-chat леджеры роутера (`CL-*`, `EV-*`) — **источник для записи** в `dialog_index.md` + `project_catalog.md`, **не** вывод compress.
+- На `validate: fail` — сообщить блокеры (`V-0x`) + recovery, **не** импровизировать сводку; чинить ledger или (с согласия) `--force`.
+- На `validate: pass` — вывести **только** accompaniment-блок скрипта.
+
+## Handoff protocol (memory)
+
+После успешного **`/custom-rule: dci compress`**:
+1. Агент выводит **дословно** `restore: /custom-rule: dci restore DW-NNN`
+2. Пользователь открывает **новый Cursor chat**
+3. Первый шаг: `/custom-rule: dci restore DW-NNN`
+
+Текущий chat IDE **не очищается автоматически** — handoff = операционный контракт.
+
+## Token read budget (mandatory)
+
+- **Default turn** (нет `/custom-rule: dci ...`): DCI-файлы **не** загружать.
+- **Code/repo context:** TIG first (`.cursor/context/tig/tig_delta.md` → нужные секции `.cursor/context/tig/tig_snapshot.md`); DCI не подменяет TIG.
+- **`delta` mode:** только `dialogs/DW-NNN/dialog_delta.md`; cite `CL-*` по ID из delta, **без** paste index/bundle.
+- **`restore` mode:** delta + строки index только для `changed_ids` / `hot_open`; hydrate ≤3 из вывода скрипта; **не** вставлять `ledger_map` целиком.
+- **`expand` mode:** явный body одного CL/EV по запросу пользователя.
+- **Запрет:** `dialog_bundle.md` и full index paste — только при `/custom-rule: dci expand ...` или audit.
+
+## Context load modes
+
+| Mode | Когда | Читать |
+|------|-------|--------|
+| `delta` | после compress / обычный turn | `dialog_delta.md` + cite CL-* IDs |
+| `restore` | новый chat | delta + `changed_ids`/`hot_open` rows + hydrate ≤3 |
+| `expand` | явный запрос | конкретный CL/EV body |
+
+`dialog_bundle.md` = archive (`archive: true`), import/audit only.
+
+## Scope (mandatory)
+
+- **project:** `.project_lock` + `project_id` — mismatch → exit 2
+- **window:** `.dialog_window_lock` + `dialogs/DW-NNN/dialog_index.md` — mismatch → exit 2
+- **EV:** project-shared; expand only on explicit ask
+
+## Multi-project / latency
+
+Details: skill § Multi-project isolation, § Latency.
+
+## After ledger change
+
+Run **`/custom-rule: dci compress`**.
+
+## Compress failure protocol (mandatory)
+
+On `/custom-rule: dci compress` the agent **must** run exactly:
+```bash
+bash .cursor/tools/dci/bin/dci-vector.sh compress
+```
+Internal pipeline order is fixed and mandatory:
+1. `materialize` (collect CP-* from active window TH/risk state)
+2. `doctor` (internal normalize V-01/V-02)
+3. `validate`
+4. `sync + delta + handoff`
+No manual «выжимка реестра» instead of the script. No `--force` unless the user **explicitly** accepts `pass_with_risk`.
+
+If compress exits 1 with `hash_embed` / embed server down:
+1. Report blocker: semantic backend unavailable (`tei: unavailable` or `DCI_EMBED_URL` unset).
+2. Give recovery steps (do not auto `--force`):
+   ```bash
+   bash .cursor/tools/dci/bin/dci-vector.sh up   # pgvector + embed server + re-sync
+   bash .cursor/tools/dci/bin/dci-vector.sh compress
+   ```
+3. Alternative only after user consent: `bash .cursor/tools/dci/bin/dci-vector.sh compress --force` (pass_with_risk, weak lookup).
+
+## Doctor fallback (internal/debug)
+
+`doctor` выполняется **внутри** `/custom-rule: dci compress` и не является обязательной пользовательской командой.
+
+Debug-only fallback (инженерный режим, когда нужно отдельное лечение ledger):
+```bash
+bash .cursor/tools/dci/bin/dci-vector.sh doctor
+```
+
+## Restore protocol (mandatory)
+
+On `/custom-rule: dci restore DW-NNN` the agent **must** run exactly:
+```bash
+bash .cursor/tools/dci/bin/dci-vector.sh restore DW-NNN
+```
+**With full permissions** (`all`) — script writes `.cursor/context/.dialog_window_lock` and updates catalog; sandbox often blocks this.
+
+**Forbidden:** substitute restore with manual «подгружаю контекст» from memory or full bundle read.
+
+**On success:**
+1. Copy script `---` accompaniment block into the reply.
+2. Load **`dialogs/DW-NNN/dialog_delta.md`**; из index — только строки `changed_ids` / `hot_open`; hydrate ≤3 (mode `restore`).
+3. Do **not** load `dialog_bundle.md` unless user asks `/custom-rule: dci expand ...`.
+
+**On exit 2 (scope mismatch):** report lock/window conflict; do not force another window.
+
+## Windows display (окна / проекты)
+
+Format: `DW-NNN | name: «…» | desc: «…» | [slot][lifecycle]`
+
+Fields in `dialog_index.md`: `window_name`, `window_description` (fallback: Q/TH text).
+
+## Accompaniment v2 (material turns)
+
+Скрипт печатает блок `---` … `---` после compress/restore. Агент **копирует** его в ответ:
+
+`project:` + `window:` + `master:` + `load_mode:` + `changed:` + `handoff_ready:` + `access:` + `embed_backend:`.
+
+## Skip
+
+`skip DCI` — skip compress this turn only.

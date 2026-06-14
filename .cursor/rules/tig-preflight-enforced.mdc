@@ -1,0 +1,37 @@
+---
+description: Default implementation workflow is TIG preflight first, then coding.
+alwaysApply: true
+---
+
+# TIG Preflight Enforcement
+
+Default behavior for implementation tasks is always:
+1) TIG preflight
+2) implementation
+3) TIG postflight
+
+## Commands
+
+**Preflight** (before coding):
+
+`bash .cursor/tools/tig/bin/tig-context.sh "." "origin/main"`
+
+**Postflight** (before final response):
+
+`bash .cursor/tools/tig/bin/tig-context.sh "." "origin/main" --delta-only`
+
+Mandatory workflow for implementation tasks:
+1. Preflight: run TIG context refresh (snapshot + delta).
+2. Read **`.cursor/context/tig/tig_delta.md` first** (git diff + commits), then **`.cursor/context/tig/tig_snapshot.md`** sections: Module map, Directory tree, File index (compressed).
+3. Perform edits.
+4. Postflight: `--delta-only` to refresh delta/git diffs without rebuilding snapshot.
+5. Use postflight delta to summarize what changed and what remains.
+
+Allowed skip cases:
+- User explicitly asks to skip TIG.
+
+Safety/performance constraints:
+- Prefer compact snapshot + delta git diffs by default.
+- Do not paste full `.cursor/context/tig/tig_snapshot.md` into chat.
+- Use `--full --changed-only --snapshot-base-ref "origin/main"` only for deep code-body audits.
+- Do not include `.env*` unless explicitly needed (`--include-env`).

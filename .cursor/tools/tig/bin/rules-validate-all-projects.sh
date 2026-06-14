@@ -2,7 +2,7 @@
 # Validate unified Cursor rules/skills across all projects (source = gp_dq).
 set -uo pipefail
 
-SOURCE="${RULES_VALIDATE_SOURCE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+SOURCE="${RULES_VALIDATE_SOURCE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
 ROOT="${DCI_PROJECTS_ROOT:-$(cd "${SOURCE}/.." && pwd)}"
 REG="${SOURCE}/.cursor/dci/projects.registry"
 GLOBAL_ROUTER="${HOME}/.cursor/rules/team-command-router.mdc"
@@ -28,8 +28,8 @@ REQUIRED_SKILLS=(
   tig-snapshot
 )
 REQUIRED_SCRIPTS=(
-  scripts/dci-vector.sh
-  scripts/tig-context.sh
+  .cursor/tools/dci/bin/dci-vector.sh
+  .cursor/tools/tig/bin/tig-context.sh
 )
 
 check_same_sha() {

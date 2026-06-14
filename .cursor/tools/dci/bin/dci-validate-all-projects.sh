@@ -2,7 +2,7 @@
 # Validate DCI isolation + trees across all Cursor projects in PycharmProjects.
 set -uo pipefail
 
-SOURCE="${DCI_PROPAGATE_SOURCE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+SOURCE="${DCI_PROPAGATE_SOURCE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
 ROOT="${DCI_PROJECTS_ROOT:-$(cd "${SOURCE}/.." && pwd)}"
 REG="${SOURCE}/.cursor/dci/projects.registry"
 
@@ -14,8 +14,8 @@ fail() { echo "FAIL  $1 — $2"; FAIL=$((FAIL + 1)); }
 
 check_project() {
   local path="$1" pid="$2"
-  local dci="${path}/scripts/dci-vector.sh"
-  [[ -x "${dci}" ]] || dci="bash ${path}/scripts/dci-vector.sh"
+  local dci="${path}/.cursor/tools/dci/bin/dci-vector.sh"
+  [[ -x "${dci}" ]] || dci="bash ${path}/.cursor/tools/dci/bin/dci-vector.sh"
   local out err rc
   set +e
   out="$(${dci} windows 2>&1)"
@@ -61,8 +61,8 @@ GP_PY="${SOURCE}/.venv/bin/python"
 DM="${ROOT}/de_matrix"
 if [[ -x "${GP_PY}" && -d "${DM}/.cursor" ]]; then
   set +e
-  env DCI_PROJECT_ID=de_matrix "${GP_PY}" "${DM}/scripts/dci_vector_sync.py" sync --migrate >/dev/null 2>&1
-  env DCI_PROJECT_ID=gp_dq "${GP_PY}" "${SOURCE}/scripts/dci_vector_sync.py" sync --project --migrate >/dev/null 2>&1
+  env DCI_PROJECT_ID=de_matrix "${GP_PY}" "${DM}/.cursor/tools/dci/lib/dci_vector_sync.py" sync --migrate >/dev/null 2>&1
+  env DCI_PROJECT_ID=gp_dq "${GP_PY}" "${SOURCE}/.cursor/tools/dci/lib/dci_vector_sync.py" sync --project --migrate >/dev/null 2>&1
   cnt="$("${GP_PY}" - <<'PY'
 import os, psycopg2
 conn = psycopg2.connect(host="localhost", port=5433, dbname="dci_vectors", user="dci", password="dci_local", connect_timeout=3)

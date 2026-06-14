@@ -1,0 +1,44 @@
+---
+description: Run TIG preflight by default before implementation; use TIG postflight before final response.
+alwaysApply: true
+---
+
+# TIG Predictive Trigger
+
+## Preflight (before coding)
+
+```bash
+bash .cursor/tools/tig/bin/tig-context.sh "." "origin/main"
+```
+
+## Postflight (after edits, before final response)
+
+```bash
+bash .cursor/tools/tig/bin/tig-context.sh "." "origin/main" --delta-only
+```
+
+Direct CLI equivalent:
+
+```bash
+python3 "tig_app_ru.py" --cli --target "." --out ".cursor/context/tig/tig_snapshot.md" --compact --git-commits 12 --reuse-if-unchanged --delta --delta-out ".cursor/context/tig/tig_delta.md" --base-ref "origin/main" --delta-log-commits 20 --diff-max-lines 2500
+```
+
+## Agent read order (token economy)
+
+1. **`.cursor/context/tig/tig_delta.md` first** — commits, changed files, **unified git diff**, working tree diff.
+2. **`.cursor/context/tig/tig_snapshot.md` sections only:**
+   - `## Module map`
+   - `## Directory tree`
+   - `## File index (compressed)` — changed + notable only
+3. **Direct file reads** — only paths from delta diff / impact list.
+
+**Forbidden:** paste full snapshot or full file index into chat.
+
+**Base ref:** `origin/main` with auto-fallback to `main` → `HEAD~1` → `HEAD` (no remote required).
+
+Then:
+- Use `.cursor/context/tig/tig_delta.md` for evolution and change impact.
+- Use `.cursor/context/tig/tig_snapshot.md` for structure map only.
+- For deep audits of code bodies, prefer `--full --changed-only --snapshot-base-ref "origin/main"`.
+
+Before final answer for substantial edits, run **postflight** (`--delta-only`) to refresh git diffs.

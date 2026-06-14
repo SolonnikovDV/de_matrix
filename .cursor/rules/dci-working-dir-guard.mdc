@@ -1,0 +1,66 @@
+description: Global guard — parse /custom-rule commands deterministically, resolve working dir, and forbid improvisation when DCI is not deployed in current checkout/worktree.
+alwaysApply: true
+---
+
+# DCI Working-Dir Guard (global)
+
+Срабатывает на любую команду `/custom-rule: ...` в **любом** окне/чекауте (включая git-worktrees `~/.cursor/worktrees/**`), даже если проектного правила `dialog-context-index.mdc` в этой копии нет.
+
+## Command grammar (HARD — отменяет дефолтную трактовку)
+
+`/custom-rule:` — **ЗАРЕЗЕРВИРОВАННЫЙ ИМПЕРАТИВНЫЙ ТРИГГЕР** (как CLI-подкоманда), **НЕ** префикс «задать рамку / роль / стиль / призму общения».
+
+**ЗАПРЕЩЕНО** рассуждение вида:
+> «это просто контекст общения, а не команда».
+
+Это **неверно**. `/custom-rule: X` = **действие**: выполнить сопоставленную shell-команду.
+
+**Detection (обязательно):** если сообщение пользователя матчит regex `^\s*/custom-rule\s*:\s*\S` (case-insensitive) — агент **ОБЯЗАН**:
+1. распарсить `namespace` и `command` по grammar ниже (строго, без эвристик);
+2. сопоставить с Token map (одно соответствие на ключ);
+3. выполнить `bash <repo_root>/.cursor/tools/dci/bin/dci-vector.sh <cmd>` для namespace `dci`;
+3. **НЕ** отвечать прозой/рассуждением вместо запуска;
+4. **НЕ** трактовать как смену роли/стиля/контекста общения;
+5. неизвестный/двусмысленный ключ → вывести deterministic error + список валидных ключей.
+
+**Grammar:**
+- `/custom-rule: dci <verb> [args]`
+- `/custom-rule: team <team-key|reset>`
+- `/custom-rule: evo <verb> [args]`
+
+**Token map (`/custom-rule: dci ...` → dci-vector.sh):**
+
+| Regex команды (i) | Действие |
+|-------------------|----------|
+| `compress` | `compress` |
+| `materialize` | `materialize` |
+| `windows` | `windows` |
+| `projects` | `projects` |
+| `doctor` | `doctor` (debug-only fallback; not primary user flow) |
+| `restore\s+(DW-\d+)` | `restore DW-NNN` |
+| `restore-new(\s+.+)?` | `restore-new "<summary>"` |
+| `expand\s+\S+` | expand CL/EV (см. project rule) |
+
+**Single source of truth:** при наличии `<repo_root>/.cursor/rules/dialog-context-index.mdc` + `team-command-router.mdc` — следовать их протоколам; этот guard гарантирует, что `/custom-rule:` **не будет переинтерпретирован**.
+
+## Preflight (обязательно, ПЕРВЫМ делом)
+
+1. **Repo root** = ближайший предок CWD, содержащий **и** `.cursor/tools/dci/bin/dci-vector.sh`, **и** `.cursor/context/` (поиск вверх по дереву). Подкаталог приложения (напр. `app_gpa/`) не мешает: скрипт резолвит ROOT от своего расположения.
+2. **Worktree** — путь содержит `/.cursor/worktrees/`: это отдельный divergent checkout; отсутствие DCI-файлов в нём ожидаемо.
+3. **Если `.cursor/tools/dci/bin/dci-vector.sh` НЕ найден вверх по дереву** → DCI в этой рабочей копии не развёрнут. **ЗАПРЕЩЕНО** импровизировать смысл команды:
+   - `/custom-rule: dci doctor` ≠ проверка кода/синтаксиса/импортов/тестов (и не основной пользовательский путь);
+   - `/custom-rule: dci compress` ≠ ручная «Сводка контекста»;
+   - `/custom-rule: dci restore ...` ≠ «подгружаю контекст из памяти».
+   Действие: сообщить `DCI not deployed in this working copy (<path>)` + recovery:
+   - открыть основной чекаут `~/PycharmProjects/<project>`; **или**
+   - прогнать `bash .cursor/tools/dci/bin/dci-propagate.sh` из источника; **или**
+   - закоммитить/синхронизировать DCI-артефакты в этот checkout.
+4. **Если найден** → выполнять команду как `bash <repo_root>/.cursor/tools/dci/bin/dci-vector.sh <cmd>` и далее следовать `<repo_root>/.cursor/rules/dialog-context-index.mdc` (полный протокол).
+
+## Dialog window dir
+
+Окно диалога = `<repo_root>/.cursor/context/.dialog_window_lock` (`dialog_window_id: DW-NNN`) → `<repo_root>/.cursor/context/dialogs/DW-NNN/`. Рассинхрон lock/каталога → exit 2, другое окно не форсить.
+
+## Контракт
+
+Команды `/custom-rule: dci ...` не имеют семантики вне DCI. Нет скрипта — нет команды: только recovery, без импровизации.

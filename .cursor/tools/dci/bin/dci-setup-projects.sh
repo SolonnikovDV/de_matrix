@@ -2,7 +2,7 @@
 # One-shot DCI setup for all Cursor projects: TEI env, window themes, venv, gitignore.
 set -euo pipefail
 
-SOURCE="${DCI_PROPAGATE_SOURCE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+SOURCE="${DCI_PROPAGATE_SOURCE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
 ROOT="${DCI_PROJECTS_ROOT:-$(cd "${SOURCE}/.." && pwd)}"
 
 win_name() {
@@ -38,25 +38,22 @@ win_desc() {
 DCI_GITIGNORE_MARKER="# --- DCI local/runtime (do not publish) ---"
 DCI_GITIGNORE_BLOCK="${DCI_GITIGNORE_MARKER}
 .cursor/dci/dci.env
+.cursor/dci/.embed_server.pid
+.cursor/dci/embed_server.log
 .cursor/context/.project_lock
 .cursor/context/.dialog_window_lock
 .cursor/context/vector_fallback.jsonl
+.cursor/context/dialogs/**/vector_fallback.jsonl
 .cursor/context/.compress_snapshot.project.json
 .cursor/context/dialogs/**/.compress_snapshot.json
 .cursor/context/dialogs/**/dialog_bundle.md
 .cursor/context/dialog_bundle.md
 .cursor/context/vector_index.meta.md
-.cursor/context/dialogs/**/vector_index.meta.md
-.cursor/dci/.embed_server.pid
-.cursor/dci/embed_server.log"
+.cursor/context/dialogs/**/vector_index.meta.md"
 
 ensure_gitignore() {
   local target="$1"
   local gi="${target}/.gitignore"
-  if [[ -f "${gi}" ]] && grep -qF "${DCI_GITIGNORE_MARKER}" "${gi}" 2>/dev/null; then
-    echo "  gitignore: DCI block present"
-    return 0
-  fi
   if [[ ! -f "${gi}" ]]; then
     cat >"${gi}" <<'HDR'
 # Local / generated
@@ -67,8 +64,22 @@ __pycache__/
 
 HDR
   fi
-  printf '\n%s\n' "${DCI_GITIGNORE_BLOCK}" >>"${gi}"
-  echo "  gitignore: appended DCI runtime block"
+  python3 - "${gi}" "${DCI_GITIGNORE_MARKER}" "${DCI_GITIGNORE_BLOCK}" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+marker = sys.argv[2]
+block = sys.argv[3].splitlines()
+lines = path.read_text(encoding="utf-8").splitlines()
+lines = [line for line in lines if line.strip() != ".cursor/"]
+if marker in lines:
+    lines = lines[: lines.index(marker)]
+while lines and not lines[-1].strip():
+    lines.pop()
+path.write_text("\n".join(lines + ["", *block, ""]), encoding="utf-8")
+PY
+  echo "  gitignore: DCI runtime block refreshed"
 }
 
 enable_tei_env() {
@@ -183,7 +194,7 @@ setup_one() {
   local pid
   pid="$(basename "${target}")"
   [[ -d "${target}/.cursor" ]] || return 0
-  [[ -f "${target}/scripts/dci-vector.sh" ]] || return 0
+  [[ -f "${target}/.cursor/tools/dci/bin/dci-vector.sh" ]] || return 0
   echo "=== ${pid} ==="
   ensure_gitignore "${target}"
   sync_projects_registry "${target}"
@@ -193,7 +204,7 @@ setup_one() {
 }
 
 echo "Starting shared DCI stack from ${SOURCE}..."
-bash "${SOURCE}/scripts/dci-vector.sh" up || echo "WARN: dci-vector.sh up failed (Docker?)" >&2
+bash "${SOURCE}/.cursor/tools/dci/bin/dci-vector.sh" up || echo "WARN: dci-vector.sh up failed (Docker?)" >&2
 
 while IFS= read -r line; do
   [[ "${line}" =~ ^# ]] && continue

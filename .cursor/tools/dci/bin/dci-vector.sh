@@ -2,11 +2,11 @@
 # DCI vector store helper v9: windows + project EV namespaces + local embed server
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 COMPOSE_FILE="${ROOT}/.cursor/dci/docker-compose.yml"
 ENV_FILE="${ROOT}/.cursor/dci/dci.env"
-SYNC_PY="${ROOT}/scripts/dci_vector_sync.py"
-EMBED_PY="${ROOT}/scripts/dci_embed_server.py"
+SYNC_PY="${ROOT}/.cursor/tools/dci/lib/dci_vector_sync.py"
+EMBED_PY="${ROOT}/.cursor/tools/dci/lib/dci_embed_server.py"
 PY="${ROOT}/.venv/bin/python"
 
 if [[ -f "${ENV_FILE}" ]]; then
